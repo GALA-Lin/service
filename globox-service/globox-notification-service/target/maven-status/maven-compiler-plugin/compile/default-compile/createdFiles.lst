@@ -1,0 +1,15 @@
+com\unlimited\sports\globox\NotificationApplication.class
+com\unlimited\sports\globox\notification\config\NotificationMqConfig.class
+com\unlimited\sports\globox\notification\mapper\NotificationTemplatesMapper.class
+com\unlimited\sports\globox\notification\service\impl\NotificationServiceImpl.class
+com\unlimited\sports\globox\notification\mapper\PushRecordsMapper.class
+com\unlimited\sports\globox\notification\client\TencentCloudClient.class
+com\unlimited\sports\globox\notification\config\TencentCloudProperties.class
+com\unlimited\sports\globox\notification\mapper\UserDevicesMapper.class
+com\unlimited\sports\globox\notification\service\impl\NotificationServiceImpl$DevicePushInfo.class
+com\unlimited\sports\globox\notification\util\TemplateRenderer.class
+com\unlimited\sports\globox\notification\consumer\NotificationCoreConsumer.class
+com\unlimited\sports\globox\notification\consumer\NotificationUrgentConsumer.class
+com\unlimited\sports\globox\notification\consumer\NotificationSystemConsumer.class
+com\unlimited\sports\globox\notification\consumer\NotificationDlqConsumer.class
+com\unlimited\sports\globox\notification\service\INotificationService.class

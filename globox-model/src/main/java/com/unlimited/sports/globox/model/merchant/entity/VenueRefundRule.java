@@ -54,13 +54,13 @@ public class VenueRefundRule implements Serializable {
      * 是否为默认规则：0-否，1-是
      */
     @TableField("is_default")
-    private DefaultStatusEnum isDefault;
+    private Integer isDefault;
 
     /**
      * 是否启用：0-禁用，1-启用
      */
     @TableField("is_enabled")
-    private EnableStatusEnum isEnabled;
+    private Integer isEnabled;
 
     /**
      * 规则描述说明

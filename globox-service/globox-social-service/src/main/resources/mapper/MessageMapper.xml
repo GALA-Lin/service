@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.social.mapper.MessageMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.unlimited.sports.globox.model.social.entity.MessageEntity">
+        <id column="message_id" property="messageId"/>
+        <result column="from_user_id" property="fromUserId"/>
+        <result column="to_user_id" property="toUserId"/>
+        <result column="message_type" property="messageType"/>
+        <result column="content" property="content"/>
+        <result column="status" property="status"/>
+        <result column="is_read" property="isRead"/>
+        <result column="send_time" property="sendTime"/>
+        <result column="receive_time" property="receiveTime"/>
+        <result column="read_time" property="readTime"/>
+        <result column="conversation_id" property="conversationId"/>
+        <result column="random" property="random"/>
+        <result column="is_recalled" property="isRecalled"/>
+        <result column="recalled_at" property="recalledAt"/>
+        <result column="is_deleted_by_sender" property="isDeletedBySender"/>
+        <result column="is_deleted_by_receiver" property="isDeletedByReceiver"/>
+        <result column="extra" property="extra"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 基础列 -->
+    <sql id="Base_Column_List">
+        message_id, from_user_id, to_user_id, message_type, content, status, is_read, 
+        send_time, receive_time, read_time, conversation_id, random, is_recalled, 
+        recalled_at, is_deleted_by_sender, is_deleted_by_receiver, extra, created_at, updated_at
+    </sql>
+
+    <!-- 根据随机值查询消息 -->
+    <select id="selectByRandom" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM messageEntity
+        WHERE from_user_id = #{fromUserId}
+        AND to_user_id = #{toUserId}
+        AND random = #{random}
+    </select>
+
+    <!-- 查询单聊消息列表 -->
+    <select id="selectChatMessages" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM message
+        WHERE (
+        (from_user_id = #{fromUserId} AND to_user_id = #{toUserId})
+        OR (from_user_id = #{toUserId} AND to_user_id = #{fromUserId})
+        )
+        AND is_deleted_by_sender = 0
+        AND is_deleted_by_receiver = 0
+        <if test="startTime != null">
+            AND send_time >= FROM_UNIXTIME(#{startTime})
+        </if>
+        <if test="endTime != null">
+            AND send_time  &lt;= FROM_UNIXTIME(#{endTime})
+        </if>
+        ORDER BY send_time DESC
+        <if test="maxCnt != null">
+            LIMIT #{maxCnt}
+        </if>
+    </select>
+
+    <!-- 查询未读消息计数 -->
+    <select id="selectUnreadCount" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM message
+        WHERE from_user_id = #{fromUserId}
+        AND to_user_id = #{toUserId}
+        AND is_read = 0
+        AND is_deleted_by_receiver = 0
+        AND status != 4
+    </select>
+
+    <!-- 更新消息状态 -->
+    <update id="updateMessageStatus">
+        UPDATE message
+        SET status = #{status},
+        is_read = #{isRead},
+        read_time = #{readTime},
+        updated_at = NOW()
+        WHERE message_id = #{messageId}
+    </update>
+
+    <!-- 逻辑删除消息 -->
+    <update id="logicDelete">
+        UPDATE message
+        <set>
+            <if test="isDeletedBySender != null">is_deleted_by_sender = #{isDeletedBySender},</if>
+            <if test="isDeletedByReceiver != null">is_deleted_by_receiver = #{isDeletedByReceiver},</if>
+            status = 5,
+            updated_at = NOW()
+        </set>
+        WHERE message_id = #{messageId}
+    </update>
+
+    <!-- 撤回消息 -->
+    <update id="recallMessage">
+        UPDATE message
+        SET status = 4,
+        is_recalled = 1,
+        recalled_at = NOW(),
+        updated_at = NOW()
+        WHERE message_id = #{messageId}
+        AND from_user_id = #{fromUserId}
+        AND send_time >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+    </update>
+
+    <!-- 根据消息ID查询消息详情（不包含已删除） -->
+    <select id="selectByIdNotDeleted" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM message
+        WHERE message_id = #{messageId}
+        AND is_deleted_by_sender = 0
+        AND is_deleted_by_receiver = 0
+    </select>
+
+    <!-- 根据会话ID查询消息列表 -->
+    <select id="selectByConversationId" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM message
+        WHERE conversation_id = #{conversationId}
+        AND is_deleted_by_sender = 0
+        AND is_deleted_by_receiver = 0
+        ORDER BY send_time DESC
+        LIMIT #{page}, #{pageSize}
+    </select>
+
+    <!-- 根据会话ID查询消息总条数 -->
+    <select id="selectCountByConversationId" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM message
+        WHERE conversation_id = #{conversationId}
+        AND is_deleted_by_sender = 0
+        AND is_deleted_by_receiver = 0
+    </select>
+
+    <!-- 查询两个用户之间的消息 -->
+    <select id="selectBetweenUsers" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM message
+        WHERE (
+        (from_user_id = #{fromUserId} AND to_user_id = #{toUserId})
+        OR (from_user_id = #{toUserId} AND to_user_id = #{fromUserId})
+        )
+        AND is_deleted_by_sender = 0
+        AND is_deleted_by_receiver = 0
+        <if test="startTime != null">
+            AND send_time >= FROM_UNIXTIME(#{startTime})
+        </if>
+        <if test="endTime != null">
+            AND send_time &lt;= FROM_UNIXTIME(#{endTime})
+        </if>
+        ORDER BY send_time DESC
+        <if test="maxCnt != null">
+            LIMIT #{maxCnt}
+        </if>
+    </select>
+
+    <!-- 查询两个用户之间的未读消息（接收方未读的消息） -->
+    <select id="selectUnreadMessages" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List"/>
+        FROM message
+        WHERE from_user_id = #{fromUserId}
+        AND to_user_id = #{toUserId}
+        AND is_read = 0
+        AND is_deleted_by_sender = 0
+        AND is_deleted_by_receiver = 0
+        ORDER BY send_time ASC
+    </select>
+
+</mapper>

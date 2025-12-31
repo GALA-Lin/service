@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.model.venue.enums;
 
+import java.util.Arrays;
+
 public enum GroundType {
     HARD(1, "硬地"),
     CLAY(2, "红土"),
@@ -23,11 +25,9 @@ public enum GroundType {
     }
 
     public static GroundType fromValue(int value) {
-        for (GroundType type : values()) {
-            if (type.value == value) {
-                return type;
-            }
-        }
-        throw new IllegalArgumentException("Unknown GroundType value: " + value);
+        return Arrays.stream(values())
+                .filter(type -> type.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

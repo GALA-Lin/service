@@ -136,6 +136,13 @@ public class Venue implements Serializable {
      */
     @TableField("template_id")
     private Long templateId;
+
+    /**
+     * 绑定的退款规则ID
+     */
+    @TableField("venue_refund_rule_id")
+    private Long venueRefundRuleId;
+
     /**
      * 场地状态: 1 正常 0 暂停营业
      */

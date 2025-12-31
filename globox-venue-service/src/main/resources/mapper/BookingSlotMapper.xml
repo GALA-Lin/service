@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.merchant.mapper.BookingSlotMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BookingSlotResultMap" type="com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlot">
+        <id column="booking_slot_id" property="bookingSlotId"/>
+        <result column="order_id" property="orderId"/>
+        <result column="court_id" property="courtId"/>
+        <result column="booking_date" property="bookingDate"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="user_id" property="userId"/>
+        <result column="status" property="status"/>
+        <result column="source" property="source"/>
+        <result column="unit_price" property="unitPrice"/>
+        <result column="pay_deadline" property="payDeadline"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 查询场地在指定日期的所有时段 -->
+    <select id="selectByCourtAndDate" resultMap="BookingSlotResultMap">
+        SELECT *
+        FROM venue_booking_slot
+        WHERE court_id = #{courtId}
+          AND booking_date = #{bookingDate}
+        ORDER BY start_time
+    </select>
+
+    <!-- 查询订单的所有时段 -->
+    <select id="selectByOrderId" resultMap="BookingSlotResultMap">
+        SELECT *
+        FROM venue_booking_slot
+        WHERE order_id = #{orderId}
+        ORDER BY booking_date, start_time
+    </select>
+
+    <!-- 批量查询时段信息 -->
+    <select id="selectByIds" resultMap="BookingSlotResultMap">
+        SELECT *
+        FROM venue_booking_slot
+        WHERE booking_slot_id IN
+        <foreach collection="slotIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <!-- 检查时段是否可用 -->
+    <select id="checkSlotAvailable" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM venue_booking_slot
+        WHERE court_id = #{courtId}
+        AND booking_date = #{bookingDate}
+        AND status IN (1, 2, 4)  -- PENDING_PAY, PAID, BLOCKED
+        AND NOT (
+        end_time &lt;= #{startTime} OR start_time >= #{endTime}
+        )
+        <if test="excludeSlotId != null">
+            AND booking_slot_id != #{excludeSlotId}
+        </if>
+    </select>
+
+    <!-- 查询场馆在指定日期范围内的所有订单时段 -->
+    <select id="selectByVenueAndDateRange" resultMap="BookingSlotResultMap">
+        SELECT bs.*
+        FROM venue_booking_slot bs
+                 INNER JOIN courts c ON bs.court_id = c.court_id
+        WHERE c.venue_id = #{venueId}
+          AND bs.booking_date BETWEEN #{startDate} AND #{endDate}
+        ORDER BY bs.booking_date, bs.start_time
+    </select>
+
+    <!-- 统计场地某天锁定中/已支付的时段数量 -->
+    <select id="countPaidSlotsByCourtAndDate" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM venue_booking_slot
+        WHERE court_id = #{courtId}
+        AND booking_date = #{bookingDate}
+        AND status IN (2, 3) <!-- OCCUPIED, COMPLETED -->
+    </select>
+
+    <!-- 统计场地某天的时段数量 -->
+    <select id="countByCourtAndDate" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM venue_booking_slot
+        WHERE court_id = #{courtId}
+          AND booking_date = #{bookingDate}
+    </select>
+
+    <!-- 删除场地某天所有可删除的时段 -->
+    <delete id="deleteAvailableSlotsByCourtAndDate">
+        DELETE FROM venue_booking_slot
+        WHERE court_id = #{courtId}
+        AND booking_date = #{bookingDate}
+        AND status = 1 <!-- BOOKABLE -->
+        AND order_id IS NULL
+    </delete>
+
+</mapper>

@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.model.order.vo;
 
 import com.unlimited.sports.globox.common.enums.order.ApplyRefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,32 +22,63 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Schema(
+        name = "CancelRefundApplyResultVo",
+        description = "取消退款申请结果返回对象"
+)
 public class CancelRefundApplyResultVo implements Serializable {
 
+    private static final long serialVersionUID = 1L;
+
+    /**
+     * 订单号
+     */
     @NotNull
+    @Schema(description = "订单号", example = "202512180001")
     private Long orderNo;
+
+    /**
+     * 退款申请ID
+     */
     @NotNull
+    @Schema(description = "退款申请ID", example = "10086")
     private Long refundApplyId;
 
     /**
-     * 申请单状态
+     * 退款申请状态
      */
     @NotNull
+    @Schema(description = "退款申请状态", example = "CANCELLED")
     private ApplyRefundStatusEnum applyStatus;
+
+    /**
+     * 退款申请状态描述
+     */
     @NotNull
+    @Schema(description = "退款申请状态描述", example = "已取消")
     private String applyStatusName;
 
     /**
-     * 订单状态（取消退款后订单状态可能需要回退/或置为某个状态）
+     * 订单状态
+     * 取消退款后订单状态可能回退或调整
      */
     @NotNull
+    @Schema(description = "订单状态", example = "PAID")
     private OrderStatusEnum orderStatus;
+
+    /**
+     * 订单状态描述
+     */
     @NotNull
+    @Schema(description = "订单状态描述", example = "已支付")
     private String orderStatusName;
 
     /**
-     * 取消时间
+     * 退款申请取消时间
      */
     @Null
+    @Schema(description = "退款申请取消时间（若未实际取消则为空）",
+            example = "2025-12-18T17:20:00",
+            nullable = true)
     private LocalDateTime cancelledAt;
 }

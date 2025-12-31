@@ -2,6 +2,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 订单状态枚举
  */
@@ -21,11 +23,9 @@ public enum OrderStatus {
     }
 
     public static OrderStatus fromValue(int value) {
-        for (OrderStatus status : values()) {
-            if (status.value == value) {
-                return status;
-            }
-        }
-        throw new IllegalArgumentException("Unknown OrderStatus value: " + value);
+        return Arrays.stream(values())
+                .filter(status -> status.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

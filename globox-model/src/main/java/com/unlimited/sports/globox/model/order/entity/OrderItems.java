@@ -46,9 +46,9 @@ public class OrderItems extends BaseEntity implements Serializable {
     private String resourceName;
 
     /**
-     * 槽 ID
+     * record ID
      */
-    private Long slotId;
+    private Long recordId;
 
     /**
      * 预订日期
@@ -65,14 +65,13 @@ public class OrderItems extends BaseEntity implements Serializable {
      */
     private LocalTime endTime;
 
-
     /**
      * 单价快照
      */
     private BigDecimal unitPrice;
 
     /**
-     * 单个槽位额外费用（仅包含SLOT_BASED类型的额外费用），其他额外费用见venue_order_extra_charge表
+     * 单个 record 额外费用
      */
     private BigDecimal extraAmount;
 
@@ -82,7 +81,7 @@ public class OrderItems extends BaseEntity implements Serializable {
     private BigDecimal subtotal;
 
     /**
-     * 退款状态：0=NONE，1=REFUNDING，2=REFUNDED
+     * 退款状态
      */
     private RefundStatusEnum refundStatus;
 

@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 日期类型枚举
  */
@@ -17,11 +19,9 @@ public enum DayType {
     private final String description;
 
     public static DayType fromValue(int value) {
-        for (DayType type : values()) {
-            if (type.value == value) {
-                return type;
-            }
-        }
-        throw new IllegalArgumentException("Unknown DayType value: " + value);
+        return Arrays.stream(values())
+                .filter(type -> type.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

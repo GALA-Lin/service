@@ -12,9 +12,10 @@ import java.time.LocalDate;
 @Data
 public class GetCourtSlotsDto {
 
-    @NotNull(message = "场馆ID不能为空")
     private Long venueId;
 
     @NotNull(message = "预订日期不能为空")
     private LocalDate bookingDate;
+
+    private Long userId;
 }

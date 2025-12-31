@@ -2,6 +2,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 预订槽位状态枚举
  */
@@ -20,11 +22,9 @@ public enum BookingSlotStatus {
     }
 
     public static BookingSlotStatus fromValue(int value) {
-        for (BookingSlotStatus status : values()) {
-            if (status.value == value) {
-                return status;
-            }
-        }
-        throw new IllegalArgumentException("Unknown BookingSlotStatus value: " + value);
+        return Arrays.stream(values())
+                .filter(status -> status.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

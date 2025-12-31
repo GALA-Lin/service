@@ -27,54 +27,69 @@ import java.time.LocalDateTime;
 public class UserDevices  implements Serializable {
 
     /**
-     * 用户ID
+     * 设备表自增主键
      */
-    @TableId(value = "user_id",type = IdType.AUTO)
+    @TableId(value = "user_devices_id", type = IdType.AUTO)
+    private Long userDevicesId;
+
+    /**
+     * 用户ID（业务字段）
+     */
+    @TableField("user_id")
     private Long userId;
 
     /**
      * 用户类型：CONSUMER(消费者), MERCHANT(商家), COACH(教练)
      */
+    @TableField("user_type")
     private UserTypeEnum userType;
 
     /**
      * 设备唯一标识（硬件相关），用户换手机时会改变
      */
+    @TableField("device_id")
     private String deviceId;
 
     /**
      * 腾讯云registrationId，推送凭证
      */
+    @TableField("device_token")
     private String deviceToken;
 
     /**
      * 设备型号，如iPhone 16
      */
+    @TableField("device_model")
     private String deviceModel;
 
     /**
      * 操作系统：iOS/Android
      */
+    @TableField("device_os")
     private DeviceOsEnum deviceOs;
 
     /**
      * APP版本号
      */
+    @TableField("app_version")
     private String appVersion;
 
     /**
      * 是否活跃：0=不活跃(待激活/已登出)，1=活跃(当前登录)
      */
+    @TableField("is_active")
     private Boolean isActive;
 
     /**
      * 最后活跃时间
      */
+    @TableField("last_active_at")
     private LocalDateTime lastActiveAt;
 
     /**
      * 用户是否启用推送：0=禁用，1=启用
      */
+    @TableField("push_enabled")
     private Boolean pushEnabled;
 
 

@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 订单来源枚举
  */
@@ -16,11 +18,9 @@ public enum OrderSource {
     private final String description;
 
     public static OrderSource fromValue(int value) {
-        for (OrderSource source : values()) {
-            if (source.value == value) {
-                return source;
-            }
-        }
-        throw new IllegalArgumentException("Unknown OrderSource value: " + value);
+        return Arrays.stream(values())
+                .filter(source -> source.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

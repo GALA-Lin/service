@@ -2,6 +2,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 支付状态枚举
  */
@@ -21,11 +23,9 @@ public enum PaymentStatus {
     }
 
     public static PaymentStatus fromValue(int value) {
-        for (PaymentStatus status : values()) {
-            if (status.value == value) {
-                return status;
-            }
-        }
-        throw new IllegalArgumentException("Unknown PaymentStatus value: " + value);
+        return Arrays.stream(values())
+                .filter(status -> status.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper">
+
+    <!-- 查询指定槽位模板和日期的记录 -->
+    <select id="selectByTemplateIdAndDate" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord">
+        SELECT
+            booking_slot_record_id AS bookingSlotRecordId,
+            slot_template_id AS slotTemplateId,
+            status,
+            booking_date AS bookingDate,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_booking_slot_record
+        WHERE slot_template_id = #{slotTemplateId}
+          AND DATE(booking_date) = #{bookingDate}
+        LIMIT 1
+    </select>
+
+    <!-- 查询指定场地和日期的所有槽位记录 -->
+    <select id="selectByCourtIdAndDate" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord">
+        SELECT
+            vbsr.booking_slot_record_id AS bookingSlotRecordId,
+            vbsr.slot_template_id AS slotTemplateId,
+            vbsr.status,
+            vbsr.booking_date AS bookingDate,
+            vbsr.created_at AS createdAt,
+            vbsr.updated_at AS updatedAt
+        FROM venue_booking_slot_record vbsr
+        INNER JOIN venue_booking_slot_template vbst
+            ON vbsr.slot_template_id = vbst.booking_slot_template_id
+        WHERE vbst.court_id = #{courtId}
+          AND DATE(vbsr.booking_date) = #{bookingDate}
+        ORDER BY vbst.start_time ASC
+    </select>
+
+    <!-- 查询指定槽位模板列表和日期的记录 -->
+    <select id="selectByTemplateIdsAndDate" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord">
+        SELECT
+            booking_slot_record_id AS bookingSlotRecordId,
+            slot_template_id AS slotTemplateId,
+            status,
+            booking_date AS bookingDate,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_booking_slot_record
+        WHERE slot_template_id IN
+        <foreach collection="slotTemplateIds" item="templateId" open="(" separator="," close=")">
+            #{templateId}
+        </foreach>
+          AND DATE(booking_date) = #{bookingDate}
+    </select>
+
+    <!-- 批量查询指定场地列表在指定日期被占用的槽位记录 -->
+    <!-- 只查询 status=2(LOCKED_IN) 或 3(EXPIRED) 的记录，status=1(AVAILABLE) 的记录视为未被占用 -->
+    <select id="selectByCourtIdsAndDate" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord">
+        SELECT
+            vbsr.booking_slot_record_id AS bookingSlotRecordId,
+            vbsr.slot_template_id AS slotTemplateId,
+            vbsr.status,
+            vbsr.booking_date AS bookingDate,
+            vbsr.operator_id AS operatorId,
+            vbsr.created_at AS createdAt,
+            vbsr.updated_at AS updatedAt
+        FROM venue_booking_slot_record vbsr
+        INNER JOIN venue_booking_slot_template vbst
+            ON vbsr.slot_template_id = vbst.booking_slot_template_id
+        WHERE vbst.court_id IN
+        <foreach collection="courtIds" item="courtId" open="(" separator="," close=")">
+            #{courtId}
+        </foreach>
+          AND DATE(vbsr.booking_date) = #{bookingDate}
+          AND vbsr.status IN (2, 3)
+        ORDER BY vbst.court_id ASC, vbst.start_time ASC
+    </select>
+
+    <!-- 查询在指定时间段内没有可用场地的场馆ID列表 -->
+    <!-- 逻辑：
+         1. 场馆没有任何槽位模板 -> 不可用（过滤掉）
+         2. 场馆有槽位模板，但所有相关槽位都被占用 -> 不可用（过滤掉）
+         3. 场馆有槽位模板，至少有一个槽位可用（无记录或状态=1 AVAILABLE） -> 可用（保留）
+
+         用户需求：指定时间段（如12:00-14:00），只要有任何一个半小时时间段可用即可
+    -->
+    <select id="selectUnavailableVenueIds" resultType="java.lang.Long">
+        SELECT v.venue_id
+        FROM venues v
+        WHERE v.status = 1
+        <if test="venueIds != null and venueIds.size() > 0">
+            AND v.venue_id IN
+            <foreach collection="venueIds" item="venueId" open="(" separator="," close=")">
+                #{venueId}
+            </foreach>
+        </if>
+        AND NOT EXISTS (
+            <!-- 该场馆至少有一个场地在该时间段有可用槽位 -->
+            SELECT 1
+            FROM courts c
+            INNER JOIN venue_booking_slot_template vbst
+                ON c.court_id = vbst.court_id
+                AND vbst.start_time &lt; #{endTime}
+                AND vbst.end_time &gt; #{startTime}
+            LEFT JOIN venue_booking_slot_record vbsr
+                ON vbst.booking_slot_template_id = vbsr.slot_template_id
+                AND vbsr.booking_date = #{bookingDate}
+            WHERE c.venue_id = v.venue_id
+              AND c.status = 1
+              AND (vbsr.booking_slot_record_id IS NULL OR vbsr.status = 1)  <!-- 无记录或状态为AVAILABLE(1) -->
+        )
+    </select>
+
+</mapper>

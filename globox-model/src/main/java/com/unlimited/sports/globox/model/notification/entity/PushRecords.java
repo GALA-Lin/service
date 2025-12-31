@@ -12,6 +12,7 @@ import lombok.*;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 /**
  * 推送记录表，用于追踪和统计
@@ -30,16 +31,19 @@ public class PushRecords  implements Serializable {
     /**
      * MQ消息ID，用于去重
      */
+    @TableField("notification_id")
     private String notificationId;
 
     /**
      * 一级分类（业务模块）：1=预约场地, 2=教练预定, 3=约球, 4=社交, 5=系统
      */
+    @TableField("notification_module")
     private Integer notificationModule;
 
     /**
      * 二级分类（用户角色）：1=消费者, 2=商家, 3=教练, 4=发起人, 5=参与者
      */
+    @TableField("user_role")
     private Integer userRole;
 
     /**
@@ -48,33 +52,33 @@ public class PushRecords  implements Serializable {
     private String eventType;
 
     /**
-     * 完整分类编码，格式：模块.角色.事件，如VENUE_BOOKING.CONSUMER.ORDER_CONFIRMED
-     */
-    private String messageType;
-
-    /**
      * 业务ID，如订单ID、预约ID、帖子ID
      */
+    @TableField("business_id")
     private String businessId;
 
     /**
      * 接收用户ID
      */
+    @TableField("user_id")
     private Long userId;
 
     /**
      * 用户类型：1=消费者, 2=商家, 3=教练
      */
+    @TableField("user_type")
     private Integer userType;
 
     /**
      * 设备ID
      */
+    @TableField("device_id")
     private String deviceId;
 
     /**
      * 推送凭证(registrationId)
      */
+    @TableField("device_token")
     private String deviceToken;
 
     /**
@@ -90,13 +94,14 @@ public class PushRecords  implements Serializable {
     /**
      * deeplink，如tennis://order/order_001
      */
+    @TableField("action_url")
     private String action;
 
     /**
      * 自定义扩展数据（JSON格式）
      */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private java.util.Map<String, Object> customData;
+    @TableField(value = "custom_data", typeHandler = JacksonTypeHandler.class)
+    private Map<String, Object> customData;
 
     /**
      * 推送状态：0=待发送, 1=已发送, 2=已送达, 3=失败, 4=已过滤
@@ -106,28 +111,33 @@ public class PushRecords  implements Serializable {
     /**
      * 腾讯云任务ID
      */
+    @TableField("tencent_task_id")
     private String tencentTaskId;
 
     /**
      * 腾讯云错误码
      */
+    @TableField("error_code")
     private String errorCode;
 
     /**
      * 错误信息
      */
+    @TableField("error_msg")
     private String errorMsg;
 
     /**
      * 点击时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @TableField("clicked_at")
     private LocalDateTime clickedAt;
 
     /**
      * 实际发送时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @TableField("send_at")
     private LocalDateTime sentAt;
 
 

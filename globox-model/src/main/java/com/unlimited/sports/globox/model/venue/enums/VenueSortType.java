@@ -2,6 +2,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 场馆搜索排序类型枚举 V2
  * 用于MySQL搜索场景
@@ -46,15 +48,10 @@ public enum VenueSortType {
      * @return 对应的枚举，如果不存在则返回null
      */
     public static VenueSortType fromCode(String code) {
-        if (code == null) {
-            return null;
-        }
-        for (VenueSortType type : values()) {
-            if (type.getCode().equals(code)) {
-                return type;
-            }
-        }
-        return null;
+        return code == null ? null : Arrays.stream(values())
+                .filter(type -> type.getCode().equals(code))
+                .findFirst()
+                .orElse(null);
     }
 
     /**

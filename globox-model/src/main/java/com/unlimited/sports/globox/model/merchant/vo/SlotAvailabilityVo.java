@@ -73,4 +73,54 @@ public class SlotAvailabilityVo {
      */
     private String orderId;
 
+    /**
+     * 快速构建可用时段
+     */
+    public static SlotAvailabilityVo available(Long recordId, Long templateId,
+                                               LocalTime startTime, LocalTime endTime,
+                                               BigDecimal price) {
+        return SlotAvailabilityVo.builder()
+                .bookingSlotId(recordId)
+                .templateId(templateId)
+                .startTime(startTime)
+                .endTime(endTime)
+                .available(true)
+                .price(price)
+                .status(1)
+                .statusRemark("可预订")
+                .build();
+    }
+
+    /**
+     * 快速构建不可用时段
+     */
+    public static SlotAvailabilityVo unavailable(Long recordId, Long templateId,
+                                                 LocalTime startTime, LocalTime endTime,
+                                                 String reason) {
+        return SlotAvailabilityVo.builder()
+                .bookingSlotId(recordId)
+                .templateId(templateId)
+                .startTime(startTime)
+                .endTime(endTime)
+                .available(false)
+                .price(BigDecimal.ZERO)
+                .status(3)
+                .statusRemark(reason)
+                .build();
+    }
+
+    /**
+     * 快速构建未开放时段
+     */
+    public static SlotAvailabilityVo notGenerated(Long templateId,
+                                                  LocalTime startTime, LocalTime endTime) {
+        return SlotAvailabilityVo.builder()
+                .templateId(templateId)
+                .startTime(startTime)
+                .endTime(endTime)
+                .available(false)
+                .price(BigDecimal.ZERO)
+                .statusRemark("未开放")
+                .build();
+    }
 }

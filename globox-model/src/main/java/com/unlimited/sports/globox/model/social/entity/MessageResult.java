@@ -17,6 +17,8 @@ public enum MessageResult {
     MESSAGE_AS_READ_OK("设置已读成功"),
     NOT_PERMISSION_TO_DELETE_OTHERS_MESSAGES("无权删除他人消息"),
     MESSAGE_DELETE_SUCCESS("消息删除成功"),
+    MESSAGE_DELETE_FAILURE("消息删除失败"),
+    NOT_PERMISSION_TO_SELF("不能给自己发送消息"),
     MESSAGE_IMPORT_SUCCESS("导入成功");
     private final String message;
     MessageResult(String message) {

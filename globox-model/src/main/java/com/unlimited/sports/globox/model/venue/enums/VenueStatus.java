@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.model.venue.enums;
 
+import java.util.Arrays;
+
 public enum VenueStatus {
     SUSPENDED(0, "暂停营业"),
     NORMAL(1, "正常营业");
@@ -21,11 +23,9 @@ public enum VenueStatus {
     }
 
     public static VenueStatus fromValue(int value) {
-        for (VenueStatus status : values()) {
-            if (status.value == value) {
-                return status;
-            }
-        }
-        throw new IllegalArgumentException("Unknown VenueStatus value: " + value);
+        return Arrays.stream(values())
+                .filter(status -> status.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

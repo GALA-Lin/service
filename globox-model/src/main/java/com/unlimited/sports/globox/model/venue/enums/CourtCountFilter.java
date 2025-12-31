@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 场地片数筛选枚举
  * 用于在搜索时根据场地数量进行筛选
@@ -26,11 +28,9 @@ public enum CourtCountFilter {
 
 
     public static CourtCountFilter fromValue(int value) {
-        for (CourtCountFilter filter : values()) {
-            if (filter.value == value) {
-                return filter;
-            }
-        }
-        throw new IllegalArgumentException("Unknown CourtCountFilter value: " + value);
+        return Arrays.stream(values())
+                .filter(filter -> filter.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

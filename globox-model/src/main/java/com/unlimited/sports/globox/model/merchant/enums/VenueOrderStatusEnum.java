@@ -19,7 +19,7 @@ public enum VenueOrderStatusEnum {
     private final Integer code;
     private final String name;
     private final String desc;
-    
+
     public static VenueOrderStatusEnum getByCode(Integer code) {
         for (VenueOrderStatusEnum status : values()) {
             if (status.getCode().equals(code)) {

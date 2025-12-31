@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.model.venue.enums;
 
+import java.util.Arrays;
+
 public enum RuleType {
     REGULAR(1, "常规营业时间"),
     SPECIAL_DATE(2, "特殊日期"),
@@ -22,11 +24,9 @@ public enum RuleType {
     }
 
     public static RuleType fromValue(int value) {
-        for (RuleType type : values()) {
-            if (type.value == value) {
-                return type;
-            }
-        }
-        throw new IllegalArgumentException("Unknown RuleType value: " + value);
+        return Arrays.stream(values())
+                .filter(type -> type.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

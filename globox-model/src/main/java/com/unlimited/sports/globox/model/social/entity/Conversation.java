@@ -45,17 +45,27 @@ public class Conversation implements Serializable {
     private Long receiveUserId;
 
     /**
-     * 会话名称
+     * 会话名称(发送方展示)
      */
-    @TableField("conversation_name")
-    private String conversationName;
+    @TableField("conversation_name_sender")
+    private String conversationNameSender;
 
     /**
-     * 会话头像
+     * 会话头像(发送方展示)
      */
-    @TableField("conversation_avatar")
-    private String conversationAvatar;
+    @TableField("conversation_avatar_sender")
+    private String conversationAvatarSender;
+    /**
+     * 会话名称(接收方展示)
+     */
+    @TableField("conversation_name_receiver")
+    private String conversationNameReceiver;
 
+    /**
+     * 会话头像(接收方展示)
+     */
+    @TableField("conversation_avatar_receiver")
+    private String conversationAvatarReceiver;
     /**
      * 最后一条消息ID
      */

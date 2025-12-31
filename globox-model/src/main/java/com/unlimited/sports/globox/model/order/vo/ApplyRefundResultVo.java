@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.order.vo;
 
 import com.unlimited.sports.globox.common.enums.order.ApplyRefundStatusEnum;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Data;
 
@@ -14,29 +15,36 @@ import java.time.LocalDateTime;
  */
 @Data
 @Builder
+@Schema(name = "ApplyRefundResultVo", description = "退款申请结果返回对象")
 public class ApplyRefundResultVo implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * 订单号
      */
     @NotNull
+    @Schema(description = "订单号", example = "202512180001")
     private Long orderNo;
 
     /**
      * 退款申请ID
      */
     @NotNull
+    @Schema(description = "退款申请ID", example = "10086")
     private Long refundApplyId;
 
     /**
-     * 当前订单状态
+     * 当前退款申请状态
      */
     @NotNull
+    @Schema(description = "退款申请状态", example = "APPLIED")
     private ApplyRefundStatusEnum applyStatus;
 
     /**
      * 申请时间
      */
     @NotNull
+    @Schema(description = "退款申请时间", example = "2025-12-18T14:30:00")
     private LocalDateTime appliedAt;
 }

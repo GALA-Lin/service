@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.model.venue.enums;
 
+import java.util.Arrays;
+
 public enum CourtType {
     INDOOR(1, "室内"),
     OUTDOOR(2, "室外"),
@@ -23,11 +25,9 @@ public enum CourtType {
     }
 
     public static CourtType fromValue(int value) {
-        for (CourtType type : values()) {
-            if (type.value == value) {
-                return type;
-            }
-        }
-        throw new IllegalArgumentException("Unknown CourtType value: " + value);
+        return Arrays.stream(values())
+                .filter(type -> type.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

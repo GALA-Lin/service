@@ -4,6 +4,8 @@ package com.unlimited.sports.globox.model.venue.enums;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+
 @AllArgsConstructor
 @Getter
 public enum CourtStatus {
@@ -19,11 +21,9 @@ public enum CourtStatus {
 
 
     public static CourtStatus fromValue(int value) {
-        for (CourtStatus status : values()) {
-            if (status.value == value) {
-                return status;
-            }
-        }
-        throw new IllegalArgumentException("Unknown CourtStatus value: " + value);
+        return Arrays.stream(values())
+                .filter(status -> status.value == value)
+                .findFirst()
+                .orElse(null);
     }
 }

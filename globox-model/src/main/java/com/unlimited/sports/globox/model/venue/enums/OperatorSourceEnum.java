@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.annotation.EnumValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+
 /**
  * 操作人来源枚举
  * 记录槽位操作的来源系统
@@ -30,14 +32,9 @@ public enum OperatorSourceEnum {
      * 根据code获取枚举
      */
     public static OperatorSourceEnum fromCode(Integer code) {
-        if (code == null) {
-            return null;
-        }
-        for (OperatorSourceEnum source : values()) {
-            if (source.code.equals(code)) {
-                return source;
-            }
-        }
-        throw new IllegalArgumentException("未知的操作来源: " + code);
+        return code == null ? null : Arrays.stream(values())
+                .filter(source -> source.code.equals(code))
+                .findFirst()
+                .orElse(null);
     }
 }

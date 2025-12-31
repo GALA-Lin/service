@@ -25,7 +25,7 @@ public class BookingSlotVo {
      * - slotType=2时：为activityId（活动ID）
      */
     @NonNull
-    private Long slotId;
+    private Long bookingSlotId;
 
     /**
      * 槽位时间（无论普通还是活动都需要）

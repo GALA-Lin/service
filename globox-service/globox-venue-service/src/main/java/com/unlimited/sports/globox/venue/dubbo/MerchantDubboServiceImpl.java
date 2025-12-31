@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.venue.dubbo;
 
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
@@ -15,9 +16,16 @@ import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.lock.RedisDistributedLock;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplate;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplateMapper;
+import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
+import com.unlimited.sports.globox.venue.mapper.ActivityTypeMapper;
+import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
 import com.unlimited.sports.globox.venue.service.IVenueBookingSlotRecordService;
+import com.unlimited.sports.globox.venue.service.IVenueActivityService;
+import com.unlimited.sports.globox.venue.service.IVenueActivityParticipantService;
 import com.unlimited.sports.globox.venue.service.VenuePriceService;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.common.utils.DistanceUtils;
 import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
@@ -32,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -75,6 +84,15 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     @Autowired
     private VenueFacilityRelationMapper venueFacilityRelationMapper;
 
+    @Autowired
+    private VenueActivityMapper venueActivityMapper;
+
+    @Autowired
+    private ActivityTypeMapper activityTypeMapper;
+
+    @Autowired
+    private IVenueActivityParticipantService participantService;
+
     @Value("${default_image.venue_cover}")
     private String defaultVenueCoverImage;
 
@@ -85,18 +103,18 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
         try {
             if (dto == null || dto.getSlotIds() == null || dto.getSlotIds().isEmpty()) {
                 log.warn("请求参数不合法");
-                return buildErrorResult("预订槽位信息不能为空");
+                return buildErrorResult("预订槽位信息不能为空", null);
             }
             List<VenueBookingSlotTemplate> templates = slotTemplateMapper.selectBatchIds(dto.getSlotIds());
             if (templates.size() != dto.getSlotIds().size()) {
                 log.warn("部分槽位模板不存在 - 请求{}个，找到{}个", dto.getSlotIds().size(), templates.size());
-                return buildErrorResult("部分槽位不存在");
+                return buildErrorResult("部分槽位不存在", dto.getBookingDate());
             }
 
             List<VenueBookingSlotTemplate> availableTemplates = validateAndGetSlots(dto.getSlotIds(), dto.getBookingDate());
             if (availableTemplates.size() != dto.getSlotIds().size()) {
                 log.warn("部分槽位不可用 - 请求{}个，可用{}个", dto.getSlotIds().size(), availableTemplates.size());
-                return buildErrorResult("部分槽位不可用或已被占用，请重新选择");
+                return buildErrorResult("部分槽位不可用或已被占用，请重新选择", dto.getBookingDate());
             }
 
             templates = availableTemplates;
@@ -109,19 +127,19 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             List<Court> courts = courtMapper.selectBatchIds(courtIds);
             if (courts.isEmpty()) {
                 log.warn("场地不存在: courtIds={}", courtIds);
-                return buildErrorResult("场地信息不存在");
+                return buildErrorResult("场地信息不存在", dto.getBookingDate());
             }
             Long venueId = courts.get(0).getVenueId();
             boolean allSameVenue = courts.stream()
                     .allMatch(court -> court.getVenueId().equals(venueId));
             if (!allSameVenue) {
                 log.warn("所选槽位来自不同场馆，不允许 - userId: {}", dto.getUserId());
-                return buildErrorResult("所选槽位必须来自同一场馆");
+                return buildErrorResult("所选槽位必须来自同一场馆", dto.getBookingDate());
             }
             Venue venue = venueMapper.selectById(venueId);
             if (venue == null) {
                 log.warn("场馆不存在: venueId={}", venueId);
-                return buildErrorResult("场馆信息不存在");
+                return buildErrorResult("场馆信息不存在", dto.getBookingDate());
             }
 
             Map<Long, String> courtNameMap = courts.stream()
@@ -132,41 +150,50 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
                     .map(slotId -> buildLockKey(slotId, dto.getBookingDate()))
                     .collect(Collectors.toList());
 
-            List<RLock> locks = null;
+            RLock multiLock = null;
 
             try {
-                // 利用Redisson内置重试机制
-                locks = redisDistributedLock.tryLockMultiple(lockKeys, 2, 10, TimeUnit.SECONDS);
-                if (locks == null) {
+                // 使用Redisson MultiLock批量获取所有槽位的锁
+                // waitTime=1秒：等待锁的超时时间
+                // leaseTime=30秒：锁的持有时间，确保在业务逻辑执行期间保持有效
+                multiLock = redisDistributedLock.tryLockMultiple(lockKeys, 1, 30, TimeUnit.SECONDS);
+                if (multiLock == null) {
                     log.warn("获取分布式锁失败 - userId: {}, slotTemplateIds: {}", dto.getUserId(), dto.getSlotIds());
-                    return buildErrorResult("槽位正在被其他用户预订，请稍后重试");
+                    return buildErrorResult("槽位正在被其他用户预订，请稍后重试", dto.getBookingDate());
                 }
-                log.debug("成功获取分布式锁 - userId: {}, 锁数: {}", dto.getUserId(), locks.size());
+                log.debug("成功获取分布式锁（MultiLock） - userId: {}, 槽位数: {}", dto.getUserId(), dto.getSlotIds().size());
 
                 // 二次验证
                 List<VenueBookingSlotTemplate> finalTemplates = validateAndGetSlots(dto.getSlotIds(), dto.getBookingDate());
                 if (finalTemplates.size() != dto.getSlotIds().size()) {
                     log.warn("锁内二次验证失败 - 槽位已被其他用户占用");
-                    return buildErrorResult("槽位已被其他用户抢先预订，请重新选择");
+                    return buildErrorResult("槽位已被其他用户抢先预订，请重新选择", dto.getBookingDate());
                 }
-                lockBookingSlots(finalTemplates, dto.getUserId(), dto.getBookingDate());
+
+                // 原子性地更新槽位状态，防止超卖
+                List<Long> recordIds = lockBookingSlots(finalTemplates, dto.getUserId(), dto.getBookingDate());
+                if (recordIds == null) {
+                    // lockBookingSlots返回null表示槽位已被其他用户占用（UPDATE失败）
+                    log.warn("占用槽位失败 - 槽位已被其他用户占用 userId: {}", dto.getUserId());
+                    return buildErrorResult("槽位已被其他用户占用，请重新选择", dto.getBookingDate());
+                }
+                log.debug("槽位占用成功，recordIds: {}", recordIds);
 
             } finally {
-                if (locks != null) {
-                    redisDistributedLock.unlockMultiple(locks);
-                    log.info("释放分布式锁 - userId: {}, 锁数: {}", dto.getUserId(), locks.size());
+                if (multiLock != null) {
+                    redisDistributedLock.unlockMultiple(multiLock);
+                    log.info("释放分布式锁 - userId: {}", dto.getUserId());
                 }
-
             }
             //  获取并验证价格模板
             VenuePriceTemplate priceTemplate = venuePriceTemplateMapper.selectById(venue.getTemplateId());
             if (priceTemplate == null) {
                 log.warn("价格模板不存在: templateId={}", venue.getTemplateId());
-                return buildErrorResult("场馆价格模板未配置");
+                return buildErrorResult("场馆价格模板未配置", dto.getBookingDate());
             }
             if (!priceTemplate.getIsEnabled()) {
                 log.warn("价格模板未启用: templateId={}", priceTemplate.getTemplateId());
-                return buildErrorResult("场馆价格模板未启用");
+                return buildErrorResult("场馆价格模板未启用", dto.getBookingDate());
             }
 
             // 计算槽位价格
@@ -179,7 +206,7 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             );
             if (recordQuotes.isEmpty()) {
                 log.warn("无法计算任何槽位的价格");
-                return buildErrorResult("无法计算槽位价格");
+                return buildErrorResult("无法计算槽位价格", dto.getBookingDate());
             }
 
             BigDecimal totalBasePrice = recordQuotes.stream()
@@ -201,16 +228,108 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
                     .sourcePlatform(venue.getVenueType())
                     .sellerName(venue.getName())
                     .sellerId(venueId)
+                    .bookingDate(dto.getBookingDate())
                     .build();
 
         } catch (Exception e) {
-            return buildErrorResult("订场失败: " + e.getMessage());
+            LocalDate bookingDate = (dto != null) ? dto.getBookingDate() : null;
+            return buildErrorResult("订场失败: " + e.getMessage(), bookingDate);
         }
     }
 
     @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PricingActivityResultDto quoteVenueActivity(PricingActivityRequestDto dto) {
-        return null;
+        try {
+            // 参数验证
+            if (dto == null || dto.getActivityId() == null || dto.getUserId() == null) {
+                log.warn("活动报名请求参数不合法");
+                return buildActivityErrorResult("活动ID和用户ID不能为空", null);
+            }
+
+            // 查询活动详情
+            VenueActivity activity = venueActivityMapper.selectById(dto.getActivityId());
+            if (activity == null) {
+                log.warn("活动不存在 - activityId={}", dto.getActivityId());
+                return buildActivityErrorResult("活动不存在", null);
+            }
+
+            // 验证活动是否有效（报名期限未到期）
+            LocalDateTime now = LocalDateTime.now();
+            if (activity.getRegistrationDeadline() != null && now.isAfter(activity.getRegistrationDeadline())) {
+                log.warn("活动报名已截止 - activityId={}", dto.getActivityId());
+                return buildActivityErrorResult("活动报名已截止", activity.getActivityDate());
+            }
+
+            // 查询场馆和场地信息
+            Venue venue = venueMapper.selectById(activity.getVenueId());
+            if (venue == null) {
+                log.warn("场馆不存在 - venueId={}", activity.getVenueId());
+                return buildActivityErrorResult("场馆信息不存在", activity.getActivityDate());
+            }
+
+            Court court = courtMapper.selectById(activity.getCourtId());
+            if (court == null) {
+                log.warn("场地不存在 - courtId={}", activity.getCourtId());
+                return buildActivityErrorResult("场地信息不存在", activity.getActivityDate());
+            }
+
+            // 执行用户报名（原子操作，防止超卖）
+            VenueActivityParticipant participant = participantService.registerUserToActivity(
+                    dto.getActivityId(),
+                    dto.getUserId()
+            );
+            log.info("用户活动报名成功 - activityId: {}, userId: {}, participantId: {}",
+                    dto.getActivityId(), dto.getUserId(), participant.getParticipantId());
+
+            // 获取活动类型信息
+            ActivityType activityType = null;
+            String activityTypeCode = null;
+            if (activity.getActivityTypeId() != null) {
+                activityType = activityTypeMapper.selectById(activity.getActivityTypeId());
+                if (activityType != null) {
+                    activityTypeCode = activityType.getTypeCode();
+                }
+            }
+
+            // 构建活动价格信息
+            RecordQuote activityQuote = RecordQuote.builder()
+                    .recordId(activity.getActivityId())
+                    .courtId(activity.getCourtId())
+                    .courtName(court.getName())
+                    .bookingDate(activity.getActivityDate())
+                    .startTime(activity.getStartTime())
+                    .endTime(activity.getEndTime())
+                    .unitPrice(activity.getUnitPrice() != null ? activity.getUnitPrice() : BigDecimal.ZERO)
+                    .recordExtras(Collections.emptyList())
+                    .build();
+
+            // 构建返回结果
+            return PricingActivityResultDto.builder()
+                    .recordQuote(Collections.singletonList(activityQuote))
+                    .orderLevelExtras(Collections.emptyList())
+                    .sourcePlatform(venue.getVenueType())
+                    .sellerName(venue.getName())
+                    .sellerId(activity.getVenueId())
+                    .bookingDate(activity.getActivityDate())
+                    .activityId(activity.getActivityId())
+                    .activityTypeCode(activityTypeCode)
+                    .activityTypeName(activity.getActivityTypeDesc())
+                    .build();
+
+        } catch (IllegalArgumentException e) {
+            log.warn("活动报名验证失败 - userId: {}, activityId: {}, message: {}",
+                    dto != null ? dto.getUserId() : null,
+                    dto != null ? dto.getActivityId() : null,
+                    e.getMessage());
+            LocalDate activityDate = (dto != null && dto.getActivityId() != null)
+                    ? venueActivityMapper.selectById(dto.getActivityId()).getActivityDate()
+                    : null;
+            return buildActivityErrorResult(e.getMessage(), activityDate);
+        } catch (Exception e) {
+            log.error("活动报名失败", e);
+            return buildActivityErrorResult("活动报名失败: " + e.getMessage(), null);
+        }
     }
 
     @Override
@@ -220,12 +339,12 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
         Venue venue = venueMapper.selectById(dto.getVenueId());
         if (venue == null) {
             log.warn("场馆不存在: venueId={}", dto.getVenueId());
-            throw new IllegalArgumentException("场馆信息不存在");
+            throw new GloboxApplicationException("场馆信息不存在");
         }
         //  查询场地信息
         List<Court> courts = courtMapper.selectBatchIds(dto.getCourtId());
         if (courts.isEmpty()) {
-            throw new IllegalArgumentException("场地信息不存在");
+            throw new GloboxApplicationException("场地信息不存在");
         }
 
         // 计算距离
@@ -343,12 +462,14 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     /**
      * 占用预订槽位
      * 将槽位状态改为LOCKED_IN，并记录操作人信息
+     *
+     * @return 返回占用的槽位记录ID列表
      */
-    private void lockBookingSlots(List<VenueBookingSlotTemplate> templates, Long userId, LocalDate bookingDate) {
+    private List<Long> lockBookingSlots(List<VenueBookingSlotTemplate> templates, Long userId, LocalDate bookingDate) {
         log.info("开始占用槽位 - userId: {}, 槽位数: {}", userId, templates.size());
 
         if (templates.isEmpty()) {
-            return;
+            return Collections.emptyList();
         }
 
         // 提取所有模板ID
@@ -401,13 +522,38 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             slotRecordService.saveBatch(toInsert);
         }
 
-        // 批量update
-        if (!toUpdate.isEmpty()) {
-            slotRecordService.updateBatchById(toUpdate);
+        // 批量update - 使用原子性更新，只有当前状态为AVAILABLE时才能更新
+        // 如果返回0表示槽位已被其他用户占用（超卖防护）
+        int successUpdateCount = 0;
+        for (VenueBookingSlotRecord record : toUpdate) {
+            int affectedRows = slotRecordMapper.updateStatusIfAvailable(
+                    record.getBookingSlotRecordId(),
+                    BookingSlotStatus.LOCKED_IN.getValue(),
+                    userId
+            );
+            if (affectedRows == 0) {
+                // 该槽位已被其他用户占用，这不应该发生（因为有Redis锁）
+                // 但如果发生了，说明另一个用户的事务还没提交，等待片刻后重试或直接返回错误
+                log.warn("槽位已被其他用户占用 - recordId: {}, slotTemplateId: {}",
+                        record.getBookingSlotRecordId(), record.getSlotTemplateId());
+                return null;  // 返回null表示占用失败
+            }
+            successUpdateCount++;
         }
 
-        log.info("槽位占用完成 - userId: {}, 槽位数: {}, 新增: {}, 更新: {}", userId, templates.size(),
-                toInsert.size(), toUpdate.size());
+        // 收集所有记录ID
+        List<Long> recordIds = new ArrayList<>();
+        recordIds.addAll(toInsert.stream()
+                .map(VenueBookingSlotRecord::getBookingSlotRecordId)
+                .toList());
+        recordIds.addAll(toUpdate.stream()
+                .map(VenueBookingSlotRecord::getBookingSlotRecordId)
+                .toList());
+
+        log.info("槽位占用完成 - userId: {}, 槽位数: {}, 新增: {}, 更新: {} (成功: {}), recordIds: {}", userId, templates.size(),
+                toInsert.size(), toUpdate.size(), successUpdateCount, recordIds);
+
+        return recordIds;
     }
 
     /**
@@ -418,9 +564,33 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     }
 
     /**
-     * 构建错误结果
+     * 构建活动查询错误结果
+     *
+     * @param message 错误消息
+     * @param activityDate 活动日期
      */
-    private PricingResultDto buildErrorResult(String message) {
+    private PricingActivityResultDto buildActivityErrorResult(String message, LocalDate activityDate) {
+        log.error("活动查询失败: {}", message);
+        return PricingActivityResultDto.builder()
+                .recordQuote(Collections.emptyList())
+                .orderLevelExtras(Collections.emptyList())
+                .sellerName("")
+                .sellerId(0L)
+                .sourcePlatform(1)
+                .bookingDate(activityDate)
+                .activityId(null)
+                .activityTypeCode(null)
+                .activityTypeName("")
+                .build();
+    }
+
+    /**
+     * 构建错误结果
+     *
+     * @param message 错误消息
+     * @param bookingDate 预订日期
+     */
+    private PricingResultDto buildErrorResult(String message, LocalDate bookingDate) {
         log.error("价格查询失败: {}", message);
         return PricingResultDto.builder()
                 .recordQuote(Collections.emptyList())
@@ -428,6 +598,7 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
                 .sellerName("")
                 .sellerId(0L)
                 .sourcePlatform(1)
+                .bookingDate(bookingDate)
                 .build();
     }
 }

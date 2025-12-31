@@ -2,15 +2,15 @@ package com.unlimited.sports.globox.notification.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.unlimited.sports.globox.model.notification.dto.NotificationMessage;
+import com.unlimited.sports.globox.common.message.notification.NotificationMessage;
+import com.unlimited.sports.globox.model.notification.entity.DevicePushToken;
 import com.unlimited.sports.globox.model.notification.entity.NotificationTemplates;
 import com.unlimited.sports.globox.model.notification.entity.PushRecords;
-import com.unlimited.sports.globox.model.notification.entity.UserDevices;
-import com.unlimited.sports.globox.model.notification.enums.PushStatusEnum;
+import com.unlimited.sports.globox.common.enums.notification.PushStatusEnum;
 import com.unlimited.sports.globox.notification.client.TencentCloudClient;
 import com.unlimited.sports.globox.notification.mapper.NotificationTemplatesMapper;
 import com.unlimited.sports.globox.notification.mapper.PushRecordsMapper;
-import com.unlimited.sports.globox.notification.mapper.UserDevicesMapper;
+import com.unlimited.sports.globox.notification.service.IDeviceTokenService;
 import com.unlimited.sports.globox.notification.service.INotificationService;
 import com.unlimited.sports.globox.notification.util.TemplateRenderer;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +39,7 @@ public class NotificationServiceImpl implements INotificationService {
     private  PushRecordsMapper pushRecordsMapper;
 
     @Autowired
-    private  UserDevicesMapper userDevicesMapper;
+    private  IDeviceTokenService deviceTokenService;
 
 
 
@@ -133,22 +133,21 @@ public class NotificationServiceImpl implements INotificationService {
             Long userId = recipient.getUserId();
 
             try {
-                // 获取用户的最近活跃设备（单点登录，只有一个）
-                UserDevices device = getUserActiveDevice(userId);
+                // 获取用户的活跃设备列表（单点登录，应该只有一个）
+                List<DevicePushToken> devices = deviceTokenService.getActiveDeviceTokens(userId);
 
-                if (device == null) {
+                if (devices == null || devices.isEmpty()) {
                     log.warn("[批量推送] 用户无活跃设备: userId={}", userId);
-                    // 查询用户类型（从任意设备记录中获取）
-                    Integer userType = getUserType(userId);
                     recordFilteredPush(
                             messageId, messageType, userId, null, null,
                             renderedTitle, renderedContent, action, variables,
-                            PushStatusEnum.FILTERED, null, "用户无活跃设备", template, userType
+                            PushStatusEnum.FILTERED, null, "用户无活跃设备", template, 0
                     );
                     continue;
                 }
 
-                // 添加到批量推送列表
+                // 添加到批量推送列表（单点登录，取第一个设备）
+                DevicePushToken device = devices.get(0);
                 String deviceToken = device.getDeviceToken();
                 deviceTokens.add(deviceToken);
                 deviceInfoMap.put(deviceToken, new DevicePushInfo(userId, device.getDeviceId(), deviceToken, device.getUserType().getCode()));
@@ -219,38 +218,6 @@ public class NotificationServiceImpl implements INotificationService {
             this.deviceToken = deviceToken;
             this.userType = userType;
         }
-    }
-
-    /**
-     * 获取用户的最近活跃设备（单点登录，只返回最近一个）
-     * @return 最近活跃的设备，如果没有则返回null
-     */
-    private UserDevices getUserActiveDevice(Long userId) {
-        LambdaQueryWrapper<UserDevices> wrapper = Wrappers.lambdaQuery(UserDevices.class)
-                .eq(UserDevices::getUserId, userId)
-                .eq(UserDevices::getIsActive, true)
-                .eq(UserDevices::getPushEnabled, true)
-                .orderByDesc(UserDevices::getLastActiveAt)  // 按最近活跃时间降序
-                .last("LIMIT 1");  // 只取最近的一个设备
-
-        return userDevicesMapper.selectOne(wrapper);
-    }
-
-    /**
-     * 获取用户类型（从任意设备记录中获取）
-     * @return 用户类型code，如果没有设备则返回0
-     */
-    private Integer getUserType(Long userId) {
-        LambdaQueryWrapper<UserDevices> wrapper = Wrappers.lambdaQuery(UserDevices.class)
-                .eq(UserDevices::getUserId, userId)
-                .orderByDesc(UserDevices::getCreatedAt)
-                .last("LIMIT 1");
-
-        UserDevices device = userDevicesMapper.selectOne(wrapper);
-        if (device != null && device.getUserType() != null) {
-            return device.getUserType().getCode();
-        }
-        return 0;
     }
 
     /**

@@ -1,7 +1,7 @@
 package com.unlimited.sports.globox.notification.consumer;
 
 import com.unlimited.sports.globox.common.constants.NotificationMQConstants;
-import com.unlimited.sports.globox.model.notification.dto.NotificationMessage;
+import com.unlimited.sports.globox.common.message.notification.NotificationMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitHandler;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;

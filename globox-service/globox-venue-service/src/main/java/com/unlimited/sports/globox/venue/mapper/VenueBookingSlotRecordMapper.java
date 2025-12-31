@@ -80,6 +80,19 @@ public interface VenueBookingSlotRecordMapper extends BaseMapper<VenueBookingSlo
             @Param("endTime") LocalTime endTime
     );
 
-
+    /**
+     * 原子性地更新槽位状态（只有当前状态为available时才能更新）
+     * 返回受影响的行数，0表示该槽位已被其他用户占用
+     *
+     * @param recordId 记录ID
+     * @param newStatus 新状态
+     * @param userId 操作人ID
+     * @return 受影响的行数
+     */
+    int updateStatusIfAvailable(
+            @Param("recordId") Long recordId,
+            @Param("newStatus") Integer newStatus,
+            @Param("userId") Long userId
+    );
 
 }

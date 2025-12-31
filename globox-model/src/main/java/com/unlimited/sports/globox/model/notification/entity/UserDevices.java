@@ -5,9 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.unlimited.sports.globox.model.notification.enums.DeviceOsEnum;
-import com.unlimited.sports.globox.model.notification.enums.UserTypeEnum;
-import com.unlimited.sports.globox.model.base.BaseEntity;
+import com.unlimited.sports.globox.common.enums.user.DeviceOsEnum;
+import com.unlimited.sports.globox.common.enums.notification.PushUserTypeEnum;
 import lombok.*;
 
 import java.io.Serial;
@@ -42,7 +41,7 @@ public class UserDevices  implements Serializable {
      * 用户类型：CONSUMER(消费者), MERCHANT(商家), COACH(教练)
      */
     @TableField("user_type")
-    private UserTypeEnum userType;
+    private PushUserTypeEnum userType;
 
     /**
      * 设备唯一标识（硬件相关），用户换手机时会改变

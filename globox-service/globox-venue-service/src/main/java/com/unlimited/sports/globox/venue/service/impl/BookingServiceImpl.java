@@ -317,7 +317,7 @@ public class BookingServiceImpl implements IBookingService {
                 log.warn("活动信息不存在: activityId={}", activityId);
                 // 如果活动信息不存在，返回空的活动槽位VO
                 return BookingSlotVo.builder()
-                        .slotId(activityId)
+                        .bookingSlotId(activityId)
                         .slotType(SlotTypeEnum.ACTIVITY.getCode())
                         .startTime(template.getStartTime())
                         .endTime(template.getEndTime())
@@ -355,7 +355,7 @@ public class BookingServiceImpl implements IBookingService {
         Boolean isMyBooking = record != null && record.getOperatorId() != null && record.getOperatorId().equals(userId);
 
         return BookingSlotVo.builder()
-                .slotId(slotId)
+                .bookingSlotId(slotId)
                 .slotType(SlotTypeEnum.NORMAL.getCode())
                 .startTime(template.getStartTime())
                 .endTime(template.getEndTime())
@@ -378,7 +378,7 @@ public class BookingServiceImpl implements IBookingService {
      */
     private BookingSlotVo buildActivitySlotVo(VenueActivity activity) {
         return BookingSlotVo.builder()
-                .slotId(activity.getActivityId())
+                .bookingSlotId(activity.getActivityId())
                 .slotType(SlotTypeEnum.ACTIVITY.getCode())
                 .startTime(activity.getStartTime())  // 活动的实际开始时间
                 .endTime(activity.getEndTime())      // 活动的实际结束时间

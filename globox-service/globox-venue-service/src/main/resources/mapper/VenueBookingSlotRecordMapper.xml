@@ -110,4 +110,15 @@
         )
     </select>
 
+    <!-- 原子性更新槽位状态（只有当前状态为AVAILABLE时才能更新） -->
+    <!-- 防止超卖：只有当前状态=1(AVAILABLE)时才能更新为指定的新状态 -->
+    <update id="updateStatusIfAvailable">
+        UPDATE venue_booking_slot_record
+        SET status = #{newStatus},
+            operator_id = #{userId},
+            updated_at = NOW()
+        WHERE booking_slot_record_id = #{recordId}
+          AND status = 1
+    </update>
+
 </mapper>

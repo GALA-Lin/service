@@ -21,6 +21,7 @@
         <module>globox-social-service</module>
         <module>globox-order-service</module>
         <module>globox-notification-service</module>
+        <module>globox-coach-service</module>
     </modules>
 
     <properties>

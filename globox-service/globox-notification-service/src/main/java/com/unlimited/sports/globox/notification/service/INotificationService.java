@@ -1,6 +1,6 @@
 package com.unlimited.sports.globox.notification.service;
 
-import com.unlimited.sports.globox.model.notification.dto.NotificationMessage;
+import com.unlimited.sports.globox.common.message.notification.NotificationMessage;
 import com.unlimited.sports.globox.model.notification.entity.PushRecords;
 
 import java.util.Map;

@@ -14,9 +14,8 @@ import javax.validation.constraints.NotNull;
 public class GetCoachReviewRepliesDto {
 
     /**
-     * 父评论ID
+     * 父评论ID（从路径参数获取，不需要前端在body中传）
      */
-    @NotNull(message = "评论ID不能为空")
     private Long parentReviewId;
 
     /**

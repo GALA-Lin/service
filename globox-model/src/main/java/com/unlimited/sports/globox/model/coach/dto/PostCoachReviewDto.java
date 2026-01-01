@@ -12,13 +12,13 @@ import java.util.List;
 public class PostCoachReviewDto {
 
     /**
-     * 订单ID
+     * 订单ID（必填）
      */
     @NotNull(message = "订单ID不能为空")
     private Long coachBookingId;
 
     /**
-     * 教练用户ID
+     * 教练用户ID（必填）
      */
     @NotNull(message = "教练ID不能为空")
     private Long coachUserId;
@@ -29,12 +29,7 @@ public class PostCoachReviewDto {
     private Long userId;
 
     /**
-     * 父评论ID（回复时需要，发表评价时为null）
-     */
-    private Long parentReviewId;
-
-    /**
-     * 综合评分：1-5星（必填，仅学员评价时有效）
+     * 综合评分：1-5星（必填）
      */
     @NotNull(message = "综合评分不能为空")
     @Min(value = 1, message = "评分必须在1-5之间")
@@ -63,26 +58,26 @@ public class PostCoachReviewDto {
     private Integer attitudeRating;
 
     /**
-     * 评价内容
+     * 评价内容（必填）
      */
     @NotBlank(message = "评价内容不能为空")
     @Size(max = 1000, message = "评价内容不能超过1000字")
     private String reviewContent;
 
     /**
-     * 评价图片URL列表
+     * 评价图片URL列表（可选，最多9张）
      */
     @Size(max = 9, message = "最多上传9张图片")
     private List<String> reviewImages;
 
     /**
-     * 评价标签列表
+     * 评价标签列表（可选，最多10个）
      */
     @Size(max = 10, message = "最多选择10个标签")
     private List<String> reviewTags;
 
     /**
-     * 是否匿名：0-否，1-是
+     * 是否匿名（默认false）
      */
     private Boolean isAnonymous = false;
 }

@@ -8,6 +8,7 @@ import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachReviewListDto;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachReviewRepliesDto;
+import com.unlimited.sports.globox.model.coach.dto.PostCoachReplyDto;
 import com.unlimited.sports.globox.model.coach.dto.PostCoachReviewDto;
 import com.unlimited.sports.globox.model.coach.vo.CoachReviewVo;
 import lombok.extern.slf4j.Slf4j;
@@ -49,14 +50,21 @@ public class CoachReviewController {
      * 获取评价的回复列表
      *
      * @param reviewId 评价ID
-     * @param dto 查询条件
+     * @param page 页码（默认1）
+     * @param pageSize 每页大小（默认10）
      * @return 分页的回复列表
      */
     @GetMapping("/{reviewId}/replies")
     public R<PaginationResult<CoachReviewVo>> getReviewReplies(
             @PathVariable Long reviewId,
-            @Valid GetCoachReviewRepliesDto dto) {
+            @RequestParam(defaultValue = "1") Integer page,
+            @RequestParam(defaultValue = "10") Integer pageSize) {
+
+        GetCoachReviewRepliesDto dto = new GetCoachReviewRepliesDto();
         dto.setParentReviewId(reviewId);
+        dto.setPage(page);
+        dto.setPageSize(pageSize);
+
         PaginationResult<CoachReviewVo> result = coachReviewService.getReviewReplies(dto);
         return R.ok(result);
     }
@@ -98,7 +106,7 @@ public class CoachReviewController {
      */
     @PostMapping("/{reviewId}/reply")
     public R<Void> replyReview(@PathVariable Long reviewId,
-                               @Valid @RequestBody PostCoachReviewDto dto,
+                               @Valid @RequestBody PostCoachReplyDto dto,
                                HttpServletRequest request) {
         String userIdStr = request.getHeader(RequestHeaderConstants.HEADER_USER_ID);
         if (StringUtils.isBlank(userIdStr)) {

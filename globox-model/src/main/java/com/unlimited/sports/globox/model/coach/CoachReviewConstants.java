@@ -19,7 +19,7 @@ public class CoachReviewConstants {
     /**
      * 匿名/未知用户头像
      */
-    public static final String DEFAULT_CoachReviewUserAvatar = "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png";
+    public static final String DEFAULT_CoachReviewUserAvatar = "https://globox-dev-1386561970.cos.ap-chengdu.myqcloud.com/user-avatar/avatar/2026-01-01/avater.svg";
 
     /**
      * 评价图片最大数量

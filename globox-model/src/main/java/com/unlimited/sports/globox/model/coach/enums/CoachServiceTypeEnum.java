@@ -10,9 +10,10 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum CoachServiceTypeEnum {
-    ONE_ON_ONE(1, "一对一"),
-    ONE_ON_TWO(2, "一对二"),
-    SMALL_CLASS(3, "小班(3-6人)");
+    ONE_ON_ONE(1, "一对一教学"),
+    ONE_ON_THREE(2, "一对一陪练"),
+    ONE_ON_TWO(3, "一对二"),
+    SMALL_CLASS(4, "小班(3-6人)");
 
     private final Integer code;
     private final String description;

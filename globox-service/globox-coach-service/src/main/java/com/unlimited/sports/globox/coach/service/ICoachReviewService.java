@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.coach.service;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachReviewListDto;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachReviewRepliesDto;
+import com.unlimited.sports.globox.model.coach.dto.PostCoachReplyDto;
 import com.unlimited.sports.globox.model.coach.dto.PostCoachReviewDto;
 import com.unlimited.sports.globox.model.coach.vo.CoachReviewVo;
 import com.unlimited.sports.globox.model.venue.dto.GetReviewRepliesDto;
@@ -41,5 +42,5 @@ public interface ICoachReviewService {
      *
      * @param dto 回复内容
      */
-    void replyReview(PostCoachReviewDto dto);
+    void replyReview(PostCoachReplyDto dto);
 }

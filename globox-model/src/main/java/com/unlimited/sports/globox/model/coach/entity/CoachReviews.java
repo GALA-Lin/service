@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.coach.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,6 +10,8 @@ import lombok.NoArgsConstructor;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
+
 /**
  * @since 2025/12/29 11:57
  * 教练课程评价表
@@ -81,15 +84,14 @@ public class CoachReviews implements Serializable {
     /**
      * 评价图片URL数组
      */
-    @TableField(value = "review_images")
-    private String reviewImages;
+    @TableField(value = "review_images", typeHandler = JacksonTypeHandler.class)
+    private List<String> reviewImages;
 
     /**
      * 评价标签：["耐心","专业","准时"]
      */
-    @TableField(value = "review_tags")
-    private String reviewTags;
-
+    @TableField(value = "review_tags", typeHandler = JacksonTypeHandler.class)
+    private List<String> reviewTags;
     /**
      * 父评论ID（用于回复功能）
      */

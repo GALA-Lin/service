@@ -122,11 +122,10 @@ public class CoachServiceImpl implements ICoachService {
     public CoachDetailVo getCoachDetail(Long coachUserId, Double latitude, Double longitude) {
         log.info("获取教练详情 - coachUserId: {}", coachUserId);
 
-        // 查询教练档案
         CoachProfile profile = coachProfileMapper.selectOne(
                 new LambdaQueryWrapper<CoachProfile>()
                         .eq(CoachProfile::getCoachUserId, coachUserId)
-                        .eq(CoachProfile::getCoachStatus, 1) // 只查询正常接单状态的教练
+                        .eq(CoachProfile::getCoachStatus, 1)
         );
 
         if (profile == null) {
@@ -136,10 +135,14 @@ public class CoachServiceImpl implements ICoachService {
         // 查询用户基本信息
         BatchUserInfoRequest request = new BatchUserInfoRequest();
         request.setUserIds(Collections.singletonList(coachUserId));
+
+        log.info("查询教练用户信息 - coachUserId: {}", coachUserId);
+
         BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
 
-        if (response == null || response.getUsers().isEmpty()) {
-            throw new GloboxApplicationException("无法获取教练基本信息");
+        if (response == null || response.getUsers() == null || response.getUsers().isEmpty()) {
+            log.error("无法获取教练基本信息 - coachUserId: {}", coachUserId);
+            throw new GloboxApplicationException("无法获取教练基本信息，请联系用户服务管理员");
         }
 
         UserInfoVo userInfo = response.getUsers().get(0);
@@ -235,7 +238,6 @@ public class CoachServiceImpl implements ICoachService {
             return Collections.emptyList();
         }
 
-        // 提取所有教练用户ID
         List<Long> coachUserIds = searchResults.stream()
                 .map(result -> ((Number) result.get("coachUserId")).longValue())
                 .collect(Collectors.toList());
@@ -243,31 +245,55 @@ public class CoachServiceImpl implements ICoachService {
         // 批量查询用户基本信息
         BatchUserInfoRequest request = new BatchUserInfoRequest();
         request.setUserIds(coachUserIds);
+
+        // 添加日志
+        log.info("批量查询用户信息 - userIds: {}", coachUserIds);
+
         BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
 
-        Map<Long, UserInfoVo> userInfoMap = new HashMap<>();
-        if (response != null && response.getUsers() != null) {
-            userInfoMap = response.getUsers().stream()
-                    .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo));
+        // 添加日志和空值检查
+        if (response == null) {
+            log.warn("用户服务返回为空");
+            // 使用空Map避免NPE
+            Map<Long, UserInfoVo> emptyMap = new HashMap<>();
+            return buildCoachItemVos(searchResults, emptyMap);
         }
 
-        // 转换每一条结果
-        Map<Long, UserInfoVo> finalUserInfoMap = userInfoMap;
+        if (response.getUsers() == null || response.getUsers().isEmpty()) {
+            log.warn("用户服务返回的用户列表为空 - 请求的userIds: {}", coachUserIds);
+            Map<Long, UserInfoVo> emptyMap = new HashMap<>();
+            return buildCoachItemVos(searchResults, emptyMap);
+        }
+
+        Map<Long, UserInfoVo> userInfoMap = response.getUsers().stream()
+                .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo));
+
+        log.info("成功获取用户信息 - 数量: {}", userInfoMap.size());
+
+        return buildCoachItemVos(searchResults, userInfoMap);
+    }
+
+    // 提取构建逻辑
+    private List<CoachItemVo> buildCoachItemVos(List<Map<String, Object>> searchResults,
+                                                Map<Long, UserInfoVo> userInfoMap) {
         return searchResults.stream().map(result -> {
             Long coachUserId = ((Number) result.get("coachUserId")).longValue();
-            UserInfoVo userInfo = finalUserInfoMap.get(coachUserId);
+            UserInfoVo userInfo = userInfoMap.get(coachUserId);
 
-            // 解析资质标签
+            // 如果用户信息不存在，记录警告
+            if (userInfo == null) {
+                log.warn("教练用户信息缺失 - coachUserId: {}", coachUserId);
+            }
+
             String certificationLevelStr = (String) result.get("certificationLevel");
             List<String> certificationTags = parseJsonArray(certificationLevelStr);
 
-            // 距离（数据库已计算）
             BigDecimal distance = result.get("distance") != null
                     ? new BigDecimal(result.get("distance").toString())
                     : null;
 
             return CoachItemVo.builder()
-                    .coachUserInfo(userInfo)
+                    .coachUserInfo(userInfo)  // 可能为null，前端需要处理
                     .coachServiceArea((String) result.get("serviceArea"))
                     .coachTeachingYears(result.get("teachingYears") != null ?
                             ((Number) result.get("teachingYears")).intValue() : 0)

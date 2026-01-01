@@ -1,0 +1,8 @@
+server:
+  port: 12020
+
+spring:
+  application:
+    name: globox-gateway-server
+  profiles:
+    active: dev

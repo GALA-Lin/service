@@ -25,15 +25,12 @@ spring:
           - data-id: common-dubbo.yaml
             group: dev
             refresh: true
-          - data-id: common-jwt.yaml
-            group: dev
-            refresh: true
-          - data-id: common-sms.yaml
-            group: dev
-            refresh: true
-          - data-id: common-wechat.yaml
-            group: dev
-            refresh: true
           - data-id: common-tencentcos.yaml
+            group: dev
+            refresh: true
+          - data-id: common-xxljob.yaml
+            group: dev
+            refresh: true
+          - data-id: common-rabbitmq.yaml
             group: dev
             refresh: true

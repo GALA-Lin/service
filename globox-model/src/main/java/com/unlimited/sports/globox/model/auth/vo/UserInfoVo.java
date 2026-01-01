@@ -1,7 +1,10 @@
 package com.unlimited.sports.globox.model.auth.vo;
 
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -14,6 +17,9 @@ import java.io.Serializable;
  * @since 2025/12/20
  */
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class UserInfoVo implements Serializable {
 
     @Serial

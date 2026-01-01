@@ -7,8 +7,8 @@ import javax.validation.constraints.Min;
 
 /**
  * @since 2025/12/31 11:02
- *
- */ // ============= 查询退款规则 DTO =============
+ * 查询退款规则Dto
+ */
 @Data
 public class QueryRefundRuleDto {
 

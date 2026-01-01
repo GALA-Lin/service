@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.model.merchant.enums;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
@@ -10,6 +11,7 @@ import lombok.Getter;
  * @since 2025/12/24
  */
 @Getter
+@AllArgsConstructor
 public enum DateTypeEnum {
 
     /**
@@ -31,11 +33,6 @@ public enum DateTypeEnum {
     private final String name;
     private final String description;
 
-    DateTypeEnum(Integer code, String name, String description) {
-        this.code = code;
-        this.name = name;
-        this.description = description;
-    }
 
     /**
      * 根据日期判断日期类型

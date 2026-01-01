@@ -90,4 +90,8 @@ public class VenueRefundRuleDetail implements Serializable {
      */
     @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    @TableLogic  // MyBatis-Plus逻辑删除注解
+    @TableField("deleted")
+    private Integer deleted;  // 0-未删除，1-已删除
 }

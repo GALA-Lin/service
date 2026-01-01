@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.model.coach.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -14,6 +15,7 @@ import java.time.LocalDateTime;
  */
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @TableName(value = "coach_reviews")
@@ -89,16 +91,17 @@ public class CoachReviews implements Serializable {
     private String reviewTags;
 
     /**
-     * 教练回复
+     * 父评论ID（用于回复功能）
      */
-    @TableField(value = "coach_reply")
-    private String coachReply;
+    @TableField(value = "parent_review_id")
+    private Long parentReviewId;
 
     /**
-     * 回复时间
+     * 评论类型：1-学员评价，2-教练回复
      */
-    @TableField(value = "coach_reply_time")
-    private LocalDateTime coachReplyTime;
+    @TableField(value = "review_type")
+    private Integer reviewType;
+
 
     /**
      * 是否匿名：0-否，1-是

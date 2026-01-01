@@ -12,7 +12,6 @@ import java.util.List;
  * @since 2025/12/31 13:56
  * 教练评价Vo
  */
-
 @Data
 @Builder
 public class CoachReviewVo {
@@ -20,25 +19,21 @@ public class CoachReviewVo {
     /**
      * 评价ID
      */
-    @NonNull
     private Long reviewId;
 
     /**
-     * 评价用户ID
+     * 评价用户ID（匿名时返回-1）
      */
-    @NonNull
     private Long userId;
 
     /**
-     * 评价用户昵称
+     * 评价用户昵称（匿名时显示"匿名用户"）
      */
-    @NonNull
     private String userName;
 
     /**
      * 评价用户头像
      */
-    @NonNull
     private String userAvatar;
 
     /**
@@ -54,7 +49,6 @@ public class CoachReviewVo {
     /**
      * 综合评分（1-5星）
      */
-    @NonNull
     private Integer overallRating;
 
     /**
@@ -75,7 +69,6 @@ public class CoachReviewVo {
     /**
      * 评价内容
      */
-    @NonNull
     private String reviewContent;
 
     /**
@@ -85,29 +78,63 @@ public class CoachReviewVo {
 
     /**
      * 评价标签列表
-     * 如：["耐心", "专业", "准时"]
      */
     private List<String> reviewTags;
 
     /**
-     * 教练回复
-     */
-    private String coachReply;
-
-    /**
-     * 教练回复时间
-     */
-    private LocalDateTime coachReplyTime;
-
-    /**
      * 是否匿名
      */
-    @NonNull
     private Boolean isAnonymous;
+
+    /**
+     * 回复数量
+     */
+    private Integer replyCount;
 
     /**
      * 评价创建时间
      */
-    @NonNull
     private LocalDateTime createdAt;
+
+    /**
+     * 教练回复（可能为null）
+     */
+    private CoachReplyVo coachReply;
+
+    /**
+     * 教练回复VO
+     */
+    @Data
+    @Builder
+    public static class CoachReplyVo {
+        /**
+         * 回复ID
+         */
+        private Long replyId;
+
+        /**
+         * 教练用户ID
+         */
+        private Long coachUserId;
+
+        /**
+         * 教练昵称
+         */
+        private String coachName;
+
+        /**
+         * 教练头像
+         */
+        private String coachAvatar;
+
+        /**
+         * 回复内容
+         */
+        private String replyContent;
+
+        /**
+         * 回复时间
+         */
+        private LocalDateTime replyTime;
+    }
 }

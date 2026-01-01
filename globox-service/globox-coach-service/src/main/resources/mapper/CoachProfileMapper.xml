@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.coach.mapper.CoachProfileMapper">
+
+    <!-- 搜索教练列表 -->
+    <select id="searchCoaches" resultType="java.util.Map">
+        SELECT
+        cp.coach_user_id AS coachUserId,
+        cp.coach_service_area AS serviceArea,
+        cp.coach_teaching_years AS teachingYears,
+        cp.coach_rating_score AS ratingScore,
+        cp.coach_rating_count AS ratingCount,
+        cp.coach_certification_level AS certificationLevel,
+        cp.coach_min_price AS minPrice,
+        cp.is_recommended_coach AS isRecommended,
+        <if test="latitude != null and longitude != null">
+            (6371 * acos(
+            cos(radians(#{latitude})) *
+            cos(radians(cp.coach_latitude)) *
+            cos(radians(cp.coach_longitude) - radians(#{longitude})) +
+            sin(radians(#{latitude})) *
+            sin(radians(cp.coach_latitude))
+            )) AS distance
+        </if>
+        <if test="latitude == null or longitude == null">
+            NULL AS distance
+        </if>
+        FROM coach_profiles cp
+        <if test="serviceTypes != null and serviceTypes.size() > 0">
+            INNER JOIN (
+            SELECT DISTINCT coach_user_id
+            FROM coach_course_type
+            WHERE coach_is_active = 1
+            AND coach_service_type IN
+            <foreach collection="serviceTypes" item="type" open="(" separator="," close=")">
+                #{type}
+            </foreach>
+            ) cs ON cp.coach_user_id = cs.coach_user_id
+        </if>
+        <where>
+            cp.coach_status = 1
+            AND cp.coach_audit_status = 1
+
+            <if test="keyword != null and keyword != ''">
+                AND (
+                cp.coach_service_area LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+
+            <if test="minPrice != null">
+                AND cp.coach_min_price >= #{minPrice}
+            </if>
+
+            <if test="maxPrice != null">
+                AND cp.coach_max_price &lt;= #{maxPrice}
+            </if>
+
+            <if test="serviceAreas != null and serviceAreas.size() > 0">
+                AND cp.coach_service_area IN
+                <foreach collection="serviceAreas" item="area" open="(" separator="," close=")">
+                    #{area}
+                </foreach>
+            </if>
+
+            <if test="certifications != null and certifications.size() > 0">
+                AND (
+                <foreach collection="certifications" item="cert" separator=" OR ">
+                    JSON_CONTAINS(cp.coach_certification_level, JSON_QUOTE(#{cert}))
+                </foreach>
+                )
+            </if>
+
+            <if test="minYears != null">
+                AND cp.coach_teaching_years >= #{minYears}
+            </if>
+
+            <if test="maxYears != null">
+                AND cp.coach_teaching_years &lt;= #{maxYears}
+            </if>
+
+            <if test="gender != null">
+                AND cp.coach_gender = #{gender}
+            </if>
+        </where>
+
+        <!-- 距离筛选（需要在HAVING中处理，因为distance是计算字段） -->
+        <if test="latitude != null and longitude != null and maxDistance != null">
+            HAVING distance &lt;= #{maxDistance}
+        </if>
+
+        <!-- 排序 -->
+        <choose>
+            <when test="sortBy == 'distance' and latitude != null and longitude != null">
+                ORDER BY distance ASC, cp.coach_rating_score DESC
+            </when>
+            <otherwise>
+                ORDER BY cp.coach_rating_score DESC, cp.coach_rating_count DESC
+            </otherwise>
+        </choose>
+
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <!-- 统计搜索结果总数 -->
+    <select id="countSearchCoaches" resultType="long">
+        SELECT COUNT(DISTINCT cp.coach_user_id)
+        FROM coach_profiles cp
+        <if test="serviceTypes != null and serviceTypes.size() > 0">
+            INNER JOIN (
+            SELECT DISTINCT coach_user_id
+            FROM coach_course_type
+            WHERE coach_is_active = 1
+            AND coach_service_type IN
+            <foreach collection="serviceTypes" item="type" open="(" separator="," close=")">
+                #{type}
+            </foreach>
+            ) cs ON cp.coach_user_id = cs.coach_user_id
+        </if>
+        <where>
+            cp.coach_status = 1
+            AND cp.coach_audit_status = 1
+
+            <if test="keyword != null and keyword != ''">
+                AND (
+                cp.coach_service_area LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+
+            <if test="minPrice != null">
+                AND cp.coach_min_price >= #{minPrice}
+            </if>
+
+            <if test="maxPrice != null">
+                AND cp.coach_max_price &lt;= #{maxPrice}
+            </if>
+
+            <if test="serviceAreas != null and serviceAreas.size() > 0">
+                AND cp.coach_service_area IN
+                <foreach collection="serviceAreas" item="area" open="(" separator="," close=")">
+                    #{area}
+                </foreach>
+            </if>
+
+            <if test="certifications != null and certifications.size() > 0">
+                AND (
+                <foreach collection="certifications" item="cert" separator=" OR ">
+                    JSON_CONTAINS(cp.coach_certification_level, JSON_QUOTE(#{cert}))
+                </foreach>
+                )
+            </if>
+
+            <if test="minYears != null">
+                AND cp.coach_teaching_years >= #{minYears}
+            </if>
+
+            <if test="maxYears != null">
+                AND cp.coach_teaching_years &lt;= #{maxYears}
+            </if>
+
+            <if test="gender != null">
+                AND cp.coach_gender = #{gender}
+            </if>
+
+            <!-- 距离筛选 -->
+            <if test="latitude != null and longitude != null and maxDistance != null">
+                AND (6371 * acos(
+                cos(radians(#{latitude})) *
+                cos(radians(cp.coach_latitude)) *
+                cos(radians(cp.coach_longitude) - radians(#{longitude})) +
+                sin(radians(#{latitude})) *
+                sin(radians(cp.coach_latitude))
+                )) &lt;= #{maxDistance}
+            </if>
+        </where>
+    </select>
+
+</mapper>

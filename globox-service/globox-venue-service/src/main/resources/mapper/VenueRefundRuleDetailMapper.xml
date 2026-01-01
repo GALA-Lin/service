@@ -17,9 +17,10 @@
     </insert>
 
     <!-- 删除规则的所有明细 -->
-    <delete id="deleteByRuleId">
-        DELETE FROM venue_refund_rule_details
+    <update id="deleteByRuleId">
+        UPDATE venue_refund_rule_details
+        SET deleted = 1
         WHERE venue_refund_rule_id = #{ruleId}
-    </delete>
+    </update>
 
 </mapper>

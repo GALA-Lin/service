@@ -24,6 +24,7 @@ public interface VenueRefundRuleDetailMapper extends BaseMapper<VenueRefundRuleD
      */
     @Select("SELECT * FROM venue_refund_rule_details " +
             "WHERE venue_refund_rule_id = #{ruleId} " +
+            "AND deleted = 0 " +  // 新增：过滤已删除数据
             "ORDER BY sort_order_num ASC, min_hours_before DESC")
     List<VenueRefundRuleDetail> selectByRuleId(@Param("ruleId") Long ruleId);
 

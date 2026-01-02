@@ -3,9 +3,9 @@ package com.unlimited.sports.globox.order.dubbo;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.unlimited.sports.globox.common.constants.MQConstants;
+import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
-import com.unlimited.sports.globox.common.message.UnlockSlotMessage;
+import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -13,6 +13,8 @@ import com.unlimited.sports.globox.dubbo.order.OrderDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.RefundTimelineVo;
+import com.unlimited.sports.globox.order.constants.RedisConsts;
+import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -33,7 +36,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-@DubboService(group = "dev", validation = "true")
+@DubboService(group = "rpc")
 public class OrderDubboServiceImpl implements OrderDubboService {
 
     @Autowired
@@ -65,7 +68,15 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
     @Autowired
     private MQService mqService;
+    @Autowired
+    private OrderActivitiesMapper orderActivitiesMapper;
 
+    /**
+     * 商家分页查询用户订单信息。
+     *
+     * @param dto 商家分页查询订单请求参数，包含商家ID、页码和每页大小
+     * @return 返回分页后的订单信息列表，每个订单信息包括订单号、用户ID、场馆信息、价格明细、支付状态、订单状态等
+     */
     @Override
     public IPage<MerchantGetOrderResultDto> merchantGetOrderPage(
             MerchantGetOrderPageRequestDto dto) {
@@ -129,7 +140,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                             })
                             .toList();
 
-                    return MerchantGetOrderResultDto.builder()
+                    MerchantGetOrderResultDto resultDto = MerchantGetOrderResultDto.builder()
                             .orderNo(order.getOrderNo())
                             .userId(order.getBuyerId())
                             .venueId(order.getSellerId())
@@ -148,6 +159,19 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                             .createdAt(order.getCreatedAt())
                             .records(recordDtos)
                             .build();
+
+                    OrderActivities orderActivities = orderActivitiesMapper.selectOne(
+                            Wrappers.<OrderActivities>lambdaQuery()
+                                    .eq(OrderActivities::getOrderNo, order.getOrderNo()));
+
+                    if (!ObjectUtils.isEmpty(orderActivities)) {
+                        resultDto.setActivity(true);
+                        resultDto.setActivityTypeName(orderActivities.getActivityTypeName());
+                    } else {
+                        resultDto.setActivity(false);
+                    }
+
+                    return resultDto;
                 })
                 .toList();
 
@@ -210,7 +234,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 .toList();
 
         // 4. 构建返回 DTO
-        return MerchantGetOrderResultDto.builder()
+        MerchantGetOrderResultDto resultDto = MerchantGetOrderResultDto.builder()
                 .orderNo(order.getOrderNo())
                 .userId(order.getBuyerId())
                 .venueId(order.getSellerId())
@@ -229,9 +253,31 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 .createdAt(order.getCreatedAt())
                 .records(recordDtos)
                 .build();
+
+
+        OrderActivities orderActivities = orderActivitiesMapper.selectOne(
+                Wrappers.<OrderActivities>lambdaQuery()
+                        .eq(OrderActivities::getOrderNo, order.getOrderNo()));
+
+        if (!ObjectUtils.isEmpty(orderActivities)) {
+            resultDto.setActivity(true);
+            resultDto.setActivityTypeName(orderActivities.getActivityTypeName());
+        } else {
+            resultDto.setActivity(false);
+        }
+
+        return resultDto;
     }
 
+
+    /**
+     * 商家取消未支付订单。
+     *
+     * @param dto 包含订单号、商家ID以及可选的取消原因的请求参数
+     * @return 取消订单的结果，包括订单号、当前订单状态、状态描述及取消时间
+     */
     @Override
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public MerchantCancelOrderResultDto merchantCancelUnpaidOrder(
             MerchantCancelOrderRequestDto dto) {
@@ -266,7 +312,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
         }
 
         // 3) 状态校验：只能取消未支付 + PENDING
-        Assert.isTrue(order.getPaymentStatus() == PaymentStatusEnum.UNPAID,
+        Assert.isTrue(order.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
         Assert.isTrue(order.getOrderStatus() == OrderStatusEnum.PENDING,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
@@ -303,7 +349,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         .eq(OrderItems::getOrderNo, orderNo)
                         .orderByAsc(OrderItems::getId));
 
-        // 保险起见，除了下订场订单代码逻辑不对，否则一定通过
+        // 保险起见，因为除了下订场订单代码逻辑不对，否则一定通过
         Assert.isNotEmpty(items, OrderCode.ORDER_ITEM_NOT_EXIST);
 
         List<Long> recordIds = items.stream()
@@ -323,8 +369,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         .build();
 
                 mqService.send(
-                        MQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-                        MQConstants.ROUTING_ORDER_UNLOCK_SLOT,
+                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
+                        OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                         unlockMsg);
             }
         });
@@ -340,7 +386,14 @@ public class OrderDubboServiceImpl implements OrderDubboService {
     }
 
 
+    /**
+     * 商家同意退款的处理方法。
+     *
+     * @param dto 包含订单号、退款申请ID、场馆ID和商家ID等信息的请求参数
+     * @return 返回商家同意退款的结果，包括订单状态、退款申请状态等信息
+     */
     @Override
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public MerchantApproveRefundResultDto merchantApproveRefund(MerchantApproveRefundRequestDto dto) {
 
@@ -357,7 +410,9 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         .eq(Orders::getSellerId, venueId)
                         .last("FOR UPDATE"));
         Assert.isNotEmpty(order, OrderCode.ORDER_NOT_EXIST);
-        Assert.isTrue(order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING), OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
+        Assert.isTrue(order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING),
+                OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
+        // 商家只能取消场地订单和场地活动订单
         Assert.isTrue(order.getSellerType() == SellerTypeEnum.VENUE, OrderCode.ORDER_NOT_EXIST);
 
         // 2) 锁退款申请（必须属于该订单）
@@ -460,7 +515,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
                 BigDecimal amt = lk.getAllocatedAmount() == null ? BigDecimal.ZERO : lk.getAllocatedAmount();
 
-                // 幂等：同一个 refundApplyId + extraChargeId 只插一次（你有唯一约束的话可省 exists）
+                // 幂等：同一个 refundApplyId + extraChargeId 只插一次
                 boolean already = orderRefundExtraChargesMapper.exists(
                         Wrappers.<OrderRefundExtraCharges>lambdaQuery()
                                 .eq(OrderRefundExtraCharges::getRefundApplyId, refundApplyId)
@@ -509,10 +564,15 @@ public class OrderDubboServiceImpl implements OrderDubboService {
         // 9) 生成 item 退款事实（order_item_refunds） + item 状态流转 + item级日志
         int approvedCount = 0;
         for (OrderItems it : items) {
+            // 已退款的订单跳过
+            if (RefundStatusEnum.APPROVED.equals(it.getRefundStatus())) {
+                continue;
+            }
 
             // 9.1 退款事实：不存在则插入（幂等）
             boolean factExists = orderItemRefundsMapper.exists(
                     Wrappers.<OrderItemRefunds>lambdaQuery()
+                            .eq(OrderItemRefunds::getRefundApplyId, refundApplyId)
                             .eq(OrderItemRefunds::getOrderItemId, it.getId()));
 
             if (!factExists) {
@@ -521,7 +581,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 Assert.isNotEmpty(itemAmount, OrderCode.ORDER_ITEM_NOT_EXIST);
 
                 BigDecimal extraChargeAmount = itemExtraSum.getOrDefault(it.getId(), BigDecimal.ZERO);
-                BigDecimal refundFee = BigDecimal.ZERO; // TODO 手续费策略
+                // TODO 手续费策略
+                BigDecimal refundFee = BigDecimal.ZERO;
                 BigDecimal refundAmount = itemAmount.add(extraChargeAmount).subtract(refundFee);
 
                 OrderItemRefunds fact = OrderItemRefunds.builder()
@@ -581,7 +642,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         .set(OrderRefundApply::getSellerRemark, dto.getRemark()));
         Assert.isTrue(ua == 1, OrderCode.ORDER_REFUND_APPLY_STATUS_NOT_ALLOW);
 
-        // 11) 订单状态：保持 REFUND_APPLYING（或你未来加 REFUNDING 再调整）
+        // 11) 订单状态：REFUNDING
         Orders updOrder = new Orders();
         updOrder.setId(order.getId());
         updOrder.setOrderStatus(OrderStatusEnum.REFUNDING);
@@ -604,25 +665,25 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 .build();
         orderStatusLogsMapper.insert(orderLog);
 
-//        List<Long> slotIds = items.stream().map(OrderItems::getSlotId).toList();
-//        LocalDate bookingDate = items.get(0).getBookingDate();
-//
-//        // 事务提交后发送通知到商家服务，解锁槽
-//        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-//            @Override
-//            public void afterCommit() {
-//                UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
-//                        .userId(order.getBuyerId())
-//                        .slotIds(slotIds)
-//                        .bookingDate(bookingDate)
-//                        .build();
-//
-//                mqService.send(
-//                        MQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-//                        MQConstants.ROUTING_ORDER_UNLOCK_SLOT,
-//                        unlockMsg);
-//            }
-//        });
+        List<Long> recordIds = items.stream().map(OrderItems::getRecordId).toList();
+        LocalDate bookingDate = items.get(0).getBookingDate();
+
+        // 事务提交后发送通知到商家服务，解锁槽
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
+                        .userId(order.getBuyerId())
+                        .recordIds(recordIds)
+                        .bookingDate(bookingDate)
+                        .build();
+
+                mqService.send(
+                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
+                        OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
+                        unlockMsg);
+            }
+        });
 
         // TODO ETA 2026/01/03 afterCommit：发 MQ 给支付服务发起退款 / 通知用户
 
@@ -639,6 +700,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
 
     @Override
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public MerchantRejectRefundResultDto merchantRejectRefund(MerchantRejectRefundRequestDto dto) {
 
@@ -656,7 +718,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         .last("FOR UPDATE"));
         Assert.isNotEmpty(order, OrderCode.ORDER_NOT_EXIST);
         Assert.isTrue(order.getSellerType() == SellerTypeEnum.VENUE, OrderCode.ORDER_NOT_EXIST);
-        Assert.isTrue(order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING), OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
+        Assert.isTrue(order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING),
+                OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
 
         // 2) 锁退款申请（必须属于该订单）
         OrderRefundApply apply = orderRefundApplyMapper.selectOne(
@@ -789,7 +852,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
     @Override
     public IPage<MerchantRefundApplyPageResultDto> merchantGetRefundApplyPage(
-                        MerchantRefundApplyPageRequestDto dto) {
+            MerchantRefundApplyPageRequestDto dto) {
 
         Page<MerchantRefundApplyPageResultDto> page = new Page<>(dto.getPageNum(), dto.getPageSize());
 
@@ -826,7 +889,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         Collectors.mapping(OrderRefundApplyItems::getOrderItemId, Collectors.toList())));
 
         Map<Long, Integer> applyIdToItemCount = new HashMap<>();
-        applyIdToItemIds.forEach((k, v) -> applyIdToItemCount.put(k, v == null ? 0 : (int) v.stream().distinct().count()));
+        applyIdToItemIds.forEach((k, v) -> applyIdToItemCount.put(k,
+                v == null ? 0 : (int) v.stream().distinct().count()));
 
         // 4) 拉取本页涉及的所有 item（用于计算 item 金额）
         List<Long> allItemIds = applyItems.stream()
@@ -1120,8 +1184,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                                     OrderActionEnum.REFUND_REJECT,
                                     OrderActionEnum.REFUND_COMPLETE
                             )
-                            .orderByAsc(OrderStatusLogs::getCreatedAt)
-            );
+                            .orderByAsc(OrderStatusLogs::getCreatedAt));
 
             timeline = logs.stream().map(statusLogs -> RefundTimelineVo.builder()
                     .action(statusLogs.getAction())
@@ -1159,6 +1222,47 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 .timeline(timeline)
                 .build();
     }
+
+
+    /**
+     * payment 支付前查询订单情况
+     *
+     * @param orderNo 订单编号
+     * @return 订单相关信息
+     */
+    @Override
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    public PaymentGetOrderResultDto paymentGetOrders(Long orderNo) {
+
+        Orders orders = ordersMapper.selectOne(
+                Wrappers.<Orders>lambdaQuery()
+                        .eq(Orders::getOrderNo, orderNo));
+
+        Assert.isTrue(orders.getOrderStatus().equals(OrderStatusEnum.PENDING)
+                        || orders.getPaymentStatus().equals(OrdersPaymentStatusEnum.UNPAID),
+                OrderCode.ORDER_CURRENT_NOT_ALLOW_PAY);
+
+        boolean isActivity = orderActivitiesMapper.exists(Wrappers.<OrderActivities>lambdaQuery()
+                .eq(OrderActivities::getOrderNo, orderNo));
+
+        StringBuilder subjectBuilder = new StringBuilder();
+        if (orders.getSellerType().equals(SellerTypeEnum.VENUE)) {
+            subjectBuilder.append("用户订场：");
+        } else if (orders.getSellerType().equals(SellerTypeEnum.COACH)) {
+            subjectBuilder.append("用户预约教练：");
+        }
+        subjectBuilder.append(orders.getSellerName());
+
+        return PaymentGetOrderResultDto.builder()
+                .orderNo(orderNo)
+                .outTradeNo(orders.getOutTradeNo())
+                .totalAmount(orders.getPayAmount())
+                .subject(subjectBuilder.toString())
+                .userId(orders.getBuyerId())
+                .isActivity(isActivity)
+                .build();
+    }
+
 
     /**
      * 是否能通过商户取消

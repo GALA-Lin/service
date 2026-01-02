@@ -213,6 +213,14 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
             String region = (String) result.get("region");
             String imageUrls = (String) result.get("imageUrls");
 
+            // 经纬度
+            BigDecimal latitude = result.get("latitude") != null
+                    ? new BigDecimal(result.get("latitude").toString())
+                    : null;
+            BigDecimal longitude = result.get("longitude") != null
+                    ? new BigDecimal(result.get("longitude").toString())
+                    : null;
+
             // 距离（数据库已计算）
             BigDecimal distance = result.get("distance") != null
                     ? new BigDecimal(result.get("distance").toString())
@@ -278,6 +286,8 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                     .venueId(venueId)
                     .name(name)
                     .region(region)
+                    .latitude(latitude)
+                    .longitude(longitude)
                     .distance(distance)
                     .coverImage(coverImage)
                     .avgRating(avgRating)

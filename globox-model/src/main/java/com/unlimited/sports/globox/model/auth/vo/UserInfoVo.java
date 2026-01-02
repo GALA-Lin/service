@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.auth.vo;
 
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
+import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -43,5 +44,5 @@ public class UserInfoVo implements Serializable {
     /**
      * 性别
      */
-    private UserProfile.Gender gender;
+    private GenderEnum gender;
 }

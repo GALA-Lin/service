@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.coach.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import lombok.*;
 
 import java.io.Serial;
@@ -149,8 +150,8 @@ public class CoachProfile implements Serializable {
     /**
      * 教练性别：0-女，1-男
      */
-    @TableField("coach_gender")
-    private Integer coachGender;
+    @TableField(exist = false)
+    private Integer genderCode;
 
     /**
      * 教练状态：0-暂停接单，1-正常接单，2-休假中
@@ -199,7 +200,6 @@ public class CoachProfile implements Serializable {
      */
     @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
-
 
 
 }

@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.common.config;
 
+import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.model.MQRetryCorrelationData;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -21,7 +22,6 @@ import java.util.concurrent.TimeUnit;
 @Component
 @Slf4j
 public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, RabbitTemplate.ReturnsCallback {
-
 
     /**
      * 最大重发次数
@@ -56,9 +56,7 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
      */
     @Override
     public void confirm(CorrelationData correlationData, boolean ack, String cause) {
-        if (ack) {
-            log.info("msgId:{} 已送达 broker", correlationData.getId());
-        } else {
+        if (!ack) {
             log.warn("msgId：{} 发送失败 cause:{}， 数据：{}", correlationData.getId(), cause, jsonUtils.objectToJson(correlationData));
             this.retryMessage(correlationData);
         }
@@ -72,13 +70,14 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
      */
     @Override
     public void returnedMessage(ReturnedMessage returned) {
+        String exchange = returned.getExchange();
 
         Message message = returned.getMessage();
         String id = (String) message.getMessageProperties()
                 .getHeaders()
                 .get("spring_returned_message_correlation");
 
-        if (ObjectUtils.isEmpty(id)) {
+        if(exchange.equals(OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL)){
             return;
         }
 
@@ -87,7 +86,7 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
                 new String(message.getBody()),
                 returned.getReplyCode(),
                 returned.getReplyText(),
-                returned.getExchange(),
+                exchange,
                 returned.getRoutingKey());
 
         String strJson = redisTemplate.opsForValue().get(id);

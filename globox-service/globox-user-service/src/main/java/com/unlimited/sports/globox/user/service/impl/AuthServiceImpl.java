@@ -8,6 +8,8 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.HttpRequestUtils;
 import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
+import com.unlimited.sports.globox.model.auth.dto.DeviceInfo;
+import com.unlimited.sports.globox.model.auth.dto.DeviceRegisterRequest;
 import com.unlimited.sports.globox.model.auth.dto.LoginResponse;
 import com.unlimited.sports.globox.model.auth.dto.PasswordLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.PhoneLoginRequest;
@@ -27,6 +29,7 @@ import com.unlimited.sports.globox.user.mapper.AuthUserMapper;
 import com.unlimited.sports.globox.user.mapper.UserLoginRecordMapper;
 import com.unlimited.sports.globox.user.mapper.UserProfileMapper;
 import com.unlimited.sports.globox.user.service.AuthService;
+import com.unlimited.sports.globox.user.service.IUserDeviceService;
 import com.unlimited.sports.globox.user.service.RedisService;
 import com.unlimited.sports.globox.user.service.SmsService;
 import com.unlimited.sports.globox.user.service.WechatService;
@@ -78,6 +81,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Autowired
     private WechatService wechatService;
+
+    @Autowired
+    private IUserDeviceService userDeviceService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -189,7 +195,10 @@ public class AuthServiceImpl implements AuthService {
         // 9. 记录登录日志
         recordLoginLog(authUser.getUserId(), phone, AuthIdentity.IdentityType.PHONE, true, null);
 
-        // 10. 构建响应（token 为纯 JWT 字符串，调用方自行在 Header 中加 Bearer 前缀）
+        // 10. 注册设备（如果提供了设备信息）
+        registerDeviceIfPresent(authUser.getUserId(), authUser.getRole().name(), request.getDeviceInfo());
+
+        // 11. 构建响应（token 为纯 JWT 字符串，调用方自行在 Header 中加 Bearer 前缀）
         LoginResponse response = LoginResponse.builder()
                 .token(accessToken)
                 .refreshToken(refreshToken)
@@ -495,7 +504,10 @@ public class AuthServiceImpl implements AuthService {
         // 11. 记录登录日志
         recordLoginLog(userId, phone, AuthIdentity.IdentityType.WECHAT, true, null);
 
-        // 12. 构建响应（token 为纯 JWT 字符串）
+        // 12. 注册设备（如果提供了设备信息）
+        registerDeviceIfPresent(userId, AuthUser.UserRole.USER.name(), request.getDeviceInfo());
+
+        // 13. 构建响应（token 为纯 JWT 字符串）
         LoginResponse response = LoginResponse.builder()
                 .token(accessToken)
                 .refreshToken(refreshToken)
@@ -637,7 +649,10 @@ public class AuthServiceImpl implements AuthService {
         // 11. 记录登录日志
         recordLoginLog(authUser.getUserId(), phone, AuthIdentity.IdentityType.PHONE, true, null);
 
-        // 12. 构建响应（token 为纯 JWT 字符串）
+        // 12. 注册设备（如果提供了设备信息）
+        registerDeviceIfPresent(authUser.getUserId(), authUser.getRole().name(), request.getDeviceInfo());
+
+        // 13. 构建响应（token 为纯 JWT 字符串）
         LoginResponse response = LoginResponse.builder()
                 .token(accessToken)
                 .refreshToken(refreshToken)
@@ -789,5 +804,37 @@ public class AuthServiceImpl implements AuthService {
         record.setUserAgent(HttpRequestUtils.getUserAgent());
 
         userLoginRecordMapper.insert(record);
+    }
+
+    /**
+     * 注册设备（登录成功后调用）
+     *
+     * @param userId 用户ID
+     * @param userType 用户角色类型（枚举字符串值）
+     * @param deviceInfo 设备信息
+     */
+    private void registerDeviceIfPresent(Long userId, String userType, DeviceInfo deviceInfo) {
+        if (deviceInfo == null || deviceInfo.getDeviceId() == null || deviceInfo.getDeviceToken() == null) {
+            log.debug("设备信息不完整，跳过设备注册: userId={}", userId);
+            return;
+        }
+
+        try {
+            DeviceRegisterRequest request = DeviceRegisterRequest.builder()
+                    .userId(userId)
+                    .userType(userType)
+                    .deviceId(deviceInfo.getDeviceId())
+                    .deviceToken(deviceInfo.getDeviceToken())
+                    .deviceModel(deviceInfo.getDeviceModel())
+                    .deviceOs(deviceInfo.getDeviceOs())
+                    .appVersion(deviceInfo.getAppVersion())
+                    .build();
+            request.setUserId(userId);
+            userDeviceService.registerDevice(request);
+            log.info("设备注册成功: userId={}, userType={}, deviceId={}", userId, userType, deviceInfo.getDeviceId());
+        } catch (Exception e) {
+            // 设备注册失败不影响登录流程
+            log.error("设备注册失败: userId={}, deviceId={}", userId, deviceInfo.getDeviceId(), e);
+        }
     }
 }

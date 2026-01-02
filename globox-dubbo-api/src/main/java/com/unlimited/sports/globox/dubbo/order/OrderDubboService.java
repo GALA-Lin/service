@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.dubbo.order;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
+import com.unlimited.sports.globox.model.payment.entity.Payments;
 import org.springframework.validation.annotation.Validated;
 
 import javax.validation.Valid;
@@ -14,7 +15,7 @@ import javax.validation.constraints.NotNull;
 public interface OrderDubboService {
 
     /**
-     * 分页查询商家订单信息。
+     * 商家分页查询用户订单信息。
      *
      * @param dto 商家分页查询订单请求参数，包含商家ID、页码和每页大小
      * @return 返回分页后的订单信息列表，每个订单信息包括订单号、用户ID、场馆信息、价格明细、支付状态、订单状态等
@@ -82,4 +83,13 @@ public interface OrderDubboService {
     MerchantRefundApplyDetailsResultDto merchantGetRefundApplyDetails(
             @Valid @NotNull(message = "请求参数不能为空")
             MerchantRefundApplyDetailsRequestDto dto);
+
+
+    /**
+     * payment 支付前查询订单情况
+     *
+     * @param orderNo 订单编号
+     * @return 订单相关信息
+     */
+    PaymentGetOrderResultDto paymentGetOrders(Long orderNo);
 }

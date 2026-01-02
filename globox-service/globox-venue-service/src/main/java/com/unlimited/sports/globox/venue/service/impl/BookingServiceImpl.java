@@ -84,7 +84,10 @@ public class BookingServiceImpl implements IBookingService {
         }
 
         // 时间控制：检查是否允许查看该日期的槽位
-        validSlotVisibilityPermission(venue, dto.getBookingDate());
+        if (!validSlotVisibilityPermission(venue, dto.getBookingDate())) {
+            return Collections.emptyList();
+        }
+
 
         // 查询所有开放的场地
         List<Court> courts = courtMapper.selectList(
@@ -401,7 +404,7 @@ public class BookingServiceImpl implements IBookingService {
      * @param bookingDate 要查看的预订日期
      * @throws GloboxApplicationException 如果不允许查看则抛出异常
      */
-    private void validSlotVisibilityPermission(Venue venue, LocalDate bookingDate) {
+    private boolean validSlotVisibilityPermission(Venue venue, LocalDate bookingDate) {
         LocalDateTime now = java.time.LocalDateTime.now();
         LocalDate today = now.toLocalDate();
         LocalTime currentTime = now.toLocalTime();
@@ -410,7 +413,7 @@ public class BookingServiceImpl implements IBookingService {
         Integer maxAdvanceDays = venue.getMaxAdvanceDays();
         if (maxAdvanceDays == null || maxAdvanceDays < 0) {
             log.warn("[checkSlotVisibilityPermission]场馆{}: {}未配置预定时间",venue.getVenueId(),venue.getName());
-            throw new  GloboxApplicationException("场馆未配置预定时间");
+            return false;
         }
 
         // 获取槽位可见时间点（默认值为00:00，如果未设置）
@@ -425,20 +428,18 @@ public class BookingServiceImpl implements IBookingService {
         if (daysUntilBooking > maxAdvanceDays) {
             log.warn("用户尝试查看过远的预订日期 - venueId={}, bookingDate={}, 距今{}天，最多允许{}天",
                     venue.getVenueId(), bookingDate, daysUntilBooking, maxAdvanceDays);
-            throw new GloboxApplicationException(
-                    String.format("预订日期过远，最多只能提前%d天预订", maxAdvanceDays)
-            );
+            return false;
         }
         // 如果预订日期就是今天，需要检查当前时间是否已经到达开放时间
         if (bookingDate.equals(today)) {
             if (currentTime.isBefore(slotVisibilityTime)) {
                 log.warn("用户尝试查看今日槽位，但还未到开放时间 - venueId={}, 当前时间={}, 开放时间={}",
                         venue.getVenueId(), currentTime, slotVisibilityTime);
-                throw new GloboxApplicationException(
-                        String.format("今日槽位将在%02d:%02d开放", slotVisibilityTime.getHour(), slotVisibilityTime.getMinute())
-                );
+                
+                return false;
             }
         }
+        return true;
     }
 
 

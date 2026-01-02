@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.merchant.mapper.VenueOrderMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="OrderResultMap" type="com.unlimited.sports.globox.model.merchant.entity.VenueOrder">
+        <id column="order_id" property="orderId"/>
+        <result column="order_no" property="orderNo"/>
+        <result column="user_id" property="userId"/>
+        <result column="venue_id" property="venueId"/>
+        <result column="base_price" property="basePrice"/>
+        <result column="extra_charge_total" property="extraChargeTotal"/>
+        <result column="subtotal" property="subtotal"/>
+        <result column="discount_amount" property="discountAmount"/>
+        <result column="total_price" property="totalPrice"/>
+        <result column="payment_status" property="paymentStatus"/>
+        <result column="order_status" property="orderStatus"/>
+        <result column="source" property="source"/>
+        <result column="paid_at" property="paidAt"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 分页查询商家订单 -->
+    <select id="selectMerchantOrderPage" resultMap="OrderResultMap">
+        SELECT o.*
+        FROM venue_orders o
+        INNER JOIN venues v ON o.venue_id = v.venue_id
+        WHERE v.merchant_id = #{merchantId}
+        <if test="venueId != null">
+            AND o.venue_id = #{venueId}
+        </if>
+        <if test="orderStatus != null">
+            AND o.order_status = #{orderStatus}
+        </if>
+        <if test="paymentStatus != null">
+            AND o.payment_status = #{paymentStatus}
+        </if>
+        <if test="startTime != null">
+            AND o.created_at >= #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND o.created_at &lt;= #{endTime}
+        </if>
+        <if test="orderNo != null and orderNo != ''">
+            AND o.order_no LIKE CONCAT('%', #{orderNo}, '%')
+        </if>
+        ORDER BY o.created_at DESC
+    </select>
+
+    <!-- 统计商家订单数量 -->
+    <select id="countMerchantOrders" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM venue_orders o
+        INNER JOIN venues v ON o.venue_id = v.venue_id
+        WHERE v.merchant_id = #{merchantId}
+        <if test="orderStatus != null">
+            AND o.order_status = #{orderStatus}
+        </if>
+        <if test="paymentStatus != null">
+            AND o.payment_status = #{paymentStatus}
+        </if>
+    </select>
+
+</mapper>

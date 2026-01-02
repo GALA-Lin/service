@@ -48,15 +48,16 @@ public class OrderController {
      * 用户创建活动订单
      */
     @PostMapping("venues/activity")
+    @Operation(summary = "创建活动订单", description = "用户基于场馆活动创建订单")
     public R<CreateOrderResultVo> createVenueActivityOrder(
-            CreateVenueActivityOrderDto dto
-    ) {
-        CreateOrderResultVo result = orderService.createVenueActivityOrder(dto);
+            @Valid
+            @RequestBody
+            @Parameter(description = "创建活动订单请求参数", required = true)
+            CreateVenueActivityOrderDto dto) {
 
+        CreateOrderResultVo result = orderService.createVenueActivityOrder(dto);
         return R.ok(result);
     }
-
-
 
 
     /**
@@ -70,6 +71,7 @@ public class OrderController {
         PaginationResult<GetOrderVo> resultList = orderService.getOrderPage(pageDto);
         return R.ok(resultList);
     }
+
 
     /**
      * 用户获取订单详情

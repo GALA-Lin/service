@@ -23,9 +23,14 @@ public enum OrderCode implements ResultCode {
     ORDER_REFUND_ALREADY_COMPLETED(1712, "申请中存在已完成退款的订单项，请勿重复提交"),
     ORDER_ITEM_REFUND_STATUS_INVALID(1713, "无效的退款状态码"),
     ORDER_REFUND_APPLY_NOT_EXIST(1714, "订单退款申请不存在"),
-    ORDER_REFUND_APPLY_STATUS_NOT_ALLOW(1715, "该申请已被审批"),
+    ORDER_REFUND_APPLY_STATUS_NOT_ALLOW(1715, "该申请已被审批或取消"),
     ORDER_REFUND_APPLY_CREATE_FAILED(1716, "订单退款申请失败"),
-    VENUE_ID_EMPTY(1718, "场馆列表为空");
+    VENUE_ID_EMPTY(1718, "场馆列表为空"),
+    COACH_ONLY_REFUND_ALL(1719, "教练订单不支持部分退款"),
+    ORDER_CURRENT_NOT_ALLOW_PAY(1720, "当前订单不可支付"),
+
+
+    ;
     private final Integer code;
     private final String message;
 }

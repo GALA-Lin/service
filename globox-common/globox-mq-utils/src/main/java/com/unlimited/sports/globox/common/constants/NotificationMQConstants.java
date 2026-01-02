@@ -41,4 +41,41 @@ public class NotificationMQConstants {
      */
     public static final String ROUTING_DEVICE_ACTIVATION = "device.activation";
     public static final String QUEUE_DEVICE_ACTIVATION = "queue.device.activation";
+
+    /**
+     * 紧急通知重试链路
+      */
+    public static final String QUEUE_NOTIFICATION_URGENT_RETRY = "queue.notification.urgent.retry";
+    public static final String EXCHANGE_NOTIFICATION_URGENT_RETRY_DLX = "exchange.notification.urgent.retry.dlx";
+    public static final String ROUTING_NOTIFICATION_URGENT_RETRY = "notification.urgent.retry";
+    public static final String EXCHANGE_NOTIFICATION_URGENT_FINAL_DLX = "exchange.notification.urgent.final.dlx";
+    public static final String ROUTING_NOTIFICATION_URGENT_FINAL = "notification.urgent.final";
+
+    /**
+     * 核心业务重试链路
+     */
+    public static final String QUEUE_NOTIFICATION_CORE_RETRY = "queue.notification.core.retry";
+    public static final String EXCHANGE_NOTIFICATION_CORE_RETRY_DLX = "exchange.notification.core.retry.dlx";
+    public static final String ROUTING_NOTIFICATION_CORE_RETRY = "notification.core.retry";
+    public static final String EXCHANGE_NOTIFICATION_CORE_FINAL_DLX = "exchange.notification.core.final.dlx";
+    public static final String ROUTING_NOTIFICATION_CORE_FINAL = "notification.core.final";
+
+    /**
+     * 系统消息重试链路
+     */
+    public static final String QUEUE_NOTIFICATION_SYSTEM_RETRY = "queue.notification.system.retry";
+    public static final String EXCHANGE_NOTIFICATION_SYSTEM_RETRY_DLX = "exchange.notification.system.retry.dlx";
+    public static final String ROUTING_NOTIFICATION_SYSTEM_RETRY = "notification.system.retry";
+    public static final String EXCHANGE_NOTIFICATION_SYSTEM_FINAL_DLX = "exchange.notification.system.final.dlx";
+    public static final String ROUTING_NOTIFICATION_SYSTEM_FINAL = "notification.system.final";
+
+    /**
+     * 设备激活重试链路
+     */
+    public static final String QUEUE_DEVICE_ACTIVATION_RETRY = "queue.device.activation.retry";
+    public static final String EXCHANGE_DEVICE_ACTIVATION_RETRY_DLX = "exchange.device.activation.retry.dlx";
+    public static final String ROUTING_DEVICE_ACTIVATION_RETRY = "device.activation.retry";
+    public static final String EXCHANGE_DEVICE_ACTIVATION_FINAL_DLX = "exchange.device.activation.final.dlx";
+    public static final String ROUTING_DEVICE_ACTIVATION_FINAL = "device.activation.final";
+    public static final String QUEUE_DEVICE_ACTIVATION_DLQ = "queue.device.activation.dlq";
 }

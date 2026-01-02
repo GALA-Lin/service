@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.common.enums.order;
 
 import com.baomidou.mybatisplus.annotation.EnumValue;
+import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -17,6 +18,7 @@ public enum PaymentTypeEnum {
     ;
 
     @EnumValue
+    @JsonValue
     private final Integer code;
     private final String description;
 }

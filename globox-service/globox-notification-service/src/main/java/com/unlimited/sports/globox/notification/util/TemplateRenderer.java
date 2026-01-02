@@ -6,8 +6,6 @@ import org.apache.commons.text.lookup.StringLookup;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 模板渲染工具类
@@ -48,8 +46,8 @@ public class TemplateRenderer {
         StringLookup customLookup = key -> {
             String value = stringVariables.get(key);
             if (value == null) {
-                log.warn("模板变量 {} 未找到，保留占位符", key);
-                return "{" + key + "}";  // 保留原始占位符
+                log.warn("模板变量 {} 未找到，将替换为空字符串", key);
+                return "";  // 缺失变量替换为空字符串，避免无限循环
             }
             return value;
         };

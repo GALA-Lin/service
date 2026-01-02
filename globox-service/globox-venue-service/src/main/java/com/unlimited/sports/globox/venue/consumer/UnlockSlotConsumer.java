@@ -1,8 +1,9 @@
 package com.unlimited.sports.globox.venue.consumer;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.unlimited.sports.globox.common.constants.MQConstants;
-import com.unlimited.sports.globox.common.message.UnlockSlotMessage;
+import com.unlimited.sports.globox.common.aop.RabbitRetryable;
+import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
@@ -23,7 +24,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Component
-@RabbitListener(queues = MQConstants.QUEUE_ORDER_UNLOCK_SLOT_MERCHANT)
+@RabbitListener(queues = OrderMQConstants.QUEUE_ORDER_UNLOCK_SLOT_MERCHANT)
 public class UnlockSlotConsumer {
 
     @Autowired
@@ -35,6 +36,10 @@ public class UnlockSlotConsumer {
      */
     @RabbitHandler
     @Transactional(rollbackFor = Exception.class)
+    @RabbitRetryable(
+            finalExchange = OrderMQConstants.EXCHANGE_ORDER_UNLOCK_SLOT_FINAL_DLX,
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT_FINAL
+    )
     public void onMessage(UnlockSlotMessage message) {
 
         Long userId = message.getUserId();

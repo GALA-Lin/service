@@ -1,15 +1,19 @@
 package com.unlimited.sports.globox.common.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
+
+import java.io.Serializable;
 
 /**
  * 记录重新投递信息的 CorrelationData
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class MQRetryCorrelationData extends CorrelationData {
+@JsonIgnoreProperties(value = {"future", "returned", "returnedMessage"}, ignoreUnknown = true)
+public class MQRetryCorrelationData extends CorrelationData implements Serializable {
     /**
      * 消息主体
      */

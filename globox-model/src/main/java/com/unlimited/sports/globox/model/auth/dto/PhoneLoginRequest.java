@@ -25,4 +25,7 @@ public class PhoneLoginRequest {
     @Pattern(regexp = "^\\d{6}$", message = "验证码必须为6位数字")
     @Schema(description = "验证码", example = "123456")
     private String code;
+
+    @Schema(description = "设备信息")
+    private DeviceInfo deviceInfo;
 }

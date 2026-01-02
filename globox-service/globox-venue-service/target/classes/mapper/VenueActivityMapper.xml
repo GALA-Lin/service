@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+       "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.venue.mapper.VenueActivityMapper">
+
+
+
+    <!-- 查询指定场馆指定日期的活动列表 -->
+    <select id="selectByVenueAndDate" resultType="com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity">
+        SELECT
+            activity_id AS activityId,
+            venue_id AS venueId,
+            court_id AS courtId,
+            activity_type_id AS activityTypeId,
+            activity_type_desc AS activityTypeDesc,
+            activity_name AS activityName,
+            activity_date AS activityDate,
+            start_time AS startTime,
+            end_time AS endTime,
+            max_participants AS maxParticipants,
+            current_participants AS currentParticipants,
+            unit_price AS unitPrice,
+            description,
+            registration_deadline AS registrationDeadline,
+            organizer_id AS organizerId,
+            organizer_type AS organizerType,
+            min_ntrp_level AS minNtrpLevel,
+            activity_config AS activityConfig,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_activity
+        WHERE venue_id = #{venueId}
+          AND DATE(activity_date) = #{activityDate}
+        ORDER BY start_time ASC
+    </select>
+
+
+
+</mapper>

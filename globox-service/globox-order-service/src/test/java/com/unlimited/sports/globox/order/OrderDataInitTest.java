@@ -56,7 +56,7 @@ public class OrderDataInitTest {
                 .sellerName(sellerName)
                 .sellerType(SellerTypeEnum.VENUE)
                 .orderStatus(OrderStatusEnum.PENDING) // PENDING
-                .paymentStatus(PaymentStatusEnum.UNPAID)
+                .paymentStatus(OrdersPaymentStatusEnum.UNPAID)
                 .baseAmount(BigDecimal.ZERO)
                 .extraAmount(BigDecimal.ZERO)
                 .subtotal(BigDecimal.ZERO)

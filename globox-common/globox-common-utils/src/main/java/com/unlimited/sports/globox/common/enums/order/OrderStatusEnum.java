@@ -59,7 +59,12 @@ public enum OrderStatusEnum {
     /**
      * 退款已拒绝
      */
-    REFUND_REJECTED(10, "REFUND_REJECTED")
+    REFUND_REJECTED(10, "REFUND_REJECTED"),
+
+    /**
+     * 退款申请已取消
+     */
+    REFUND_CANCELLED(11, "REFUND_CANCELLED")
     ;
     @EnumValue
     @JsonValue

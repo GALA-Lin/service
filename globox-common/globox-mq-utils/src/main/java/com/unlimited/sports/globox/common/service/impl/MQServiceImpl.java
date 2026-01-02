@@ -81,10 +81,6 @@ public class MQServiceImpl implements MQService {
 
         // 发送消息时将 延迟时间 与 CorrelationData 对象传入
         rabbitTemplate.convertAndSend(exchange, routingKey, message, message1 -> {
-
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-            log.info("测试延时队列：发送消息时间：{}，消息：{}",sdf.format(new Date()),message);
-
             message1.getMessageProperties().setDelay(delay * 1000);
             return message1;
         }, MQRetryCorrelationData);
@@ -113,7 +109,4 @@ public class MQServiceImpl implements MQService {
         }
         return MQRetryCorrelationData;
     }
-
-
-
 }

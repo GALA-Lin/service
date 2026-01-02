@@ -46,9 +46,21 @@
         </dependency>
 
 
+        <!-- Redisson依赖（需要排除spring-data-35，使用spring-data-27适配Spring Boot 2.7.6） -->
         <dependency>
             <groupId>org.redisson</groupId>
             <artifactId>redisson-spring-boot-starter</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.redisson</groupId>
+                    <artifactId>redisson-spring-data-35</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-data-27</artifactId>
         </dependency>
 
         <dependency>
@@ -102,6 +114,19 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-text</artifactId>
             <version>1.10.0</version>
+        </dependency>
+
+        <!-- Apache HttpClient 4.x for connection pooling (compatible with Spring Boot 2.7.x) -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+        </dependency>
+
+        <!-- 腾讯云IM UserSig生成 -->
+        <dependency>
+            <groupId>com.github.tencentyun</groupId>
+            <artifactId>tls-sig-api-v2</artifactId>
+            <version>2.0</version>
         </dependency>
     </dependencies>
 

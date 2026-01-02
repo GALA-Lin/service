@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 import java.util.List;
 
@@ -18,8 +17,7 @@ public class UpdateNoteRequest {
     @Schema(description = "标题", example = "今天打球收获分享")
     private String title;
 
-    @NotBlank(message = "正文不能为空")
-    @Schema(description = "正文", example = "今天练习了发球和截击，感觉有提升。", required = true)
+    @Schema(description = "正文", example = "今天练习了发球和截击，感觉有提升。")
     private String content;
 
     @Schema(description = "是否允许评论", example = "true")

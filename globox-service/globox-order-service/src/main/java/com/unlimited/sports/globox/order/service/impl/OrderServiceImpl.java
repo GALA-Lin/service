@@ -3,11 +3,11 @@ package com.unlimited.sports.globox.order.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.unlimited.sports.globox.common.constants.MQConstants;
+import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
-import com.unlimited.sports.globox.common.message.OrderAutoCancelMessage;
-import com.unlimited.sports.globox.common.message.UnlockSlotMessage;
+import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
+import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
@@ -25,6 +25,8 @@ import com.unlimited.sports.globox.model.order.dto.GetOrderPageDto;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.*;
 import com.unlimited.sports.globox.model.order.vo.GetOrderDetailsVo.ExtraChargeVo;
+import com.unlimited.sports.globox.order.constants.RedisConsts;
+import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderService;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +44,7 @@ import org.springframework.util.ObjectUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -113,6 +116,7 @@ public class OrderServiceImpl implements OrderService {
         BeanUtils.copyProperties(dto, pricingRequestDto);
         pricingRequestDto.setUserId(userId);
         PricingResultDto result = merchantDubboService.quoteVenue(pricingRequestDto);
+//        PricingResultDto result = getPricingResultDto();
 
         Assert.isNotEmpty(result.getRecordQuote(), OrderCode.SLOT_HAD_BOOKING);
 
@@ -145,7 +149,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public CreateOrderResultVo createVenueOrderAction(PricingResultDto result, Long userId ,boolean isActivity) {
+    public CreateOrderResultVo createVenueOrderAction(PricingResultDto result, Long userId, boolean isActivity) {
         Long orderNo = idGenerator.nextId();
 
         // 2) 先创建 order_items（每个 item 的 subtotal 只含 unitPrice + extra）
@@ -257,15 +261,19 @@ public class OrderServiceImpl implements OrderService {
         // 5) 创建 orders（金额只信：baseAmount + links 汇总 extraTotal）
         BigDecimal discountAmount = BigDecimal.ZERO;
 
+        // 生成对外订单号
+        String outTradeNo = "globox" + UUID.randomUUID().toString().replaceAll("-","");
+
         Orders order = Orders.builder()
                 .orderNo(orderNo)
+                .outTradeNo(outTradeNo)
                 .sourcePlatform(result.getSourcePlatform())
                 .buyerId(userId)
                 .sellerName(result.getSellerName())
                 .sellerType(SellerTypeEnum.VENUE)
                 .sellerId(result.getSellerId())
                 .orderStatus(OrderStatusEnum.PENDING)
-                .paymentStatus(PaymentStatusEnum.UNPAID)
+                .paymentStatus(OrdersPaymentStatusEnum.UNPAID)
                 .paymentType(PaymentTypeEnum.NONE)
                 .refundApplyId(null)
                 .baseAmount(baseAmount)
@@ -331,14 +339,14 @@ public class OrderServiceImpl implements OrderService {
                     public void afterCommit() {
                         // 事务成功，发成功事件
                         mqService.send(
-                                MQConstants.EXCHANGE_TOPIC_ORDER_CREATED,
-                                MQConstants.ROUTING_ORDER_CREATED,
+                                OrderMQConstants.EXCHANGE_TOPIC_ORDER_CREATED,
+                                OrderMQConstants.ROUTING_ORDER_CREATED,
                                 order);
 
                         // 发送消息，定时关闭订单
                         mqService.sendDelay(
-                                MQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL,
-                                MQConstants.ROUTING_ORDER_AUTO_CANCEL,
+                                OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL,
+                                OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
                                 orderAutoCancelMessage,
                                 delay);
                     }
@@ -356,8 +364,8 @@ public class OrderServiceImpl implements OrderService {
                             message.setUserId(userId);
                             log.error("发送取消锁场消息:{}", jsonUtils.objectToJson(message));
                             mqService.send(
-                                    MQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-                                    MQConstants.ROUTING_ORDER_UNLOCK_SLOT,
+                                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
+                                    OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                                     message);
                         }
                     }
@@ -437,7 +445,12 @@ public class OrderServiceImpl implements OrderService {
                                     })
                                     .toList();
 
-                    return GetOrderVo.builder()
+                    OrderActivities orderActivities = orderActivitiesMapper.selectOne(
+                            Wrappers.<OrderActivities>lambdaQuery()
+                                    .eq(OrderActivities::getOrderNo, order.getOrderNo())
+                    );
+
+                    GetOrderVo orderVo = GetOrderVo.builder()
                             .orderNo(order.getOrderNo())
                             .sellerType(order.getSellerType().getCode())
                             .sellerId(order.getSellerId())
@@ -450,6 +463,16 @@ public class OrderServiceImpl implements OrderService {
                             .createdAt(order.getCreatedAt())
                             .slotBookingTimes(slotTimes)
                             .build();
+
+                    // 如果是活动订单，添加字段
+                    if (!ObjectUtils.isEmpty(orderActivities)) {
+                        orderVo.setActivity(true);
+                        orderVo.setActivityTypeName(orderActivities.getActivityTypeName());
+                    } else {
+                        orderVo.setActivity(false);
+                    }
+
+                    return orderVo;
                 })
                 .filter(Objects::nonNull)
                 .toList();
@@ -608,7 +631,7 @@ public class OrderServiceImpl implements OrderService {
         }).toList();
 
         // 8) 返回
-        return GetOrderDetailsVo.builder()
+        GetOrderDetailsVo detailsVo = GetOrderDetailsVo.builder()
                 .orderNo(orders.getOrderNo())
                 .orderType(orders.getSellerType())
                 .venueSnapshot(venueSnapshotVo)
@@ -620,6 +643,20 @@ public class OrderServiceImpl implements OrderService {
                 .createdAt(orders.getCreatedAt())
                 .items(itemVos)
                 .build();
+
+        // 9）如果是活动订单，添加额外字段
+        OrderActivities orderActivities = orderActivitiesMapper.selectOne(
+                Wrappers.<OrderActivities>lambdaQuery()
+                        .eq(OrderActivities::getOrderNo, orders.getOrderNo()));
+
+        if (!ObjectUtils.isEmpty(orderActivities)) {
+            detailsVo.setActivity(true);
+            detailsVo.setActivityTypeName(orderActivities.getActivityTypeName());
+        } else {
+            detailsVo.setActivity(false);
+        }
+
+        return detailsVo;
     }
 
 
@@ -630,6 +667,7 @@ public class OrderServiceImpl implements OrderService {
      * @return 返回包含订单号、当前订单状态、状态描述以及取消时间的结果对象
      */
     @Override
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public CancelOrderResultVo cancelUnpaidOrder(Long orderNo) {
 
@@ -650,7 +688,7 @@ public class OrderServiceImpl implements OrderService {
         Assert.isTrue(order.getOrderStatus() == OrderStatusEnum.PENDING,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
 
-        Assert.isTrue(order.getPaymentStatus() == PaymentStatusEnum.UNPAID,
+        Assert.isTrue(order.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
 
         // 3. 查询订单项（用于解锁槽位）
@@ -705,8 +743,8 @@ public class OrderServiceImpl implements OrderService {
                     @Override
                     public void afterCommit() {
                         mqService.send(
-                                MQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-                                MQConstants.ROUTING_ORDER_UNLOCK_SLOT,
+                                OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
+                                OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                                 unlockMessage);
                     }
                 });
@@ -729,6 +767,65 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal unitPrice,
             BigDecimal itemSubtotal,
             List<ExtraQuote> recordExtras) { }
+
+
+    //TODO ETA 2026/01/03 TEST
+    private PricingResultDto getPricingResultDto() {
+        return PricingResultDto.builder()
+                .recordQuote(List.of(
+                        RecordQuote.builder()
+                                .recordId(2000003L)
+                                .courtId(2000001L)
+                                .courtName("1号红土场 14:00-15:00")
+                                .bookingDate(LocalDate.of(2026, 1, 2))
+                                .startTime(LocalTime.of(14, 0))
+                                .endTime(LocalTime.of(15, 0))
+                                .unitPrice(new BigDecimal("150.00"))
+                                .recordExtras(List.of(
+                                        ExtraQuote.builder()
+                                                .chargeTypeId(19L)
+                                                .chargeName("灯光费")
+                                                .chargeMode(ChargeModeEnum.FIXED)
+                                                .fixedValue(new BigDecimal("20.00"))
+                                                .amount(new BigDecimal("20.00"))
+                                                .build()
+                                ))
+                                .build(),
+
+                        RecordQuote.builder()
+                                .recordId(2000004L)
+                                .courtId(2000001L)
+                                .courtName("1号红土场 18:00-19:00")
+                                .bookingDate(LocalDate.of(2026, 1, 2))
+                                .startTime(LocalTime.of(18, 0))
+                                .endTime(LocalTime.of(19, 0))
+                                .unitPrice(new BigDecimal("180.00"))
+                                .recordExtras(List.of(
+                                        ExtraQuote.builder()
+                                                .chargeTypeId(19L)
+                                                .chargeName("灯光费")
+                                                .chargeMode(ChargeModeEnum.FIXED)
+                                                .fixedValue(new BigDecimal("20.00"))
+                                                .amount(new BigDecimal("20.00"))
+                                                .build()
+                                ))
+                                .build()
+                ))
+                .orderLevelExtras(List.of(
+                        OrderLevelExtraQuote.builder()
+                                .chargeTypeId(20L)
+                                .chargeName("清洁费")
+                                .chargeMode(ChargeModeEnum.FIXED)
+                                .fixedValue(new BigDecimal("10.00"))
+                                .amount(new BigDecimal("10.00"))
+                                .build()
+                ))
+                .sourcePlatform(1)
+                .sellerName("成都锦江国际网球中心")
+                .sellerId(2000001L)
+                .bookingDate(LocalDate.of(2026, 1, 2))
+                .build();
+    }
 }
 
 

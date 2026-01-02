@@ -15,7 +15,7 @@ public class CoachServiceVo {
     /**
      * 服务ID
      */
-    private Long serviceId;
+    private Long serviceTypeId;
 
     /**
      * 服务名称

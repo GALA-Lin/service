@@ -649,6 +649,17 @@ public class LocalDateUtils {
     }
 
 
+
+    public static LocalDateTime from(String dataTimeStr) {
+        return from(dataTimeStr, DATETIME_PATTERN);
+    }
+
+    public static LocalDateTime from(String dataTimeStr, String pattern) {
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern(pattern);
+        return LocalDateTime.parse(dataTimeStr, fmt);
+    }
+
+
 }
 
 

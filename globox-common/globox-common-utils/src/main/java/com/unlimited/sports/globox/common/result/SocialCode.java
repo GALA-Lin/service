@@ -21,9 +21,15 @@ public enum SocialCode implements ResultCode {
     NOTE_PERMISSION_DENIED(3007, "无权限操作，仅作者可编辑/删除"),
     NOTE_STATUS_INVALID(3008, "笔记状态无效"),
     NOTE_CURSOR_INVALID(3009, "游标格式错误"),
-    NOTE_POOL_SEED_REQUIRED(3010, "池子流必须提供seed参数"),
     NOTE_PAGE_SIZE_EXCEEDED(3011, "每页数量不能超过50"),
-    NOTE_SORT_INVALID(3012, "排序方式无效，仅支持latest"),
+    NOTE_SORT_INVALID(3012, "排序方式无效，仅支持pool/latest/hot"),
+    NOTE_UPLOAD_FILE_FAILED(3013, "文件上传失败"),
+    NOTE_UPLOAD_FILE_TOO_LARGE(3014, "文件大小超过限制"),
+    NOTE_UPLOAD_FILE_TYPE_NOT_SUPPORTED(3015, "文件类型不支持"),
+    NOTE_MEDIA_CLEAR_NOT_ALLOWED(3016, "不允许清空笔记的所有媒体"),
+    NOTE_MEDIA_NOT_FOUND(3017, "媒体不存在"),
+    NOTE_DRAFT_EMPTY(3018, "草稿不能完全为空，标题、正文、媒体至少填写一项"),
+    NOTE_PUBLISH_VALIDATION_FAILED(3020, "发布失败：正文和媒体不能为空"),
 
     ;
 

@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.enums.order.ApplyRefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
-import com.unlimited.sports.globox.common.enums.order.PaymentStatusEnum;
+import com.unlimited.sports.globox.common.enums.order.OrdersPaymentStatusEnum;
 import com.unlimited.sports.globox.dubbo.order.OrderDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.Orders;
@@ -123,7 +123,7 @@ public class OrderDubboServiceTest {
         assertNotNull(before, "测试订单不存在，请先准备 orderNo 对应的数据");
 
         // 如果这笔单不是“未支付待支付”，那这个用例就不适用，直接跳过（避免误伤环境数据）
-        Assumptions.assumeTrue(before.getPaymentStatus() == PaymentStatusEnum.UNPAID,
+        Assumptions.assumeTrue(before.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID,
                 "该订单不是 UNPAID，跳过测试");
         Assumptions.assumeTrue(before.getOrderStatus() == OrderStatusEnum.PENDING,
                 "该订单不是 PENDING，跳过测试");

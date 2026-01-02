@@ -19,26 +19,6 @@ public interface INotificationService {
      */
     void handleNotification(NotificationMessage message);
 
-    /**
-     * 发送推送到腾讯云
-     *
-     * @param userId 用户ID
-     * @param deviceToken 设备令牌
-     * @param title 推送标题
-     * @param content 推送内容
-     * @param action deeplink
-     * @param customData 自定义数据
-     * @return 腾讯云返回的task_id
-     */
-    String sendToTencent(Long userId, String deviceToken, String title, String content,
-                        String action, Map<String, Object> customData);
-
-    /**
-     * 记录推送结果
-     *
-     * @param record 推送记录
-     */
-    void recordPushResult(PushRecords record);
 
     /**
      * 查询推送记录

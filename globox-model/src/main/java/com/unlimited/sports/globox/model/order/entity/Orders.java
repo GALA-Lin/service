@@ -34,6 +34,16 @@ public class Orders extends BaseEntity implements Serializable {
     private Long orderNo;
 
     /**
+     * 对外（支付平台）订单号
+     */
+    private String outTradeNo;
+
+    /**
+     * 第三方交易编号
+     */
+    private String tradeNo;
+
+    /**
      * VENUE 订单场地归属：1=home平台，2=away平台
      */
     private Integer sourcePlatform;
@@ -66,7 +76,7 @@ public class Orders extends BaseEntity implements Serializable {
     /**
      * 支付状态：1=UNPAID，2=PAID，3=REFUNDING，4=REFUNDED
      */
-    private PaymentStatusEnum paymentStatus;
+    private OrdersPaymentStatusEnum paymentStatus;
 
     /**
      * 最新的退款申请ID（用于快速查询退款状态）
@@ -89,7 +99,7 @@ public class Orders extends BaseEntity implements Serializable {
     private BigDecimal subtotal;
 
     /**
-     * 实际支付金额（=subtotal - discount_amount）
+     * 实际需要支付的金额（=subtotal - discount_amount）
      */
     private BigDecimal payAmount;
 

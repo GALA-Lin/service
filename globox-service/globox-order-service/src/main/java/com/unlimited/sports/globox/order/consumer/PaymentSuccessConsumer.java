@@ -1,0 +1,161 @@
+package com.unlimited.sports.globox.order.consumer;
+
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.rabbitmq.client.Channel;
+import com.unlimited.sports.globox.common.aop.RabbitRetryable;
+import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
+import com.unlimited.sports.globox.common.enums.order.OperatorTypeEnum;
+import com.unlimited.sports.globox.common.enums.order.OrderActionEnum;
+import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
+import com.unlimited.sports.globox.common.enums.order.OrdersPaymentStatusEnum;
+import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
+import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
+import com.unlimited.sports.globox.model.order.entity.Orders;
+import com.unlimited.sports.globox.order.constants.RedisConsts;
+import com.unlimited.sports.globox.order.lock.RedisLock;
+import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
+import com.unlimited.sports.globox.order.mapper.OrdersMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * 支付成功回调
+ */
+@Slf4j
+@Component
+public class PaymentSuccessConsumer {
+
+    @Autowired
+    private OrdersMapper ordersMapper;
+
+    @Autowired
+    private OrderStatusLogsMapper orderStatusLogsMapper;
+
+
+    /**
+     * 支付成功回调 消费者
+     */
+    @RabbitListener(queues = PaymentMQConstants.QUEUE_PAYMENT_SUCCESS_ORDER)
+    @Transactional(rollbackFor = Exception.class)
+    @RedisLock(value = "#message.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @RabbitRetryable(
+            finalExchange = PaymentMQConstants.EXCHANGE_PAYMENT_SUCCESS_FINAL_DLX,
+            finalRoutingKey = PaymentMQConstants.ROUTING_PAYMENT_SUCCESS_FINAL
+    )
+    public void onMessage(
+            PaymentSuccessMessage message,
+            Channel channel,
+            Message amqpMessage) {
+        Long orderNo = message.getOrderNo();
+        log.info("[支付成功回调] 接收到消息 orderNo={}, tradeNo={}, payType={}, amount={}, paidAt={}",
+                orderNo,
+                message.getTradeNo(),
+                message.getPaymentType(),
+                message.getTotalAmount(),
+                message.getPaymentAt());
+
+        // 1) 基础校验（必要字段）
+        if (orderNo == null) {
+            throw new IllegalArgumentException("[支付成功回调] orderNo 为空");
+        }
+        if (message.getTradeNo() == null || message.getTradeNo().isBlank()) {
+            throw new IllegalArgumentException("[支付成功回调] tradeNo 为空");
+        }
+        if (message.getPaymentType() == null) {
+            throw new IllegalArgumentException("[支付成功回调] paymentType 为空");
+        }
+        if (message.getTotalAmount() == null) {
+            throw new IllegalArgumentException("[支付成功回调] totalAmount 为空");
+        }
+        if (message.getPaymentAt() == null) {
+            // 没带就用当前时间也行；但你要严格就直接抛错走重试
+            message.setPaymentAt(LocalDateTime.now());
+        }
+
+        // 2) 查订单并加行锁，防并发重复消费
+        Orders order = ordersMapper.selectOne(
+                Wrappers.<Orders>lambdaQuery()
+                        .eq(Orders::getOrderNo, orderNo)
+                        .last("FOR UPDATE"));
+
+        if (order == null) {
+            // 订单不存在：通常属于数据不一致/乱序消息（你也可以选择直接 return 当成消费成功）
+            throw new IllegalStateException("[支付成功回调] 订单不存在 orderNo=" + orderNo);
+        }
+
+        // 3) 幂等：已经支付成功就直接忽略（ACK 由 AOP 做）
+        //    这里假设你有：OrdersPaymentStatusEnum.PAID / UNPAID 等
+        if (order.getPaymentStatus() == OrdersPaymentStatusEnum.PAID) {
+            // 如果你存了 tradeNo，可在这里做一致性校验（不同 tradeNo 可能是异常）
+            log.info("[支付成功回调] 订单已是已支付状态，幂等忽略 orderNo={}, existTradeNo={}",
+                    orderNo, order.getTradeNo());
+            return;
+        }
+
+        // 4) 状态前置校验（按你业务规则调整）
+        //    一般：订单必须处于 PENDING 才允许支付成功落库
+        if (order.getOrderStatus() != OrderStatusEnum.PENDING) {
+            log.warn("[支付成功回调] 订单状态不允许支付回调落库，忽略 orderNo={}, orderStatus={}, payStatus={}",
+                    orderNo, order.getOrderStatus(), order.getPaymentStatus());
+            return;
+            // 如果你更严谨：也可以 throw，让它进重试/最终DLQ，取决于你们是否存在“先取消后回调”的情况
+        }
+
+        // 5) 金额校验（强烈建议：防止回调篡改/错单）
+        //    这里假设 order 里有 payableAmount / totalAmount 字段，你按真实字段名改一下
+        BigDecimal expected = order.getPayAmount();
+        if (expected != null && message.getTotalAmount().compareTo(expected) != 0) {
+            throw new IllegalStateException("[支付成功回调] 金额不一致 orderNo=" + orderNo
+                    + ", expected=" + expected + ", actual=" + message.getTotalAmount());
+        }
+
+        // 6) 更新订单支付信息
+        OrdersPaymentStatusEnum oldPayStatus = order.getPaymentStatus();
+        OrderStatusEnum oldOrderStatus = order.getOrderStatus();
+
+        order.setPaymentStatus(OrdersPaymentStatusEnum.PAID);
+        order.setPaidAt(message.getPaymentAt());
+        order.setTradeNo(message.getTradeNo());
+        order.setPaymentType(message.getPaymentType());
+        order.setPayAmount(message.getTotalAmount());
+        order.setPaymentStatus(OrdersPaymentStatusEnum.PAID);
+
+        // 支付成功后订单状态一般变为已支付/待履约（按你的枚举调整）
+        // 例如：PENDING -> PAID / CONFIRMED / BOOKED 等
+        order.setOrderStatus(OrderStatusEnum.PAID);
+
+        ordersMapper.updateById(order);
+
+        // 7) 记录状态日志（按你日志表字段来）
+        OrderStatusLogs logEntity = OrderStatusLogs.builder()
+                .orderNo(orderNo)
+                .orderId(order.getId())
+                .orderItemId(null)
+                .action(OrderActionEnum.PAY)
+                .oldOrderStatus(oldOrderStatus)
+                .newOrderStatus(order.getOrderStatus())
+                .operatorType(OperatorTypeEnum.USER)
+                .operatorId(order.getBuyerId())
+                .operatorName("USER_" + order.getBuyerId())
+                .remark(String.format("支付成功：tradeNo=%s, type=%s, amount=%s, paidAt=%s",
+                        message.getTradeNo(),
+                        message.getPaymentType(),
+                        message.getTotalAmount(),
+                        message.getPaymentAt()))
+                .build();
+
+        orderStatusLogsMapper.insert(logEntity);
+
+        log.info("[支付成功回调] 处理完成 orderNo={}, payStatus {}->{} , orderStatus {}->{}",
+                orderNo, oldPayStatus, order.getPaymentStatus(), oldOrderStatus, order.getOrderStatus());
+
+    }
+}

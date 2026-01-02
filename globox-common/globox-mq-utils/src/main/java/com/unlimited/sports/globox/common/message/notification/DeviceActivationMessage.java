@@ -25,7 +25,7 @@ public class DeviceActivationMessage implements Serializable {
     /**
      * 用户类型
      */
-    private Integer userType;
+    private String userType;
 
     /**
      * 设备ID

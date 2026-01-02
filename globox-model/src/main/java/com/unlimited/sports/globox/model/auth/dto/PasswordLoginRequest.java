@@ -25,4 +25,7 @@ public class PasswordLoginRequest {
     @Pattern(regexp = "^.{6,20}$", message = "密码必须为6-20位")
     @Schema(description = "密码", example = "123456")
     private String password;
+
+    @Schema(description = "设备信息")
+    private DeviceInfo deviceInfo;
 }

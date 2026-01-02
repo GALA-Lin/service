@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.unlimited.sports.globox.common.enums.user.DeviceOsEnum;
-import com.unlimited.sports.globox.common.enums.notification.PushUserTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -41,7 +40,7 @@ public class DevicePushToken {
      * 用户类型
      */
     @TableField("user_type")
-    private PushUserTypeEnum userType;
+    private String userType;
 
     /**
      * 设备唯一标识

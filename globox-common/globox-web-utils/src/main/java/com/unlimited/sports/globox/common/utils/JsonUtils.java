@@ -2,29 +2,60 @@ package com.unlimited.sports.globox.common.utils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
+import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import lombok.AllArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
 
 /**
  * JSON 工具类
- *
- * @author dk
- * @since 2025/12/17 22:06
  */
 @Log4j2
 @Component
-@AllArgsConstructor
 public class JsonUtils {
 
-    private ObjectMapper mapper;
+    private final ObjectMapper mapper;
+
+    public JsonUtils() {
+        mapper = new ObjectMapper();
+
+        // === 1. Java 8 时间支持（核心）===
+        JavaTimeModule javaTimeModule = new JavaTimeModule();
+
+        // LocalDateTime 序列化
+        javaTimeModule.addSerializer(
+                LocalDateTime.class,
+                new LocalDateTimeSerializer(
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                )
+        );
+
+        // LocalDateTime 反序列化
+        javaTimeModule.addDeserializer(
+                LocalDateTime.class,
+                new LocalDateTimeDeserializer(
+                        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                )
+        );
+
+        mapper.registerModule(javaTimeModule);
+
+        // === 2. 禁用时间戳（否则会变成数组）===
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        // === 3. 容错配置（推荐）===
+        mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    }
 
     /**
      * 将对象转换成json字符串。

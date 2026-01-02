@@ -46,6 +46,26 @@ public enum FileTypeEnum {
             "用户媒体视频",
             new String[]{".mp4", ".mov"},
             100 * 1024 * 1024L  // 100MB
+    ),
+
+    /**
+     * 笔记图片
+     */
+    SOCIAL_NOTE_IMAGE(
+            "social-note/image",
+            "笔记图片",
+            new String[]{".jpg", ".jpeg", ".png", ".webp"},
+            10 * 1024 * 1024L  // 10MB
+    ),
+
+    /**
+     * 笔记视频
+     */
+    SOCIAL_NOTE_VIDEO(
+            "social-note/video",
+            "笔记视频",
+            new String[]{".mp4", ".mov"},
+            100 * 1024 * 1024L  // 100MB
     );
 
     /**

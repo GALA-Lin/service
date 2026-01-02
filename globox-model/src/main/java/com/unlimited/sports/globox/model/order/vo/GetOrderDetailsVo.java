@@ -56,6 +56,19 @@ public class GetOrderDetailsVo {
     @Schema(description = "当前订单状态", example = "PAID")
     private OrderStatusEnum currentOrderStatus;
 
+    /**
+     * 是否活动订单
+     */
+    @NotNull
+    @Schema(description = "是否活动订单", example = "false")
+    private boolean isActivity;
+
+    /**
+     * 活动类型名称
+     */
+    @Schema(description = "活动类型名称", example = "畅打")
+    private String activityTypeName;
+
     @NotNull
     @Schema(description = "订单级附加费用列表")
     private List<ExtraChargeVo> orderLevelExtraCharges;
@@ -63,8 +76,6 @@ public class GetOrderDetailsVo {
     @NotNull
     @Schema(description = "订单创建时间")
     private LocalDateTime createdAt;
-
-
 
     /**
      * 订单项列表

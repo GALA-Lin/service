@@ -117,4 +117,27 @@ public class NotificationMessage implements Serializable {
         @JSONField(name = "customData")
         private Map<String, Object> customData;
     }
+
+    /**
+     * 生成唯一的messageId
+     * 格式：{eventType}_{userId}_{timestamp}
+     *
+     * @param eventType 事件类型（如：ORDER_CONFIRMED, ACCOUNT_LOGIN_ELSEWHERE）
+     * @param userId 用户ID
+     * @return 唯一messageId
+     */
+    public static String generateMessageId(String eventType, Long userId) {
+        return eventType + "_" + userId + "_" + System.currentTimeMillis();
+    }
+
+    /**
+     * 生成唯一的messageId（批量场景）
+     * 格式：{eventType}_BATCH_{timestamp}
+     *
+     * @param eventType 事件类型
+     * @return 唯一messageId
+     */
+    public static String generateBatchMessageId(String eventType) {
+        return eventType + "_BATCH_" + System.currentTimeMillis();
+    }
 }

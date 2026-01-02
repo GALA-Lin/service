@@ -44,7 +44,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
     @Autowired
     private IdGenerator idGenerator;
 
-    @Autowired
+    @Autowired(required = false)  // 本地环境可能不存在，设为可选
     private MessageProducerService messageProducerService;
 
 
@@ -170,8 +170,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                 log.info("批量发送消息到用户{}完成，会话ID: {}", toUserId, conversation.getConversationId());
             }
             
-            // 批量发送到消息队列
-            if (!events.isEmpty()) {
+            // 批量发送到消息队列（本地环境可能不存在 messageProducerService）
+            if (!events.isEmpty() && messageProducerService != null) {
                 messageProducerService.sendBatchMessageToQueue(events);
             }
             

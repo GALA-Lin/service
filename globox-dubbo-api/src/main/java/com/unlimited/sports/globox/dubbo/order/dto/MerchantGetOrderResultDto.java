@@ -1,7 +1,7 @@
 package com.unlimited.sports.globox.dubbo.order.dto;
 
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
-import com.unlimited.sports.globox.common.enums.order.PaymentStatusEnum;
+import com.unlimited.sports.globox.common.enums.order.OrdersPaymentStatusEnum;
 import lombok.Builder;
 import lombok.Data;
 
@@ -43,6 +43,17 @@ public class MerchantGetOrderResultDto implements Serializable {
     private String venueName;
 
     /**
+     * 是否活动订单
+     */
+    @NotNull
+    private boolean isActivity;
+
+    /**
+     * 活动类型名称
+     */
+    private String activityTypeName;
+
+    /**
      * 基础价格
      */
     @NotNull
@@ -77,7 +88,7 @@ public class MerchantGetOrderResultDto implements Serializable {
      * 支付状态
      */
     @NotNull
-    private PaymentStatusEnum paymentStatus;
+    private OrdersPaymentStatusEnum paymentStatus;
 
     /**
      * 支付状态名称
@@ -102,6 +113,9 @@ public class MerchantGetOrderResultDto implements Serializable {
      */
     @NotNull
     private Integer source;
+
+
+
 
     /**
      * 支付时间

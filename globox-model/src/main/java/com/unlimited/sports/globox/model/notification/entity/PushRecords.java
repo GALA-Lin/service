@@ -64,10 +64,10 @@ public class PushRecords  implements Serializable {
     private Long userId;
 
     /**
-     * 用户类型：1=消费者, 2=商家, 3=教练
+     * 用户类型：USER=普通用户, COACH=教练, ADMIN=管理员
      */
     @TableField("user_type")
-    private Integer userType;
+    private String userType;
 
     /**
      * 设备ID

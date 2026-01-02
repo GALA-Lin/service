@@ -35,7 +35,12 @@ public enum PushStatusEnum {
     /**
      * 已过滤（用户未激活）
      */
-    FILTERED(4, "FILTERED", "已过滤");
+    FILTERED(4, "FILTERED", "已过滤"),
+
+    /**
+     * 已点击
+     */
+    CLICKED(5, "CLICKED", "已点击");
 
     @EnumValue
     private final Integer code;

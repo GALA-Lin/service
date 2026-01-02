@@ -6,12 +6,15 @@ import com.unlimited.sports.globox.common.message.notification.NotificationMessa
 import com.unlimited.sports.globox.model.notification.entity.DevicePushToken;
 import com.unlimited.sports.globox.model.notification.entity.NotificationTemplates;
 import com.unlimited.sports.globox.model.notification.entity.PushRecords;
+import com.alibaba.fastjson2.JSON;
 import com.unlimited.sports.globox.common.enums.notification.PushStatusEnum;
-import com.unlimited.sports.globox.notification.client.TencentCloudClient;
+import com.unlimited.sports.globox.notification.client.TencentCloudImClient;
+import com.unlimited.sports.globox.notification.dto.request.BatchPushRequest;
+import com.unlimited.sports.globox.notification.dto.request.OfflinePushInfo;
 import com.unlimited.sports.globox.notification.mapper.NotificationTemplatesMapper;
-import com.unlimited.sports.globox.notification.mapper.PushRecordsMapper;
 import com.unlimited.sports.globox.notification.service.IDeviceTokenService;
 import com.unlimited.sports.globox.notification.service.INotificationService;
+import com.unlimited.sports.globox.notification.service.IPushRecordsService;
 import com.unlimited.sports.globox.notification.util.TemplateRenderer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * 通知服务实现
@@ -30,18 +34,16 @@ import java.util.*;
 public class NotificationServiceImpl implements INotificationService {
 
     @Autowired
-    private  TencentCloudClient tencentCloudClient;
+    private NotificationTemplatesMapper templateMapper;
 
     @Autowired
-    private  NotificationTemplatesMapper templateMapper;
+    private IPushRecordsService pushRecordsService;
 
     @Autowired
-    private  PushRecordsMapper pushRecordsMapper;
+    private IDeviceTokenService deviceTokenService;
 
     @Autowired
-    private  IDeviceTokenService deviceTokenService;
-
-
+    private TencentCloudImClient tencentCloudImClient;
 
 
     /**
@@ -66,7 +68,7 @@ public class NotificationServiceImpl implements INotificationService {
         try {
             // 验证消息有效性
             if (!validateMessage(message)) {
-                log.error("[通知处理] 消息验证失败: messageId={}", messageId);
+                log.error("[通知处理] 消息验证失败: message={}", message);
                 return;
             }
 
@@ -125,100 +127,114 @@ public class NotificationServiceImpl implements INotificationService {
                                        String renderedTitle, String renderedContent,
                                        String action, Map<String, Object> variables,
                                        NotificationTemplates template) {
-        // 收集所有有效的设备信息
+        // 提取所有接收者的userId
+        List<Long> userIds = recipients.stream()
+                .map(NotificationMessage.Recipient::getUserId)
+                .toList();
+
+        // 批量查询所有用户的最新活跃设备
+        Map<Long, DevicePushToken> userDeviceMap = deviceTokenService.getLatestActiveDevicesByUserIds(userIds);
+
+        // 收集所有有效的设备信息和被过滤的记录
         List<String> deviceTokens = new ArrayList<>();
         Map<String, DevicePushInfo> deviceInfoMap = new HashMap<>();
 
-        for (NotificationMessage.Recipient recipient : recipients) {
-            Long userId = recipient.getUserId();
+        // 按是否有活跃设备分组
+        Map<Boolean, List<NotificationMessage.Recipient>> partitioned = recipients.stream()
+                .collect(Collectors.partitioningBy(recipient -> userDeviceMap.containsKey(recipient.getUserId())));
 
-            try {
-                // 获取用户的活跃设备列表（单点登录，应该只有一个）
-                List<DevicePushToken> devices = deviceTokenService.getActiveDeviceTokens(userId);
-
-                if (devices == null || devices.isEmpty()) {
-                    log.warn("[批量推送] 用户无活跃设备: userId={}", userId);
-                    recordFilteredPush(
-                            messageId, messageType, userId, null, null,
+        // 处理无活跃设备的用户（构建过滤记录）
+        List<PushRecords> filteredRecords = partitioned.get(false).stream()
+                .peek(recipient -> log.warn("[批量推送] 用户无活跃设备: userId={}", recipient.getUserId()))
+                .map(recipient -> {
+                    PushRecords record = buildPushRecord(
+                            messageId, messageType, recipient.getUserId(), null, null,
                             renderedTitle, renderedContent, action, variables,
-                            PushStatusEnum.FILTERED, null, "用户无活跃设备", template, 0
+                            null, PushStatusEnum.FILTERED, template, null
                     );
-                    continue;
-                }
+                    record.setErrorMsg("用户无活跃设备");
+                    return record;
+                })
+                .toList();
 
-                // 添加到批量推送列表（单点登录，取第一个设备）
-                DevicePushToken device = devices.get(0);
-                String deviceToken = device.getDeviceToken();
-                deviceTokens.add(deviceToken);
-                deviceInfoMap.put(deviceToken, new DevicePushInfo(userId, device.getDeviceId(), deviceToken, device.getUserType().getCode()));
-
-            } catch (Exception e) {
-                log.error("[批量推送] 获取设备失败: userId={}", userId, e);
+        // 处理有活跃设备的用户（添加到批量推送列表）
+        partitioned.get(true).forEach(recipient -> {
+            DevicePushToken device = userDeviceMap.get(recipient.getUserId());
+            String deviceToken = device.getDeviceToken();
+            // 过滤掉无效的deviceToken
+            if (deviceToken == null || deviceToken.trim().isEmpty()) {
+                log.warn("[批量推送] deviceToken无效: userId={}, deviceId={}", recipient.getUserId(), device.getDeviceId());
+                return;
             }
+
+            deviceTokens.add(deviceToken);
+            deviceInfoMap.put(deviceToken, new DevicePushInfo(
+                    recipient.getUserId(), device.getDeviceId(), deviceToken, device.getUserType()
+            ));
+        });
+
+        // 批量插入被过滤的推送记录
+        if (!filteredRecords.isEmpty()) {
+            pushRecordsService.saveBatchRecords(filteredRecords);
         }
 
         // 批量发送推送
         if (!deviceTokens.isEmpty()) {
             log.info("[批量推送] 开始批量推送: 设备数量={}", deviceTokens.size());
+            List<PushRecords> recordsToSave = new ArrayList<>();
 
             try {
-                String taskId = tencentCloudClient.batchPush(deviceTokens, renderedTitle, renderedContent, action, variables);
+                // 构建离线推送信息
+                // ext字段必须是有效的JSON字符串，不能为null，用{}表示空对象
+                String extJson = null;
+                if (action != null) {
+                    Map<String, Object> extData = new HashMap<>(variables);
+                    extData.put("action", action);
+                    extJson = JSON.toJSONString(extData);
+                } else {
+                    // 如果没有action，仍然需要序列化variables，但至少要一个有效的JSON
+                    extJson = JSON.toJSONString(variables);
+                }
+
+                OfflinePushInfo offlinePushInfo = OfflinePushInfo.builder()
+                        .pushFlag(0)  // 0=启用离线推送（用户在线和离线都会收到消息）
+                        .title(renderedTitle)
+                        .desc(renderedContent)
+                        .ext(extJson)
+                        .build();
+
+                // 构建批量推送请求
+                BatchPushRequest request = BatchPushRequest.builder()
+                        .toAccount(deviceTokens)
+                        .offlinePushInfo(offlinePushInfo)
+                        .build();
+
+                // 发送推送
+                String taskId = tencentCloudImClient.batchPush(request);
 
                 if (taskId != null) {
                     log.info("[批量推送] 推送成功: taskId={}, 设备数量={}", taskId, deviceTokens.size());
-
-                    // 为每个设备记录推送结果
-                    for (String deviceToken : deviceTokens) {
-                        DevicePushInfo info = deviceInfoMap.get(deviceToken);
-                        recordSuccessfulPush(
-                                messageId, messageType, info.userId, info.deviceId, deviceToken,
-                                renderedTitle, renderedContent, action, variables, taskId, template, info.userType
-                        );
-                    }
+                    buildBatchPushRecords(deviceTokens, deviceInfoMap, recordsToSave, messageId, messageType,
+                            renderedTitle, renderedContent, action, variables, template, taskId, PushStatusEnum.SENT, null);
                 } else {
                     log.error("[批量推送] 推送失败");
-
-                    // 记录失败
-                    for (String deviceToken : deviceTokens) {
-                        DevicePushInfo info = deviceInfoMap.get(deviceToken);
-                        recordFailedPush(
-                                messageId, messageType, info.userId, info.deviceId, deviceToken,
-                                renderedTitle, renderedContent, action, variables, null, "腾讯云批量推送失败", template, info.userType
-                        );
-                    }
+                    buildBatchPushRecords(deviceTokens, deviceInfoMap, recordsToSave, messageId, messageType,
+                            renderedTitle, renderedContent, action, variables, template, null, PushStatusEnum.FAILED, "腾讯云批量推送失败");
                 }
 
             } catch (Exception e) {
                 log.error("[批量推送] 发送异常", e);
+                buildBatchPushRecords(deviceTokens, deviceInfoMap, recordsToSave, messageId, messageType,
+                        renderedTitle, renderedContent, action, variables, template, null, PushStatusEnum.FAILED, e.getMessage());
+            }
 
-                // 记录异常
-                for (String deviceToken : deviceTokens) {
-                    DevicePushInfo info = deviceInfoMap.get(deviceToken);
-                    recordFailedPush(
-                            messageId, messageType, info.userId, info.deviceId, deviceToken,
-                            renderedTitle, renderedContent, action, variables, null, e.getMessage(), template, info.userType
-                    );
-                }
+            // 批量插入所有推送记录
+            if (!recordsToSave.isEmpty()) {
+                pushRecordsService.saveBatchRecords(recordsToSave);
             }
         }
     }
 
-    /**
-     * 设备推送信息（用于批量推送记录）
-     */
-    private static class DevicePushInfo {
-        Long userId;
-        String deviceId;
-        String deviceToken;
-        Integer userType;
-
-        DevicePushInfo(Long userId, String deviceId, String deviceToken, Integer userType) {
-            this.userId = userId;
-            this.deviceId = deviceId;
-            this.deviceToken = deviceToken;
-            this.userType = userType;
-        }
-    }
 
     /**
      * 获取消息模板（根据事件类型 eventType 查询）
@@ -259,55 +275,35 @@ public class NotificationServiceImpl implements INotificationService {
         return true;
     }
 
-    /**
-     * 记录成功的推送
-     */
-    private void recordSuccessfulPush(String messageId, String messageType, Long userId,
-                                     String deviceId, String deviceToken,
-                                     String title, String content, String action,
-                                     Map<String, Object> customData, String taskId,
-                                     NotificationTemplates template, Integer userType) {
-        PushRecords record = buildPushRecord(
-                messageId, messageType, userId, deviceId, deviceToken,
-                title, content, action, customData, taskId, PushStatusEnum.SENT, template, userType
-        );
-        record.setSentAt(LocalDateTime.now());
-        recordPushResult(record);
-    }
 
     /**
-     * 记录失败的推送
+     * 批量构建推送记录
      */
-    private void recordFailedPush(String messageId, String messageType, Long userId,
-                                 String deviceId, String deviceToken,
-                                 String title, String content, String action,
-                                 Map<String, Object> customData, String errorCode, String errorMsg,
-                                 NotificationTemplates template, Integer userType) {
-        PushRecords record = buildPushRecord(
-                messageId, messageType, userId, deviceId, deviceToken,
-                title, content, action, customData, null, PushStatusEnum.FAILED, template, userType
-        );
-        record.setErrorCode(errorCode);
-        record.setErrorMsg(errorMsg);
-        recordPushResult(record);
-    }
+    private void buildBatchPushRecords(List<String> deviceTokens,
+                                       Map<String, DevicePushInfo> deviceInfoMap,
+                                       List<PushRecords> recordsToSave,
+                                       String messageId, String messageType,
+                                       String renderedTitle, String renderedContent,
+                                       String action, Map<String, Object> variables,
+                                       NotificationTemplates template,
+                                       String taskId, PushStatusEnum status, String errorMsg) {
+        for (String deviceToken : deviceTokens) {
+            DevicePushInfo info = deviceInfoMap.get(deviceToken);
+            PushRecords record = buildPushRecord(
+                    messageId, messageType, info.userId, info.deviceId, deviceToken,
+                    renderedTitle, renderedContent, action, variables, taskId,
+                    status, template, info.userType
+            );
 
-    /**
-     * 记录被过滤的推送（用户无活跃设备或已禁用推送）
-     */
-    private void recordFilteredPush(String messageId, String messageType, Long userId,
-                                   String deviceId, String deviceToken,
-                                   String title, String content, String action,
-                                   Map<String, Object> customData,
-                                   PushStatusEnum status, String errorCode, String errorMsg,
-                                   NotificationTemplates template, Integer userType) {
-        PushRecords record = buildPushRecord(
-                messageId, messageType, userId, deviceId, deviceToken,
-                title, content, action, customData, null, status, template, userType
-        );
-        record.setErrorCode(errorCode);
-        record.setErrorMsg(errorMsg);
-        recordPushResult(record);
+            // 设置成功时间或错误信息
+            if (status == PushStatusEnum.SENT) {
+                record.setSentAt(LocalDateTime.now());
+            } else if (errorMsg != null) {
+                record.setErrorMsg(errorMsg);
+            }
+
+            recordsToSave.add(record);
+        }
     }
 
     /**
@@ -318,7 +314,7 @@ public class NotificationServiceImpl implements INotificationService {
                                        String title, String content, String action,
                                        Map<String, Object> customData,
                                        String taskId, PushStatusEnum status,
-                                       NotificationTemplates template, Integer userType) {
+                                       NotificationTemplates template, String userType) {
         // 从模板中获取分类信息
         Integer notificationModule = template != null ? template.getNotificationModule() : 0;
         Integer userRole = template != null ? template.getUserRole() : 0;
@@ -348,31 +344,32 @@ public class NotificationServiceImpl implements INotificationService {
                 .build();
     }
 
-    @Override
-    public String sendToTencent(Long userId, String deviceToken, String title, String content,
-                               String action, Map<String, Object> customData) {
-        log.info("[腾讯云推送] 发送推送: userId={}, title={}", userId, title);
-        return tencentCloudClient.pushToSingleDevice(deviceToken, title, content, action, customData);
-    }
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void recordPushResult(PushRecords record) {
-        if (record.getRecordId() == null) {
-            pushRecordsMapper.insert(record);
-            log.info("[推送记录] 插入新记录: messageId={}, status={}", record.getNotificationId(), record.getStatus());
-        } else {
-            record.setUpdatedAt(LocalDateTime.now());
-            pushRecordsMapper.updateById(record);
-            log.info("[推送记录] 更新记录: messageId={}, status={}", record.getNotificationId(), record.getStatus());
-        }
-    }
 
     @Override
     public PushRecords getPushRecord(String messageId) {
         LambdaQueryWrapper<PushRecords> wrapper = Wrappers.lambdaQuery(PushRecords.class)
                 .eq(PushRecords::getNotificationId, messageId);
 
-        return pushRecordsMapper.selectOne(wrapper);
+        return pushRecordsService.getOne(wrapper);
     }
+
+
+    /**
+     * 设备推送信息（用于批量推送记录）
+     */
+    private static class DevicePushInfo {
+        Long userId;
+        String deviceId;
+        String deviceToken;
+        String userType;
+
+        DevicePushInfo(Long userId, String deviceId, String deviceToken, String userType) {
+            this.userId = userId;
+            this.deviceId = deviceId;
+            this.deviceToken = deviceToken;
+            this.userType = userType;
+        }
+    }
+
 }

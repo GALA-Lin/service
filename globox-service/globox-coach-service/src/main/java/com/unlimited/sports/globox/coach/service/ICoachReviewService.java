@@ -6,7 +6,6 @@ import com.unlimited.sports.globox.model.coach.dto.GetCoachReviewRepliesDto;
 import com.unlimited.sports.globox.model.coach.dto.PostCoachReplyDto;
 import com.unlimited.sports.globox.model.coach.dto.PostCoachReviewDto;
 import com.unlimited.sports.globox.model.coach.vo.CoachReviewVo;
-import com.unlimited.sports.globox.model.venue.dto.GetReviewRepliesDto;
 
 /**
  * @since 2026/1/1 12:58
@@ -34,13 +33,14 @@ public interface ICoachReviewService {
      * 发布教练评价
      *
      * @param dto 评价内容
+     * @return 评价ID
      */
-    void postReview(PostCoachReviewDto dto);
+    Long postReview(PostCoachReviewDto dto);
 
     /**
      * 教练回复评价
      *
      * @param dto 回复内容
      */
-    void replyReview(PostCoachReplyDto dto);
+    Long replyReview(PostCoachReplyDto dto);
 }

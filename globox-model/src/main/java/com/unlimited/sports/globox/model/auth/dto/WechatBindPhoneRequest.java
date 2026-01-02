@@ -35,5 +35,8 @@ public class WechatBindPhoneRequest {
 
     @Schema(description = "微信头像URL（可选，前端通过头像昵称填写能力获取）", example = "https://...")
     private String avatarUrl;
+
+    @Schema(description = "设备信息")
+    private DeviceInfo deviceInfo;
 }
 

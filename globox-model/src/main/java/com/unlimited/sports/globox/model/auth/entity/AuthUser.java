@@ -56,8 +56,19 @@ public class AuthUser {
      * 用户角色枚举
      */
     public enum UserRole {
+        /**
+         * 普通用户
+         */
         USER,
+
+        /**
+         * 教练
+         */
         COACH,
+
+        /**
+         * 管理员
+         */
         ADMIN
     }
 }

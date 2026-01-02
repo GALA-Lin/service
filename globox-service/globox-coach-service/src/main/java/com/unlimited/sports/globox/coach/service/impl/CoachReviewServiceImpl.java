@@ -169,13 +169,11 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
      * 发布教练评价
      *
      * @param dto 评价内容
-     */
-    /**
-     * 发布教练评价（学员评价）
+     * @return 评价ID
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void postReview(PostCoachReviewDto dto) {
+    public Long postReview(PostCoachReviewDto dto) {
         log.info("发布教练评价 - userId: {}, coachUserId: {}, bookingId: {}",
                 dto.getUserId(), dto.getCoachUserId(), dto.getCoachBookingId());
 
@@ -226,6 +224,7 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
         updateCoachRating(dto.getCoachUserId());
 
         log.info("评价发布成功 - reviewId: {}", review.getCoachReviewsId());
+        return  review.getCoachReviewsId();
     }
     /**
      * 教练回复评价
@@ -234,7 +233,7 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void replyReview(PostCoachReplyDto dto) {
+    public Long replyReview(PostCoachReplyDto dto) {
         log.info("教练回复评价 - coachUserId: {}, parentReviewId: {}",
                 dto.getCoachUserId(), dto.getParentReviewId());
 
@@ -284,6 +283,7 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
         coachReviewsMapper.insert(reply);
 
         log.info("回复发布成功 - replyId: {}", reply.getCoachReviewsId());
+        return reply.getCoachReviewsId();
     }
 
     /**

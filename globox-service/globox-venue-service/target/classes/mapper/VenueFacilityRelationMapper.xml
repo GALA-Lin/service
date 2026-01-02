@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper">
+
+    <!-- 根据设施名称列表查询包含所有这些设施的场馆ID列表（AND关系） -->
+    <select id="selectVenueIdsByFacilities" resultType="java.lang.Long">
+        SELECT venue_id
+        FROM venue_facility_relation
+        WHERE facility_name IN
+        <foreach collection="facilityNames" item="facilityName" open="(" separator="," close=")">
+            #{facilityName}
+        </foreach>
+        GROUP BY venue_id
+        HAVING COUNT(DISTINCT facility_name) = #{facilityCount}
+    </select>
+
+    <!-- 根据场馆ID列表查询设施名称（去重） -->
+    <select id="selectFacilityNamesByVenueIds" resultType="java.lang.String">
+        SELECT DISTINCT facility_name
+        FROM venue_facility_relation
+        WHERE venue_id IN
+        <foreach collection="venueIds" item="venueId" open="(" separator="," close=")">
+            #{venueId}
+        </foreach>
+        ORDER BY facility_name
+    </select>
+
+
+
+</mapper>

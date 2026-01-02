@@ -21,9 +21,6 @@ public class DraftNoteVo {
     @Schema(description = "正文", example = "今天练习了发球和截击，感觉有提升。")
     private String content;
 
-    @Schema(description = "状态", example = "DRAFT")
-    private String status;
-
     @Schema(description = "媒体类型", example = "IMAGE")
     private String mediaType;
 

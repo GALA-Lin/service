@@ -1,10 +1,8 @@
 package com.unlimited.sports.globox;
 
 
-import com.unlimited.sports.globox.notification.config.TencentCloudProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 
 /**
@@ -12,7 +10,6 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 
 @EnableDiscoveryClient
-@EnableConfigurationProperties(TencentCloudProperties.class)
 @SpringBootApplication
 public class NotificationApplication {
     public static void main(String[] args) {

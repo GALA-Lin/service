@@ -3,7 +3,6 @@ package com.unlimited.sports.globox.order.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
-import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -13,6 +12,8 @@ import com.unlimited.sports.globox.model.order.dto.CancelRefundApplyRequestDto;
 import com.unlimited.sports.globox.model.order.dto.GetRefundProgressRequestDto;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.*;
+import com.unlimited.sports.globox.order.constants.RedisConsts;
+import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderRefundService;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +21,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -62,12 +62,13 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     /**
      * 申请订单退款。
-     * TODO:ETA 2026/01/03 MQ 通知商家有新的退款申请
+     * TODO ETA 2026/01/03 MQ 通知商家有新的退款申请
      *
      * @param dto 退款请求参数
      * @return 包含退款申请结果的统一响应对象
      */
     @Override
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public ApplyRefundResultVo applyRefund(ApplyRefundRequestDto dto) {
 
@@ -86,14 +87,21 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         Assert.isNotEmpty(order, OrderCode.ORDER_NOT_EXIST);
 
         // 2. 校验订单是否允许退款
-        Assert.isTrue(order.getPaymentStatus() == PaymentStatusEnum.PAID,
+        Assert.isTrue(order.getPaymentStatus() == OrdersPaymentStatusEnum.PAID,
                 OrderCode.ORDER_NOT_ALLOW_REFUND);
 
-        Assert.isTrue(order.getOrderStatus() == OrderStatusEnum.PAID
+        // 订单可申请退款条件
+        Assert.isTrue(
+                // 订单已支付
+                order.getOrderStatus() == OrderStatusEnum.PAID
+                        // 订单已确认
                         || order.getOrderStatus() == OrderStatusEnum.CONFIRMED
-                        || order.getOrderStatus() == OrderStatusEnum.REFUNDING
+                        // 订单退款被拒绝
                         || order.getOrderStatus() == OrderStatusEnum.REFUND_REJECTED
-                        || order.getOrderStatus() == OrderStatusEnum.PARTIALLY_REFUNDED,
+                        // 部分退款申请完成
+                        || order.getOrderStatus() == OrderStatusEnum.PARTIALLY_REFUNDED
+                        // 退款已取消
+                        || order.getOrderStatus() == OrderStatusEnum.REFUND_CANCELLED,
                 OrderCode.ORDER_NOT_ALLOW_REFUND);
 
         // 3. 查询并校验申请的订单项
@@ -107,6 +115,19 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         .eq(OrderItems::getOrderNo, orderNo)
                         .in(OrderItems::getId, reqItemIds));
         Assert.isTrue(items.size() == reqItemIds.size(), OrderCode.ORDER_ITEM_NOT_EXIST);
+
+        // 教练订单不支持部分退款
+        if (order.getSellerType().equals(SellerTypeEnum.COACH)) {
+            Long allItemCount = orderItemsMapper.selectCount(
+                    Wrappers.<OrderItems>lambdaQuery()
+                            .eq(OrderItems::getOrderNo, orderNo));
+            Assert.isTrue(reqItemIds.size() ==  allItemCount, OrderCode.COACH_ONLY_REFUND_ALL);
+        }
+
+        // 商家订单需要查询退款规则 TODO ETA 等一下林森
+        if (order.getSellerType().equals(SellerTypeEnum.VENUE)) {
+
+        }
 
         // 校验这些 item 当前是否可发起退款：必须是 NONE
         for (OrderItems item : items) {
@@ -137,7 +158,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             orderRefundApplyItemsMapper.insert(applyItem);
         }
 
-        // 7. 更新订单项退款状态：NONE -> WAIT_APPROVING（带条件更新，防并发）
+        // 6. 更新订单项退款状态：NONE -> WAIT_APPROVING（带条件更新，防并发）
         for (Long itemId : reqItemIds) {
             int ur = orderItemsMapper.update(
                     null,
@@ -149,7 +170,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             Assert.isTrue(ur == 1, OrderCode.ORDER_ITEM_REFUND_STATUS_INVALID);
         }
 
-        // 8. 更新订单状态：-> REFUND_APPLYING，并挂最新 refund_apply_id
+        // 7. 更新订单状态：-> REFUND_APPLYING，并挂最新 refund_apply_id
         Orders updateOrder = new Orders();
         updateOrder.setId(order.getId());
         updateOrder.setOrderStatus(OrderStatusEnum.REFUND_APPLYING);
@@ -378,15 +399,15 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         }
 
         // 6) 汇总金额：totalRefundAmount / refundedAmount / refundingAmount
-        // extraSum：优先用本次申请写入的 order_refund_extra_charges；如果没有（如还没审批），按规则预估（可选）
+        // extraSum：优先用本次申请写入的 order_refund_extra_charges；如果没有（如还没审批），按规则预估
         BigDecimal extraSum = extraVos.stream()
                 .map(RefundExtraChargeProgressVo::getRefundAmount)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // 可选：如果还没审批，extraVos 为空，你也想展示“预估额外费用”
+        // 如果还没审批，extraVos 为空，也需要展示“预估额外费用”
         if ((refundExtras == null || refundExtras.isEmpty()) && !itemIds.isEmpty()) {
-            // item级额外费用：order_extra_charge_links.allocated_amount（只统计本次 itemIds 绑定的）
+            // item 级额外费用：order_extra_charge_links.allocated_amount（只统计本次 itemIds 绑定的）
             List<OrderExtraChargeLinks> links = orderExtraChargeLinksMapper.selectList(
                     Wrappers.<OrderExtraChargeLinks>lambdaQuery()
                             .eq(OrderExtraChargeLinks::getOrderNo, orderNo)
@@ -491,6 +512,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
      * @return 包含取消退款结果的信息对象，包括订单号、退款申请ID、申请单状态、订单状态、取消时间等信息
      */
     @Override
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public CancelRefundApplyResultVo cancelRefundApply(CancelRefundApplyRequestDto dto) {
 
@@ -571,37 +593,14 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         );
         Assert.isTrue(ua == 1, OrderCode.ORDER_REFUND_APPLY_STATUS_NOT_ALLOW);
 
-        // 8) 订单状态回退：优先从“REFUND_APPLY”日志里取 old_order_status（最稳）
-        OrderStatusLogs applyLog = orderStatusLogsMapper.selectOne(
-                Wrappers.<OrderStatusLogs>lambdaQuery()
-                        .eq(OrderStatusLogs::getOrderNo, orderNo)
-                        .eq(OrderStatusLogs::getAction, OrderActionEnum.REFUND_APPLY)
-                        .eq(OrderStatusLogs::getRefundApplyId, refundApplyId)
-                        .orderByDesc(OrderStatusLogs::getCreatedAt)
-                        .last("LIMIT 1"));
-
-        OrderStatusEnum restoreStatus;
-        if (applyLog != null && applyLog.getOldOrderStatus() != null) {
-            restoreStatus = applyLog.getOldOrderStatus();
-        } else {
-            // 兜底：如果查不到日志，按是否存在已完成退款来推断
-            Long completedCnt = orderItemsMapper.selectCount(
-                    Wrappers.<OrderItems>lambdaQuery()
-                            .eq(OrderItems::getOrderNo, orderNo)
-                            .eq(OrderItems::getRefundStatus, RefundStatusEnum.COMPLETED)
-            );
-            restoreStatus = (completedCnt != null && completedCnt > 0)
-                    ? OrderStatusEnum.PARTIALLY_REFUNDED
-                    : OrderStatusEnum.PAID;
-        }
-
+        // 8) 订单状态更改
         Orders updOrder = new Orders();
         updOrder.setId(order.getId());
-        updOrder.setOrderStatus(restoreStatus);
+        updOrder.setOrderStatus(OrderStatusEnum.REFUND_CANCELLED);
         // refund_apply_id 是否清空：看你语义。一般保留“最新一次申请id”方便追溯，这里保留不动
         ordersMapper.updateById(updOrder);
 
-        // 9) 写订单级日志（强烈建议）
+        // 9) 写订单级日志
         // 需要你在 OrderActionEnum 里加一个动作，比如 REFUND_CANCEL（或用 SYSTEM_ADJUST 兜底）
         OrderStatusLogs cancelLog = OrderStatusLogs.builder()
                 .orderNo(orderNo)
@@ -609,7 +608,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .orderItemId(null)
                 .action(OrderActionEnum.REFUND_CANCEL) // 你需要新增该枚举
                 .oldOrderStatus(order.getOrderStatus())
-                .newOrderStatus(restoreStatus)
+                .newOrderStatus(OrderStatusEnum.REFUND_CANCELLED)
                 .refundApplyId(refundApplyId)
                 .operatorType(OperatorTypeEnum.USER)
                 .operatorId(userId)
@@ -623,8 +622,8 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .refundApplyId(refundApplyId)
                 .applyStatus(ApplyRefundStatusEnum.CANCELLED)
                 .applyStatusName(ApplyRefundStatusEnum.CANCELLED.getDescription())
-                .orderStatus(restoreStatus)
-                .orderStatusName(restoreStatus.getDescription())
+                .orderStatus(OrderStatusEnum.REFUND_CANCELLED)
+                .orderStatusName(OrderStatusEnum.REFUND_CANCELLED.getDescription())
                 .cancelledAt(now)
                 .build();
     }

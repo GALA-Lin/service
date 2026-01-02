@@ -54,4 +54,7 @@ public class NoteDetailVo {
 
     @Schema(description = "媒体列表")
     private List<NoteMediaVo> mediaList;
+
+    @Schema(description = "当前用户是否已点赞", example = "true")
+    private Boolean liked;
 }

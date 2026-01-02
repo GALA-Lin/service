@@ -59,6 +59,21 @@ public class GetOrderVo {
     @Schema(description = "预约日期", example = "2025-12-20")
     private LocalDate bookingDate;
 
+
+    /**
+     * 是否活动订单
+     */
+    @NotNull
+    @Schema(description = "是否活动订单", example = "false")
+    private boolean isActivity;
+
+
+    /**
+     * 活动类型名称
+     */
+    @Schema(description = "活动类型名称", example = "畅打")
+    private String activityTypeName;
+
     /**
      * 订单总金额
      */

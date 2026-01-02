@@ -51,4 +51,10 @@ public class VenueItemVo {
 
     @NonNull
     private Integer courtCount;
+
+    @NonNull
+    private BigDecimal latitude;
+
+    @NonNull
+    private BigDecimal longitude;
 }

@@ -77,7 +77,7 @@ public class CoachReviewController {
      * @return 成功标识
      */
     @PostMapping
-    public R<Void> postReview(@Valid @RequestBody PostCoachReviewDto dto,
+    public R<Long> postReview(@Valid @RequestBody PostCoachReviewDto dto,
                               HttpServletRequest request) {
         String userIdStr = request.getHeader(RequestHeaderConstants.HEADER_USER_ID);
         if (StringUtils.isBlank(userIdStr)) {
@@ -92,8 +92,8 @@ public class CoachReviewController {
         }
 
         dto.setUserId(userId);
-        coachReviewService.postReview(dto);
-        return R.ok(null);
+        Long result =  coachReviewService.postReview(dto);
+        return R.ok(result);
     }
 
     /**
@@ -102,10 +102,10 @@ public class CoachReviewController {
      * @param reviewId 评价ID
      * @param dto 回复内容
      * @param request HTTP请求
-     * @return 成功标识
+     * @return 回复
      */
     @PostMapping("/{reviewId}/reply")
-    public R<Void> replyReview(@PathVariable Long reviewId,
+    public R<Long> replyReview(@PathVariable Long reviewId,
                                @Valid @RequestBody PostCoachReplyDto dto,
                                HttpServletRequest request) {
         String userIdStr = request.getHeader(RequestHeaderConstants.HEADER_USER_ID);
@@ -122,7 +122,7 @@ public class CoachReviewController {
 
         dto.setUserId(userId);
         dto.setParentReviewId(reviewId);
-        coachReviewService.replyReview(dto);
-        return R.ok(null);
+        Long result = coachReviewService.replyReview(dto);
+        return R.ok(result);
     }
 }

@@ -27,8 +27,8 @@ public class CoachCourseType implements Serializable {
     /**
      * 服务ID
      */
-    @TableId(value = "coach_services_id", type = IdType.AUTO)
-    private Long coachServicesId;
+    @TableId(value = "coach_course_type_id", type = IdType.AUTO)
+    private Long coachCourseTypeId;
 
     /**
      * 教练ID
@@ -39,14 +39,14 @@ public class CoachCourseType implements Serializable {
     /**
      * 服务名称："一对一私教课"
      */
-    @TableField(value = "coach_service_name")
-    private String coachServiceName;
+    @TableField(value = "coach_course_type_name")
+    private String coachCourseTypeName;
 
     /**
      * 1-一对一，2-一对二，3-小班(3-6人)
      */
-    @TableField(value = "coach_service_type")
-    private Integer coachServiceType;
+    @TableField(value = "coach_service_type_enum")
+    private Integer coachServiceTypeEnum;
 
     /**
      * 时长（分钟）

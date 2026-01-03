@@ -1,0 +1,41 @@
+package com.unlimited.sports.globox.model.social.dto;
+
+import com.unlimited.sports.globox.common.result.PaginationResult;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * 约球查询参数
+ **/
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RallyQueryDto  {
+    /**
+     * 区域
+     */
+    private String area;
+    /**
+     * 时间范围
+     */
+    private String timeRange;
+    /**
+     * 性别限制
+     */
+    private String genderLimit;
+    /**
+     * NTRP最小值
+     */
+    private Double ntrpMin;
+    /**
+     * NTRP最大值
+     */
+    private Double ntrpMax;
+    /**
+     * 活动类型
+     */
+    private int activityType;
+}

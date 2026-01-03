@@ -1,10 +1,13 @@
 package com.unlimited.sports.globox.order.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.model.order.dto.ApplyRefundRequestDto;
@@ -59,6 +62,9 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     @Autowired
     private OrderExtraChargeLinksMapper orderExtraChargeLinksMapper;
+
+    @Autowired
+    private MQService mqService;
 
     /**
      * 申请订单退款。
@@ -597,16 +603,14 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         Orders updOrder = new Orders();
         updOrder.setId(order.getId());
         updOrder.setOrderStatus(OrderStatusEnum.REFUND_CANCELLED);
-        // refund_apply_id 是否清空：看你语义。一般保留“最新一次申请id”方便追溯，这里保留不动
         ordersMapper.updateById(updOrder);
 
         // 9) 写订单级日志
-        // 需要你在 OrderActionEnum 里加一个动作，比如 REFUND_CANCEL（或用 SYSTEM_ADJUST 兜底）
         OrderStatusLogs cancelLog = OrderStatusLogs.builder()
                 .orderNo(orderNo)
                 .orderId(order.getId())
                 .orderItemId(null)
-                .action(OrderActionEnum.REFUND_CANCEL) // 你需要新增该枚举
+                .action(OrderActionEnum.REFUND_CANCEL)
                 .oldOrderStatus(order.getOrderStatus())
                 .newOrderStatus(OrderStatusEnum.REFUND_CANCELLED)
                 .refundApplyId(refundApplyId)
@@ -616,6 +620,19 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .remark("用户取消退款申请")
                 .build();
         orderStatusLogsMapper.insert(cancelLog);
+
+        // 10) 如果订单还没有确认，那么发送通知商家确认消息
+        if (!order.isConfirmed()) {
+            OrderNotifyMerchantConfirmMessage confirmMessage = OrderNotifyMerchantConfirmMessage.builder()
+                    .orderNo(orderNo)
+                    .venueId(order.getSellerId())
+                    .currentOrderStatus(OrderStatusEnum.REFUND_CANCELLED)
+                    .build();
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_CONFIRM_NOTIFY_MERCHANT,
+                    OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT,
+                    confirmMessage);
+        }
 
         return CancelRefundApplyResultVo.builder()
                 .orderNo(orderNo)

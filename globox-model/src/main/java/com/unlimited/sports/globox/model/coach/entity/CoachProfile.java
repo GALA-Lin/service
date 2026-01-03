@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.coach.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import lombok.*;
 
@@ -17,7 +18,7 @@ import java.util.List;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@TableName(value = "coach_profiles")
+@TableName(value = "coach_profiles", autoResultMap = true)
 public class CoachProfile implements Serializable {
 
     @Serial
@@ -38,18 +39,22 @@ public class CoachProfile implements Serializable {
     /**
      * 证书等级（JSON数组）
      */
-    private String coachCertificationLevel;
+    @TableField(value = "coach_certification_level", typeHandler = JacksonTypeHandler.class)
+    private List<String> coachCertificationLevel;
 
     /**
      * 证书附件URL（JSON数组）
      */
-    private String coachCertificationFiles;
+    @TableField(value = "coach_certification_files", typeHandler = JacksonTypeHandler.class)
+    private List<String> coachCertificationFiles;
 
 
     /**
      * 教学视频/图片（JSON数组）
      */
-    private String coachWorkPhotos;
+    @TableField(value = "coach_work_photos", typeHandler = JacksonTypeHandler.class)
+    private List<String> coachWorkPhotos;
+
 
     /**
      * 教龄
@@ -70,13 +75,14 @@ public class CoachProfile implements Serializable {
     private String coachTeachingStyle;
 
     /**
-     * 常驻区域
+     * 常驻服务区域（多个，逗号分隔）
+     * 例如: "双流区, 金牛区"
      */
     @TableField(value = "coach_service_area")
     private String coachServiceArea;
 
     /**
-     * 可接受的远距离服务区域
+     * 可接受的远距离服务区域（多个，逗号分隔）
      */
     @TableField(value = "coach_remote_service_area")
     private String coachRemoteServiceArea;
@@ -201,5 +207,24 @@ public class CoachProfile implements Serializable {
     @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
+    /**
+     * 获取服务区域列表
+     */
+    public List<String> getServiceAreaList() {
+        if (coachServiceArea == null || coachServiceArea.trim().isEmpty()) {
+            return List.of();
+        }
+        return List.of(coachServiceArea.split(","));
+    }
+
+    /**
+     * 获取远距离服务区域列表
+     */
+    public List<String> getRemoteServiceAreaList() {
+        if (coachRemoteServiceArea == null || coachRemoteServiceArea.trim().isEmpty()) {
+            return List.of();
+        }
+        return List.of(coachRemoteServiceArea.split(","));
+    }
 
 }

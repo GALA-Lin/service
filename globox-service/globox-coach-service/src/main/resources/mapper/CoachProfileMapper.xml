@@ -2,6 +2,62 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.unlimited.sports.globox.coach.mapper.CoachProfileMapper">
 
+    <resultMap id="BaseResultMap" type="com.unlimited.sports.globox.model.coach.entity.CoachProfile">
+        <id property="coachProfilesId" column="coach_profiles_id"/>
+        <result property="coachUserId" column="coach_user_id"/>
+
+        <!-- JSON字段需要显式指定 typeHandler -->
+        <result property="coachCertificationLevel" column="coach_certification_level"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="coachCertificationFiles" column="coach_certification_files"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="coachWorkPhotos" column="coach_work_photos"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="coachSpecialtyTags" column="coach_specialty_tags"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+
+        <!-- 其他字段 -->
+        <result property="coachTeachingYears" column="coach_teaching_years"/>
+        <result property="coachTeachingStyle" column="coach_teaching_style"/>
+        <result property="coachServiceArea" column="coach_service_area"/>
+        <result property="coachRemoteServiceArea" column="coach_remote_service_area"/>
+        <result property="coachRemoteMinHours" column="coach_remote_min_hours"/>
+        <result property="coachAcceptVenueType" column="coach_accept_venue_type"/>
+        <result property="coachMinPrice" column="coach_min_price"/>
+        <result property="coachMaxPrice" column="coach_max_price"/>
+        <result property="coachTotalStudents" column="coach_total_students"/>
+        <result property="coachTotalHours" column="coach_total_hours"/>
+        <result property="coachTotalCourses" column="coach_total_courses"/>
+        <result property="coachRatingScore" column="coach_rating_score"/>
+        <result property="coachRatingCount" column="coach_rating_count"/>
+        <result property="coachLatitude" column="coach_latitude"/>
+        <result property="coachLongitude" column="coach_longitude"/>
+        <result property="coachStatus" column="coach_status"/>
+        <result property="isRecommendedCoach" column="is_recommended_coach"/>
+        <result property="coachDisplayOrder" column="coach_display_order"/>
+        <result property="coachAuditStatus" column="coach_audit_status"/>
+        <result property="coachAuditRemark" column="coach_audit_remark"/>
+        <result property="coachAuditTime" column="coach_audit_time"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <!-- 查询所有教练（用于筛选选项） -->
+    <select id="selectAllForFilters" resultMap="BaseResultMap">
+        SELECT
+            coach_profiles_id,
+            coach_user_id,
+            coach_certification_level,
+            coach_service_area,
+            coach_min_price,
+            coach_max_price,
+            coach_status,
+            coach_audit_status
+        FROM coach_profiles
+        WHERE coach_status = 1
+          AND coach_audit_status = 1
+    </select>
+
     <!-- 搜索教练列表 -->
     <select id="searchCoaches" resultType="java.util.Map">
         SELECT

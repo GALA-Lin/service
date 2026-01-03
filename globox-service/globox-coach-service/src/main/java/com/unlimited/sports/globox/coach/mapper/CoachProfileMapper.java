@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.unlimited.sports.globox.model.coach.entity.CoachProfile;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.ResultMap;
+import org.apache.ibatis.annotations.Select;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -71,4 +73,10 @@ public interface CoachProfileMapper extends BaseMapper<CoachProfile> {
             @Param("longitude") BigDecimal longitude,
             @Param("maxDistance") BigDecimal maxDistance
     );
+
+    /**
+     * 查询所有教练（用于筛选选项）- 使用 XML 的 resultMap
+     */
+    @ResultMap("BaseResultMap")
+    List<CoachProfile> selectAllForFilters();
 }

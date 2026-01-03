@@ -19,6 +19,7 @@ import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
 import com.unlimited.sports.globox.model.coach.enums.TeachingYearsFilterEnum;
 import com.unlimited.sports.globox.model.coach.vo.CoachDetailVo;
 import com.unlimited.sports.globox.model.coach.vo.CoachItemVo;
+import com.unlimited.sports.globox.model.coach.vo.CoachListResponse;
 import com.unlimited.sports.globox.model.coach.vo.CoachServiceVo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -47,29 +48,24 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
     private UserDubboService userDubboService;
 
     @Override
-    public PaginationResult<CoachItemVo> searchCoaches(GetCoachListDto dto) {
+    public CoachListResponse searchCoaches(GetCoachListDto dto) {
         log.info("搜索教练列表 - keyword: {}, sortBy: {}, page: {}/{}",
                 dto.getKeyword(), dto.getSortBy(), dto.getPage(), dto.getPageSize());
 
-        // 解析教龄筛选（通过枚举获取）
+        // 解析教龄筛选
         Integer minYears = null;
         Integer maxYears = null;
         TeachingYearsFilterEnum filterEnum = TeachingYearsFilterEnum.getByCode(dto.getTeachingYearsFilter());
         if (filterEnum != null) {
             minYears = filterEnum.getMinYears();
             maxYears = filterEnum.getMaxYears();
-            // 可选：日志打印更清晰的筛选条件
             log.info("教龄筛选条件: {}", filterEnum.getDesc());
         }
-        else {
-            log.info("未选择教龄筛选条件/无效的教龄筛选编码: {}", dto.getTeachingYearsFilter());
-        }
-
 
         // 计算分页偏移量
         int offset = (dto.getPage() - 1) * dto.getPageSize();
 
-        // 调用Mapper进行搜索（在数据库层面完成所有过滤和排序）
+        // 调用Mapper进行搜索
         List<Map<String, Object>> searchResults = coachProfileMapper.searchCoaches(
                 dto.getKeyword(),
                 dto.getMinPrice(),
@@ -109,7 +105,82 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         // 转换为VO
         List<CoachItemVo> coachItemVos = convertToItemVo(searchResults);
 
-        return PaginationResult.build(coachItemVos, total, dto.getPage(), dto.getPageSize());
+        // 构建分页结果
+        PaginationResult<CoachItemVo> paginationResult = PaginationResult.build(
+                coachItemVos, total, dto.getPage(), dto.getPageSize()
+        );
+
+        // 查询所有教练的证书和区域集合（用于筛选选项）
+        Set<String> availableCertifications = new HashSet<>();
+        Set<String> availableServiceAreas = new HashSet<>();
+        CoachListResponse.PriceRange priceRange = getFilterOptions(
+                availableCertifications,
+                availableServiceAreas
+        );
+
+        // 构建返回结果
+        return CoachListResponse.builder()
+                .coaches(paginationResult)
+                .availableCertifications(availableCertifications)
+                .availableServiceAreas(availableServiceAreas)
+                .priceRange(priceRange)
+                .build();
+    }
+
+    /**
+     * 获取筛选选项（证书、区域、价格区间）
+     */
+    private CoachListResponse.PriceRange getFilterOptions(
+            Set<String> certifications,
+            Set<String> serviceAreas) {
+
+        List<CoachProfile> allCoaches = coachProfileMapper.selectAllForFilters();
+
+
+//        // 查询所有正常接单的教练
+//        List<CoachProfile> allCoaches = coachProfileMapper.selectList(
+//                new LambdaQueryWrapper<CoachProfile>()
+//                        .eq(CoachProfile::getCoachStatus, 1)
+//                        .eq(CoachProfile::getCoachAuditStatus, 1)
+//        );
+
+        BigDecimal minPrice = null;
+        BigDecimal maxPrice = null;
+
+        for (CoachProfile coach : allCoaches) {
+            // 收集证书
+            if (coach.getCoachCertificationLevel() != null) {
+                certifications.addAll(coach.getCoachCertificationLevel());
+            }
+
+            // 收集区域（处理逗号分隔）
+            if (coach.getCoachServiceArea() != null && !coach.getCoachServiceArea().trim().isEmpty()) {
+                String[] areas = coach.getCoachServiceArea().split(",");
+                for (String area : areas) {
+                    String trimmedArea = area.trim();
+                    if (!trimmedArea.isEmpty()) {
+                        serviceAreas.add(trimmedArea);
+                    }
+                }
+            }
+
+            // 计算价格区间
+            if (coach.getCoachMinPrice() != null) {
+                if (minPrice == null || coach.getCoachMinPrice().compareTo(minPrice) < 0) {
+                    minPrice = coach.getCoachMinPrice();
+                }
+            }
+            if (coach.getCoachMaxPrice() != null) {
+                if (maxPrice == null || coach.getCoachMaxPrice().compareTo(maxPrice) > 0) {
+                    maxPrice = coach.getCoachMaxPrice();
+                }
+            }
+        }
+
+        return CoachListResponse.PriceRange.builder()
+                .minPrice(minPrice != null ? minPrice : BigDecimal.ZERO)
+                .maxPrice(maxPrice != null ? maxPrice : BigDecimal.valueOf(1000))
+                .build();
     }
 
     @Override
@@ -130,13 +201,11 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         BatchUserInfoRequest request = new BatchUserInfoRequest();
         request.setUserIds(Collections.singletonList(coachUserId));
 
-        log.info("查询教练用户信息 - coachUserId: {}", coachUserId);
-
         BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
 
         if (response == null || response.getUsers() == null || response.getUsers().isEmpty()) {
             log.error("无法获取教练基本信息 - coachUserId: {}", coachUserId);
-            throw new GloboxApplicationException("无法获取教练基本信息，请联系用户服务管理员");
+            throw new GloboxApplicationException("无法获取教练基本信息");
         }
 
         UserInfoVo userInfo = response.getUsers().get(0);
@@ -177,12 +246,6 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
             );
         }
 
-        // 解析JSON字段
-        List<String> certificationLevels = parseJsonArray(profile.getCoachCertificationLevel());
-        List<String> certificationFiles = parseJsonArray(profile.getCoachCertificationFiles());
-        List<String> specialtyTags = parseJsonArray(profile.getCoachSpecialtyTags());
-        List<String> workPhotos = parseJsonArray(profile.getCoachWorkPhotos());
-
         // 获取场地类型描述
         String venueTypeDesc = "";
         try {
@@ -193,7 +256,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
             log.warn("未知的场地类型: {}", profile.getCoachAcceptVenueType());
         }
 
-        // 构建简单信息VO（用于详情页的基本信息展示）
+        // 构建简单信息VO
         CoachItemVo simpleInfo = CoachItemVo.builder()
                 .coachUserInfo(userInfo)
                 .coachServiceArea(profile.getCoachServiceArea())
@@ -201,7 +264,8 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 .coachRatingScore(profile.getCoachRatingScore())
                 .coachRatingCount(profile.getCoachRatingCount())
                 .coachMinPrice(profile.getCoachMinPrice())
-                .coachCertificationLevels(certificationLevels)
+                .coachCertificationLevels(profile.getCoachCertificationLevel() != null ?
+                        profile.getCoachCertificationLevel() : Collections.emptyList())
                 .distance(distance)
                 .isRecommended(profile.getIsRecommendedCoach() == 1)
                 .build();
@@ -213,14 +277,17 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 .coachTotalStudents(profile.getCoachTotalStudents())
                 .coachTotalHours(profile.getCoachTotalHours())
                 .coachTeachingStyle(profile.getCoachTeachingStyle())
-                .coachWorkPhotos(workPhotos)
-                .coachSpecialtyTags(specialtyTags)
+                .coachWorkPhotos(profile.getCoachWorkPhotos() != null ?
+                        profile.getCoachWorkPhotos() : Collections.emptyList())
+                .coachSpecialtyTags(profile.getCoachSpecialtyTags() != null ?
+                        Collections.singletonList(profile.getCoachSpecialtyTags()) : Collections.emptyList())
                 .coachRemoteServiceArea(profile.getCoachRemoteServiceArea())
                 .coachRemoteMinHours(profile.getCoachRemoteMinHours())
                 .coachAcceptVenueType(profile.getCoachAcceptVenueType())
                 .coachAcceptVenueTypeDesc(venueTypeDesc)
                 .services(serviceVos)
-                .coachCertificationFiles(certificationFiles)
+                .coachCertificationFiles(profile.getCoachCertificationFiles() != null ?
+                        profile.getCoachCertificationFiles() : Collections.emptyList())
                 .build();
     }
 
@@ -240,54 +307,44 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         BatchUserInfoRequest request = new BatchUserInfoRequest();
         request.setUserIds(coachUserIds);
 
-        // 添加日志
         log.info("批量查询用户信息 - userIds: {}", coachUserIds);
 
         BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
 
-        // 添加日志和空值检查
-        if (response == null) {
-            log.warn("用户服务返回为空");
-            // 使用空Map避免NPE
-            Map<Long, UserInfoVo> emptyMap = new HashMap<>();
-            return buildCoachItemVos(searchResults, emptyMap);
+        Map<Long, UserInfoVo> userInfoMap = new HashMap<>();
+        if (response != null && response.getUsers() != null) {
+            userInfoMap = response.getUsers().stream()
+                    .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo));
         }
-
-        if (response.getUsers() == null || response.getUsers().isEmpty()) {
-            log.warn("用户服务返回的用户列表为空 - 请求的userIds: {}", coachUserIds);
-            Map<Long, UserInfoVo> emptyMap = new HashMap<>();
-            return buildCoachItemVos(searchResults, emptyMap);
-        }
-
-        Map<Long, UserInfoVo> userInfoMap = response.getUsers().stream()
-                .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo));
 
         log.info("成功获取用户信息 - 数量: {}", userInfoMap.size());
 
         return buildCoachItemVos(searchResults, userInfoMap);
     }
 
-    // 提取构建逻辑
+    /**
+     * 构建教练列表项VO
+     */
     private List<CoachItemVo> buildCoachItemVos(List<Map<String, Object>> searchResults,
                                                 Map<Long, UserInfoVo> userInfoMap) {
         return searchResults.stream().map(result -> {
             Long coachUserId = ((Number) result.get("coachUserId")).longValue();
             UserInfoVo userInfo = userInfoMap.get(coachUserId);
 
-            // 如果用户信息不存在，记录警告
             if (userInfo == null) {
                 log.warn("教练用户信息缺失 - coachUserId: {}", coachUserId);
             }
 
+            // 解析证书列表（从数据库JSON字段）
             String certificationLevelStr = (String) result.get("certificationLevel");
-            List<String> certificationTags = parseJsonArray(certificationLevelStr);
+            List<String> certificationTags = parseJsonArrayFromDb(certificationLevelStr);
 
             BigDecimal distance = result.get("distance") != null
                     ? new BigDecimal(result.get("distance").toString())
                     : null;
 
             return CoachItemVo.builder()
-                    .coachUserInfo(userInfo)  // 可能为null，前端需要处理
+                    .coachUserInfo(userInfo)
                     .coachServiceArea((String) result.get("serviceArea"))
                     .coachTeachingYears(result.get("teachingYears") != null ?
                             ((Number) result.get("teachingYears")).intValue() : 0)
@@ -306,15 +363,15 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
     }
 
     /**
-     * 解析JSON数组字符串为List
+     * 解析数据库JSON数组字符串为List
+     * 支持格式: ["PTR初级", "PTR中级"] 或 ["PTR初级","PTR中级"]
      */
-    private List<String> parseJsonArray(String jsonStr) {
+    private List<String> parseJsonArrayFromDb(String jsonStr) {
         if (jsonStr == null || jsonStr.trim().isEmpty()) {
             return Collections.emptyList();
         }
 
         try {
-            // 简单的JSON数组解析（去掉方括号和引号）
             String cleaned = jsonStr.trim()
                     .replaceAll("^\\[|]$", "")
                     .replaceAll("\"", "");

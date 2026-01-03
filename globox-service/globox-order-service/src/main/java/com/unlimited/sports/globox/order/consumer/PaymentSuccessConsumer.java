@@ -5,15 +5,17 @@ import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
-import com.unlimited.sports.globox.common.enums.order.OperatorTypeEnum;
-import com.unlimited.sports.globox.common.enums.order.OrderActionEnum;
-import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
-import com.unlimited.sports.globox.common.enums.order.OrdersPaymentStatusEnum;
+import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
+import com.unlimited.sports.globox.common.message.order.OrderPaidMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
+import com.unlimited.sports.globox.common.service.MQService;
+import com.unlimited.sports.globox.model.order.entity.OrderItems;
 import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
 import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.lock.RedisLock;
+import com.unlimited.sports.globox.order.mapper.OrderItemsMapper;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 支付成功回调
@@ -39,6 +43,11 @@ public class PaymentSuccessConsumer {
     @Autowired
     private OrderStatusLogsMapper orderStatusLogsMapper;
 
+    @Autowired
+    private MQService mqService;
+    @Autowired
+    private OrderItemsMapper orderItemsMapper;
+
 
     /**
      * 支付成功回调 消费者
@@ -48,8 +57,7 @@ public class PaymentSuccessConsumer {
     @RedisLock(value = "#message.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @RabbitRetryable(
             finalExchange = PaymentMQConstants.EXCHANGE_PAYMENT_SUCCESS_FINAL_DLX,
-            finalRoutingKey = PaymentMQConstants.ROUTING_PAYMENT_SUCCESS_FINAL
-    )
+            finalRoutingKey = PaymentMQConstants.ROUTING_PAYMENT_SUCCESS_FINAL)
     public void onMessage(
             PaymentSuccessMessage message,
             Channel channel,
@@ -153,6 +161,42 @@ public class PaymentSuccessConsumer {
                 .build();
 
         orderStatusLogsMapper.insert(logEntity);
+
+        // 8) 发送订单支付成功消息给商家
+        if (order.getSellerType() == SellerTypeEnum.VENUE) {
+            List<Long> recordIds = new ArrayList<>();
+            List<OrderItems> orderItems = orderItemsMapper.selectList(
+                    Wrappers.<OrderItems>lambdaQuery()
+                            .eq(OrderItems::getOrderNo, orderNo));
+            if (orderItems != null) {
+                recordIds = orderItems.stream().map(OrderItems::getRecordId).toList();
+            }
+            OrderPaidMessage paidMessage = OrderPaidMessage.builder()
+                    .orderNo(orderNo)
+                    .userId(order.getBuyerId())
+                    .recordIds(recordIds)
+                    .build();
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
+                    OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
+                    paidMessage);
+
+            if (!order.isConfirmed()) {
+                // 9.1) 发送订单确认消息给商家
+                OrderNotifyMerchantConfirmMessage confirmMessage = OrderNotifyMerchantConfirmMessage.builder()
+                        .orderNo(orderNo)
+                        .venueId(order.getSellerId())
+                        .currentOrderStatus(order.getOrderStatus())
+                        .build();
+
+                mqService.send(
+                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_CONFIRM_NOTIFY_MERCHANT,
+                        OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT,
+                        confirmMessage);
+            }
+        } else if (order.getSellerType().equals(SellerTypeEnum.COACH)){
+            // 9.2) 发送订单确认消息给教练 TODO ETA 等待约教练模块完成
+        }
 
         log.info("[支付成功回调] 处理完成 orderNo={}, payStatus {}->{} , orderStatus {}->{}",
                 orderNo, oldPayStatus, order.getPaymentStatus(), oldOrderStatus, order.getOrderStatus());

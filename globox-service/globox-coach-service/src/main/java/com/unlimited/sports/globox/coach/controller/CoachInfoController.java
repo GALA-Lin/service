@@ -6,6 +6,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachListDto;
 import com.unlimited.sports.globox.model.coach.vo.CoachDetailVo;
 import com.unlimited.sports.globox.model.coach.vo.CoachItemVo;
+import com.unlimited.sports.globox.model.coach.vo.CoachListResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -26,14 +27,17 @@ public class CoachInfoController {
 
     /**
      * 获取教练列表（支持搜索、过滤、排序）
+     * 返回教练列表和所有可筛选的选项（证书、区域、价格区间）
      *
      * @param dto 查询条件
-     * @return 分页的教练列表
+     * @return 教练列表和筛选选项
      */
     @GetMapping
-    public R<PaginationResult<CoachItemVo>> getCoachList(@Valid GetCoachListDto dto) {
-        log.info("获取教练列表 - sortBy: {}, page: {}/{}", dto.getSortBy(), dto.getPage(), dto.getPageSize());
-        PaginationResult<CoachItemVo> result = coachService.searchCoaches(dto);
+    public R<CoachListResponse> getCoachList(@Valid GetCoachListDto dto) {
+        log.info("获取教练列表 - sortBy: {}, page: {}/{}",
+                dto.getSortBy(), dto.getPage(), dto.getPageSize());
+
+        CoachListResponse result = coachService.searchCoaches(dto);
         return R.ok(result);
     }
 
@@ -50,6 +54,7 @@ public class CoachInfoController {
             @PathVariable Long coachUserId,
             @RequestParam(required = false) Double latitude,
             @RequestParam(required = false) Double longitude) {
+
         log.info("获取教练详情 - coachUserId: {}", coachUserId);
         CoachDetailVo result = coachService.getCoachDetail(coachUserId, latitude, longitude);
         return R.ok(result);

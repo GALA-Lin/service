@@ -79,10 +79,22 @@ public interface OrderDubboService {
 
     /**
      * 商家退款申请详情（含items、extraCharges，可选timeline）
+     *
+     * @param dto 包含退款申请ID、订单号、商家ID以及场馆ID等信息的请求参数
+     * @return 返回退款申请的详细信息，包括订单基本信息、退款申请状态、退款金额及与订单相关的项目和额外费用的退款明细
      */
     MerchantRefundApplyDetailsResultDto merchantGetRefundApplyDetails(
             @Valid @NotNull(message = "请求参数不能为空")
             MerchantRefundApplyDetailsRequestDto dto);
+
+
+    /**
+     * 商家确认订单的方法。
+     *
+     * @param dto 包含订单号的请求参数
+     * @return 返回商家确认订单的结果，包括订单号、是否确认成功、当前订单状态、状态描述以及确认时间
+     */
+    MerchantConfirmResultDto merchantConfirm(MerchantConfirmRequestDto dto);
 
 
     /**

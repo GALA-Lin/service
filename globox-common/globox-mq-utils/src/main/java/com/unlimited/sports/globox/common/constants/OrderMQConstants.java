@@ -99,4 +99,68 @@ public class OrderMQConstants {
     public static final String QUEUE_ORDER_AUTO_CANCEL_ORDER_DLQ =
             "queue.order.auto-cancel.order.dlq";
 
+
+    /**
+     * 订单服务 → 通知商家服务确认订单（Confirm Order）
+     * 说明：
+     * - 主队列：商家服务消费，执行“确认订单”相关逻辑
+     * - Retry：短延迟重试（例如并发冲突、锁冲突、依赖服务暂不可用）
+     * - Final DLQ：超过最大次数后进入最终死信，人工/补偿处理
+     */
+    // 主交换机 & 主路由 & 主队列
+    public static final String EXCHANGE_TOPIC_ORDER_CONFIRM_NOTIFY_MERCHANT =
+            "exchange.topic.order.confirm.notify-merchant";
+    public static final String ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT =
+            "routing.order.confirm.notify-merchant";
+    public static final String QUEUE_ORDER_CONFIRM_NOTIFY_MERCHANT =
+            "queue.order.confirm.notify-merchant.merchant";
+
+    // Retry Queue（TTL）
+    public static final String QUEUE_ORDER_CONFIRM_NOTIFY_MERCHANT_RETRY =
+            "queue.order.confirm.notify-merchant.merchant.retry";
+
+    // Retry-DLX：主队列失败后进入重试队列
+    public static final String EXCHANGE_ORDER_CONFIRM_NOTIFY_MERCHANT_RETRY_DLX =
+            "exchange.topic.order.confirm.notify-merchant.retry.dlx";
+    public static final String ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT_RETRY =
+            "routing.order.confirm.notify-merchant.retry";
+
+    // Final-DLX：超过最大次数进入最终 DLQ
+    public static final String EXCHANGE_ORDER_CONFIRM_NOTIFY_MERCHANT_FINAL_DLX =
+            "exchange.topic.order.confirm.notify-merchant.final.dlx";
+    public static final String ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT_FINAL =
+            "routing.order.confirm.notify-merchant.final";
+    public static final String QUEUE_ORDER_CONFIRM_NOTIFY_MERCHANT_DLQ =
+            "queue.order.confirm.notify-merchant.merchant.dlq";
+
+
+    /**
+     * 订单通知商家 订单已变为已支付状态事件
+     */
+    // 主交换机 & 主路由 & 主队列
+    public static final String EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT =
+            "exchange.topic.order.payment-confirmed.notify-merchant";
+    public static final String ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT =
+            "routing.order.payment-confirmed.notify-merchant";
+    public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT =
+            "queue.order.payment-confirmed.notify-merchant.merchant";
+
+    // Retry Queue（TTL）
+    public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_RETRY =
+            "queue.order.payment-confirmed.notify-merchant.merchant.retry";
+
+    // Retry-DLX：主队列失败后进入重试队列
+    public static final String EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_RETRY_DLX =
+            "exchange.topic.order.payment-confirmed.notify-merchant.retry.dlx";
+    public static final String ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_RETRY =
+            "routing.order.payment-confirmed.notify-merchant.retry";
+
+    // Final-DLX：超过最大次数进入最终 DLQ
+    public static final String EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL_DLX =
+            "exchange.topic.order.payment-confirmed.notify-merchant.final.dlx";
+    public static final String ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL =
+            "routing.order.payment-confirmed.notify-merchant.final";
+    public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_DLQ =
+            "queue.order.payment-confirmed.notify-merchant.merchant.dlq";
+
 }

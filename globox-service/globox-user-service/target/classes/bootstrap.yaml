@@ -1,8 +1,0 @@
-server:
-  port: 12024
-
-spring:
-  application:
-    name: globox-user-service
-  profiles:
-    active: dev

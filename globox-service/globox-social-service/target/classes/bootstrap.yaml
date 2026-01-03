@@ -1,8 +1,0 @@
-server:
-  port: 12025
-
-spring:
-  application:
-    name: globox-social-service
-  profiles:
-    active: dev

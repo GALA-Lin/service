@@ -1,8 +1,0 @@
-server:
-  port: 12026
-
-spring:
-  application:
-    name: globox-order-service
-  profiles:
-    active: dev

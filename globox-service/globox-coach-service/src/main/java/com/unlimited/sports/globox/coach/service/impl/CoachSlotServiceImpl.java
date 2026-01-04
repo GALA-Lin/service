@@ -10,7 +10,6 @@ import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
 import com.unlimited.sports.globox.model.coach.vo.CoachAvailableSlotVo;
 import com.unlimited.sports.globox.model.coach.vo.CoachScheduleVo;
 import com.unlimited.sports.globox.model.coach.vo.CoachSlotConflictVo;
-import com.unlimited.sports.globox.model.coach.vo.CoachSlotRecordVo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -19,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -98,6 +98,56 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         log.info("时段模板初始化完成 - coachUserId: {}", dto.getCoachUserId());
     }
 
+    /**
+     * 更新时段模板
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateSlotTemplate(Long templateId, CoachSlotTemplateUpdateDto dto) {
+        log.info("更新时段模板 - templateId: {}", templateId);
+
+        CoachSlotTemplate template = slotTemplateMapper.selectById(templateId);
+        if (template == null || !template.getCoachUserId().equals(dto.getCoachUserId())) {
+            throw new GloboxApplicationException("时段模板不存在或无权限");
+        }
+
+        if (dto.getPrice() != null) {
+            template.setPrice(dto.getPrice());
+        }
+        if (dto.getAcceptableAreas() != null) {
+            template.setAcceptableAreas(convertListToJson(dto.getAcceptableAreas()));
+        }
+        if (dto.getVenueRequirementDes() != null) {
+            template.setVenueRequirementDesc(dto.getVenueRequirementDes());
+        }
+        if (dto.getAdvanceBookingDays() != null) {
+            template.setAdvanceBookingDays(dto.getAdvanceBookingDays());
+        }
+
+        slotTemplateMapper.updateById(template);
+        log.info("时段模板更新成功");
+    }
+
+    /**
+     * 删除时段模板
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteSlotTemplate(Long templateId, Long coachUserId) {
+        log.info("删除时段模板 - templateId: {}", templateId);
+
+        CoachSlotTemplate template = slotTemplateMapper.selectById(templateId);
+        if (template == null || !template.getCoachUserId().equals(coachUserId)) {
+            throw new GloboxApplicationException("时段模板不存在或无权限");
+        }
+
+        // 软删除
+        template.setIsDeleted(1);
+        slotTemplateMapper.updateById(template);
+
+        log.info("时段模板删除成功");
+    }
+
 
     /**
      * 查询可预约时段
@@ -109,67 +159,236 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
      * 查询可预约时段
      */
     @Override
-    public Map<String, List<CoachAvailableSlotVo>> getAvailableSlots(
-            CoachAvailableSlotQueryDto dto) {
-        log.info("查询可预约时段 - coachUserId: {}, {} 至 {}",
+    public List<CoachAvailableSlotVo> getAvailableSlots(CoachAvailableSlotQueryDto dto) {
+        log.info("查询可预约时段 - coachUserId: {}, 日期范围: {} - {}",
                 dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
 
         // 查询所有模板
-        List<CoachSlotTemplate> templates = slotTemplateMapper.selectByCoachUserId(
-                dto.getCoachUserId());
+        LambdaQueryWrapper<CoachSlotTemplate> templateWrapper = new LambdaQueryWrapper<CoachSlotTemplate>()
+                .eq(CoachSlotTemplate::getCoachUserId, dto.getCoachUserId())
+                .eq(CoachSlotTemplate::getIsDeleted, 0);
 
-        if (templates.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        // 如果指定了服务类型，过滤模板
         if (dto.getCoachServiceType() != null) {
-            templates = templates.stream()
-                    .filter(t -> t.getCoachServiceId() == null ||
-                            t.getCoachServiceId().equals(dto.getCoachServiceType()))
-                    .toList();
+            templateWrapper.and(w -> w.eq(CoachSlotTemplate::getCoachServiceId, dto.getCoachServiceType())
+                    .or().isNull(CoachSlotTemplate::getCoachServiceId));
         }
 
-        List<Long> templateIds = templates.stream()
-                .map(CoachSlotTemplate::getCoachSlotTemplateId)
-                .collect(Collectors.toList());
+        List<CoachSlotTemplate> templates = slotTemplateMapper.selectList(templateWrapper);
+        if (templates.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        // 查询已有记录
-        List<CoachSlotRecord> records = slotRecordMapper.selectByTemplateIdsAndDateRange(
-                templateIds, dto.getStartDate(), dto.getEndDate());
+        List<CoachAvailableSlotVo> availableSlots = new ArrayList<>();
 
-        Map<String, CoachSlotRecord> recordMap = records.stream()
-                .collect(Collectors.toMap(
-                        r -> r.getCoachSlotTemplateId() + "_" + r.getBookingDate(),
-                        r -> r
-                ));
-
-        // 构建可预约时段
-        Map<String, List<CoachAvailableSlotVo>> result = new LinkedHashMap<>();
-
+        // 遍历日期范围
         LocalDate currentDate = dto.getStartDate();
         while (!currentDate.isAfter(dto.getEndDate())) {
-            List<CoachAvailableSlotVo> dailySlots = new ArrayList<>();
-            LocalDate date = currentDate;
+            LocalDate finalCurrentDate = currentDate;
 
+            // 查询当天已存在的记录
+            List<CoachSlotRecord> existingRecords = slotRecordMapper.selectList(
+                    new LambdaQueryWrapper<CoachSlotRecord>()
+                            .eq(CoachSlotRecord::getCoachUserId, dto.getCoachUserId())
+                            .eq(CoachSlotRecord::getBookingDate, currentDate)
+            );
+
+            Map<Long, CoachSlotRecord> recordMap = existingRecords.stream()
+                    .collect(Collectors.toMap(
+                            CoachSlotRecord::getCoachSlotTemplateId,
+                            r -> r,
+                            (r1, r2) -> r1));
+
+            // 遍历模板生成可用时段
             for (CoachSlotTemplate template : templates) {
-                String key = template.getCoachSlotTemplateId() + "_" + date;
-                CoachSlotRecord record = recordMap.get(key);
-
-                // 只返回AVAILABLE状态或无记录的时段
-                if (record == null || record.getStatus() == 1) {
-                    dailySlots.add(buildAvailableSlotVo(template, date, record));
+                // 检查是否在提前预约天数范围内
+                long daysUntil = ChronoUnit.DAYS.between(LocalDate.now(), finalCurrentDate);
+                if (daysUntil > template.getAdvanceBookingDays()) {
+                    continue;
                 }
-            }
 
-            if (!dailySlots.isEmpty()) {
-                result.put(date.toString(), dailySlots);
+                CoachSlotRecord record = recordMap.get(template.getCoachSlotTemplateId());
+
+                // 只返回可用时段（没有记录或状态为AVAILABLE的）
+                if (record == null) {
+                    availableSlots.add(buildAvailableSlotVo(template, finalCurrentDate, null));
+                }
             }
 
             currentDate = currentDate.plusDays(1);
         }
 
-        return result;
+        log.info("找到可预约时段数: {}", availableSlots.size());
+        return availableSlots;
+    }
+
+    /**
+     * 锁定时段（用户下单）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void lockSlot(CoachSlotLockDto dto) {
+        log.info("锁定时段 - slotRecordId: {}, userId: {}",
+                dto.getSlotRecordId(), dto.getUserId());
+
+        CoachSlotRecord record = slotRecordMapper.selectById(dto.getSlotRecordId());
+        if (record == null) {
+            throw new GloboxApplicationException("时段不存在");
+        }
+
+        // 检查是否已被占用
+        if (record.getStatus() != 1) { // 1=AVAILABLE
+            throw new GloboxApplicationException("该时段已被占用或不可预约");
+        }
+
+        // 锁定时段
+        record.setStatus(1); // LOCKED
+        record.setLockedByUserId(dto.getUserId());
+        record.setLockedType(1); // 用户下单锁定
+        record.setLockedUntil(LocalDateTime.now().plusMinutes(dto.getLockMinutes()));
+        record.setOperatorId(dto.getUserId());
+        record.setOperatorSource(2); // 用户端
+
+        int updated = slotRecordMapper.updateById(record);
+        if (updated == 0) {
+            throw new GloboxApplicationException("锁定失败，请重试");
+        }
+
+        log.info("时段锁定成功");
+    }
+
+    /**
+     * 批量锁定时段（教练手动锁定）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchLockSlots(CoachSlotBatchLockDto dto) {
+        log.info("批量锁定时段 - coachUserId: {}, 日期范围: {} - {}",
+                dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
+
+        // 查询需要锁定的记录
+        LambdaQueryWrapper<CoachSlotRecord> wrapper = new LambdaQueryWrapper<CoachSlotRecord>()
+                .eq(CoachSlotRecord::getCoachUserId, dto.getCoachUserId())
+                .between(CoachSlotRecord::getBookingDate, dto.getStartDate(), dto.getEndDate())
+                .eq(CoachSlotRecord::getStatus, 1); // 只锁定AVAILABLE状态
+
+        if (dto.getStartTime() != null && dto.getEndTime() != null) {
+            wrapper.ge(CoachSlotRecord::getStartTime, dto.getStartTime())
+                    .le(CoachSlotRecord::getEndTime, dto.getEndTime());
+        }
+
+        List<CoachSlotRecord> records = slotRecordMapper.selectList(wrapper);
+
+        // 批量更新
+        int updatedCount = 0;
+        for (CoachSlotRecord record : records) {
+            record.setStatus(2); // UNAVAILABLE
+            record.setLockedType(2); // 教练手动锁定
+            record.setLockReason(dto.getLockReason());
+            record.setOperatorId(dto.getOperatorId());
+            record.setOperatorSource(1); // 教练端
+
+            slotRecordMapper.updateById(record);
+            updatedCount++;
+        }
+
+        // 记录操作日志
+        logBatchOperation(dto.getCoachUserId(), 2,
+                dto.getStartDate(), dto.getEndDate(),
+                dto.getStartTime(), dto.getEndTime(),
+                updatedCount, dto.getLockReason(), dto.getOperatorId());
+
+        log.info("批量锁定完成 - 影响记录数: {}", updatedCount);
+        return updatedCount;
+    }
+
+    /**
+     * 批量解锁时段
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int batchUnlockSlots(CoachSlotBatchUnlockDto dto) {
+        log.info("批量解锁时段 - coachUserId: {}, 日期范围: {} - {}",
+                dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
+
+        // 查询需要解锁的记录
+        LambdaQueryWrapper<CoachSlotRecord> wrapper = new LambdaQueryWrapper<CoachSlotRecord>()
+                .eq(CoachSlotRecord::getCoachUserId, dto.getCoachUserId())
+                .between(CoachSlotRecord::getBookingDate, dto.getStartDate(), dto.getEndDate())
+                .eq(CoachSlotRecord::getStatus, 2) // 只解锁UNAVAILABLE状态
+                .eq(CoachSlotRecord::getLockedType, 2); // 只解锁手动锁定的
+
+        if (dto.getStartTime() != null && dto.getEndTime() != null) {
+            wrapper.ge(CoachSlotRecord::getStartTime, dto.getStartTime())
+                    .le(CoachSlotRecord::getEndTime, dto.getEndTime());
+        }
+
+        List<CoachSlotRecord> records = slotRecordMapper.selectList(wrapper);
+
+        // 批量更新
+        int updatedCount = 0;
+        for (CoachSlotRecord record : records) {
+            // 删除记录以恢复可用状态
+            slotRecordMapper.deleteById(record.getCoachSlotRecordId());
+            updatedCount++;
+        }
+
+        // 记录操作日志
+        logBatchOperation(dto.getCoachUserId(), 3,
+                dto.getStartDate(), dto.getEndDate(),
+                dto.getStartTime(), dto.getEndTime(),
+                updatedCount, "批量解锁", dto.getOperatorId());
+
+        log.info("批量解锁完成 - 影响记录数: {}", updatedCount);
+        return updatedCount;
+    }
+
+    /**
+     * 创建自定义日程
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<CoachSlotConflictVo> createCustomSchedule(CoachCustomScheduleDto dto) {
+        log.info("创建自定义日程 - coachUserId: {}, date: {}",
+                dto.getCoachUserId(), dto.getScheduleDate());
+
+        // 验证时间合法性
+        validateTimeRange(dto.getStartTime(), dto.getEndTime());
+
+        // 检查时间冲突
+        List<CoachSlotConflictVo> conflicts = checkTimeConflicts(
+                dto.getCoachUserId(),
+                dto.getScheduleDate(),
+                dto.getStartTime(),
+                dto.getEndTime());
+
+        if (!conflicts.isEmpty()) {
+            throw new GloboxApplicationException("时间段与现有日程冲突: " + conflicts.get(0).getConflictReason());
+        }
+
+        // 创建自定义日程
+        long minutes = ChronoUnit.MINUTES.between(dto.getStartTime(), dto.getEndTime());
+
+        CoachCustomSchedule schedule = new CoachCustomSchedule();
+        schedule.setCoachUserId(dto.getCoachUserId());
+        schedule.setStudentName(dto.getStudentName());
+        schedule.setScheduleDate(dto.getScheduleDate());
+        schedule.setStartTime(dto.getStartTime());
+        schedule.setEndTime(dto.getEndTime());
+        schedule.setDurationMinutes((int) minutes);
+        schedule.setVenueName(dto.getVenueName());
+        schedule.setVenueAddress(dto.getVenueAddress());
+        schedule.setCourseType(dto.getCoachServiceType());
+        schedule.setReminderMinutes(dto.getReminderMinutes());
+        schedule.setRemark(dto.getRemark());
+        schedule.setStatus(1); // 正常
+
+        customScheduleMapper.insert(schedule);
+
+        // 创建对应的slot record占位
+        createRecordForCustomSchedule(schedule);
+
+        log.info("自定义日程创建成功 - scheduleId: {}", schedule.getCoachCustomScheduleId());
+        return schedule;
     }
     /**
      * 查询教练日程

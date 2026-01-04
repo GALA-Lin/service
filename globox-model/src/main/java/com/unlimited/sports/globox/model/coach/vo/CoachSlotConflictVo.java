@@ -24,14 +24,17 @@ public class CoachSlotConflictVo {
      */
     @NonNull
     private LocalTime startTime;
+
     /**
      * 结束时间
      */
     private LocalTime endTime;
+
     /**
      * 冲突原因描述
      */
     private String conflictReason;
+
     /**
      * 相关ID（订单ID或自定义日程ID）
      */

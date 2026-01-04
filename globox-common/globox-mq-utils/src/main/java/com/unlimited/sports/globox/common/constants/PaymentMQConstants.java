@@ -75,4 +75,32 @@ public class PaymentMQConstants {
             "routing.payment.pay-cancel.final";
     public static final String QUEUE_PAYMENT_CANCEL_ORDER_DLQ =
             "queue.payment.pay-cancel.order.dlq";
+
+
+
+    /**
+     * 支付退款成功 → 通知订单服务（更新退款状态/回写订单/释放资源等）
+     * 主交换机 & 主路由 & 主队列
+     */
+    public static final String EXCHANGE_TOPIC_PAYMENT_REFUND_SUCCESS =
+            "exchange.topic.payment.refund-success";
+    public static final String ROUTING_PAYMENT_REFUND_SUCCESS =
+            "routing.payment.refund-success";
+    public static final String QUEUE_PAYMENT_REFUND_SUCCESS_ORDER =
+            "queue.payment.refund-success.order";
+
+    public static final String QUEUE_PAYMENT_REFUND_SUCCESS_ORDER_RETRY =
+            "queue.payment.refund-success.order.retry";
+
+    public static final String EXCHANGE_PAYMENT_REFUND_SUCCESS_RETRY_DLX =
+            "exchange.topic.payment.refund-success.retry.dlx";
+    public static final String ROUTING_PAYMENT_REFUND_SUCCESS_RETRY =
+            "routing.payment.refund-success.retry";
+
+    public static final String EXCHANGE_PAYMENT_REFUND_SUCCESS_FINAL_DLX =
+            "exchange.topic.payment.refund-success.final.dlx";
+    public static final String ROUTING_PAYMENT_REFUND_SUCCESS_FINAL =
+            "routing.payment.refund-success.final";
+    public static final String QUEUE_PAYMENT_REFUND_SUCCESS_ORDER_DLQ =
+            "queue.payment.refund-success.order.dlq";
 }

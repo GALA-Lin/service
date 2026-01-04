@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.venue.consumer;
 
+import com.rabbitmq.client.Channel;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
@@ -8,6 +9,7 @@ import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRe
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitHandler;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,7 +42,7 @@ public class UnlockSlotConsumer {
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_UNLOCK_SLOT_FINAL_DLX,
             finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT_FINAL
     )
-    public void onMessage(UnlockSlotMessage message) {
+    public void onMessage(UnlockSlotMessage message, Channel channel, Message amqpMessage) {
 
         Long userId = message.getUserId();
         List<Long> recordIds = message.getRecordIds();

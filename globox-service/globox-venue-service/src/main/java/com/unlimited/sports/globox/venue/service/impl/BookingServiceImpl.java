@@ -350,7 +350,7 @@ public class BookingServiceImpl implements IBookingService {
         // 从预先批量获取的priceMap中获取价格（O(1)查询，无数据库访问）
         BigDecimal price = priceMap.get(template.getStartTime());
         if (price == null) {
-            price = BigDecimal.ZERO;
+            price = new BigDecimal(999);
             log.warn("未找到槽位价格: courtId={}, startTime={}", template.getCourtId(), template.getStartTime());
         }
 

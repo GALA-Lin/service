@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.venue.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
@@ -59,12 +60,12 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
 
     @Override
     public PaginationResult<VenueItemVo> searchVenues(GetVenueListDto dto) {
-
+        log.info("查询条件{}",dto);
         // 预处理：查询设施过滤的场馆ID列表
         Set<Long> facilityVenueIds = null;
         if (CollectionUtils.isNotEmpty(dto.getFacilities())) {
             List<Long> venueIdsList = venueFacilityRelationMapper.selectList(new LambdaQueryWrapper<VenueFacilityRelation>()
-                    .in(VenueFacilityRelation::getFacilityName,dto.getFacilities()))
+                    .in(VenueFacilityRelation::getFacilityId, dto.getFacilities()))
                     .stream().map(VenueFacilityRelation::getVenueId).toList();
             facilityVenueIds = new HashSet<>(venueIdsList);
             if (facilityVenueIds.isEmpty()) {
@@ -116,6 +117,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                     dto.getStartTime(),
                     dto.getEndTime()
             );
+            log.info("时间筛选后不可预定的{}", JSON.toJSONString(slotUnavailable));
             if (slotUnavailable != null && !slotUnavailable.isEmpty()) {
                 unavailableVenueIds.addAll(slotUnavailable);
                 log.info("已预订槽位过滤的不可预订场馆数量：{}", slotUnavailable.size());
@@ -157,6 +159,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 dto.getLongitude(),
                 dto.getMaxDistance(),
                 dto.getSortBy(),
+                dto.getSortOrder(),
                 facilityVenueIdsList,
                 courtTypeVenueIdsList,
                 unavailableVenueIdsList,

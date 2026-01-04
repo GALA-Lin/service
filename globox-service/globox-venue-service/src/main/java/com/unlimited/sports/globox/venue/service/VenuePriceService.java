@@ -2,9 +2,9 @@ package com.unlimited.sports.globox.venue.service;
 
 import com.unlimited.sports.globox.dubbo.merchant.dto.OrderLevelExtraQuote;
 import com.unlimited.sports.globox.dubbo.merchant.dto.RecordQuote;
+import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplate;
 import com.unlimited.sports.globox.model.venue.enums.DayType;
-import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -70,14 +70,14 @@ public interface VenuePriceService {
      * 计算槽位价格并构建SlotQuote列表
      * 统一处理槽位价格查询、计算和VO构建
      *
-     * @param templates 槽位模板列表
+     * @param records 槽位记录列表（包含recordId和slotTemplateId）
      * @param venueId 场馆ID
      * @param venueName 场馆名称
      * @param bookingDate 预订日期
      * @param courtMap 场地ID -> 场地信息的映射
      * @return 槽位价格报价列表
      */
-    List<RecordQuote> calculateSlotQuotes(List<VenueBookingSlotTemplate> templates,
+    List<RecordQuote> calculateSlotQuotes(List<VenueBookingSlotRecord> records,
                                         Long venueId,
                                         String venueName,
                                         LocalDate bookingDate,

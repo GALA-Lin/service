@@ -52,6 +52,11 @@ public class Payments extends BaseEntity {
     private String tradeNo;
 
     /**
+     * 退款时提供
+     */
+    private String outRequestNo;
+
+    /**
      * 支付金额
      */
     private BigDecimal totalAmount;

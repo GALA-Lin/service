@@ -30,14 +30,19 @@ public class ApplyRefundResultVo implements Serializable {
     /**
      * 退款申请ID
      */
-    @NotNull
     @Schema(description = "退款申请ID", example = "10086")
     private Long refundApplyId;
 
     /**
-     * 当前退款申请状态
+     * 是否可退款
      */
     @NotNull
+    @Schema(description = "是否可退款", example = "true")
+    private boolean isRefundable;
+
+    /**
+     * 当前退款申请状态
+     */
     @Schema(description = "退款申请状态", example = "APPLIED")
     private ApplyRefundStatusEnum applyStatus;
 
@@ -47,4 +52,11 @@ public class ApplyRefundResultVo implements Serializable {
     @NotNull
     @Schema(description = "退款申请时间", example = "2025-12-18T14:30:00")
     private LocalDateTime appliedAt;
+
+    /**
+     * 不可退款时的原因
+     */
+    @Schema(description = "不可退款时的原因", example = "存在已过最晚可退时间的退款项")
+    private String reason;
+
 }

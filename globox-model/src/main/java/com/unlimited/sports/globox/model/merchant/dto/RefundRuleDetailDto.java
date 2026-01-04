@@ -38,10 +38,7 @@ public class RefundRuleDetailDto {
     @DecimalMax(value = "100.00", message = "退款比例不能大于100")
     private BigDecimal refundPercentage;
 
-    /**
-     * 是否需要联系商家
-     */
-    private Boolean needContactMerchant = false;
+
 
     /**
      * 手续费比例（0-100）

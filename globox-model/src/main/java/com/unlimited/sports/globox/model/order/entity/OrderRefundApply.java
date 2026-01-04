@@ -9,6 +9,7 @@ import com.unlimited.sports.globox.model.base.BaseEntity;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import lombok.*;
@@ -50,6 +51,16 @@ public class OrderRefundApply extends BaseEntity implements Serializable {
      * 商家 / 教练备注
      */
     private String sellerRemark;
+
+    /**
+     * 第三方退款请求号，部分退款时必须存在
+     */
+    private String outRequestNo;
+
+    /**
+     * 退款总金额
+     */
+    private BigDecimal refundAmount;
 
     /**
      * 向支付平台申请退款的时间

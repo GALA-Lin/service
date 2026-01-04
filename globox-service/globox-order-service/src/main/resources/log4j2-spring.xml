@@ -67,11 +67,6 @@
 
     <!-- ================== Loggers ================== -->
     <Loggers>
-        <!-- MyBatis / MyBatis-Plus SQL -->
-        <Logger name="org.mybatis" level="DEBUG"/>
-        <Logger name="org.apache.ibatis" level="DEBUG"/>
-        <Logger name="com.baomidou.mybatisplus" level="DEBUG"/>
-
         <!-- 三方库降噪 -->
         <Logger name="org.apache.catalina.startup.DigesterFactory" level="ERROR"/>
         <Logger name="org.apache.catalina.util.LifecycleBase" level="ERROR"/>

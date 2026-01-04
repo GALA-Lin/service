@@ -11,9 +11,11 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum PaymentStatusEnum {
-    UNPAID(1,"支付中"),
-    PAID(2,"已支付"),
-
+    UNPAID(1, "支付中"),
+    PAID(2, "已支付"),
+    REFUND(3, "退款完成"),
+    CLOSED(4, "已关闭/已取消（未支付关闭）"),
+    PARTIALLY_REFUNDED(5, "部分退款"),
     ;
     @EnumValue
     @JsonValue

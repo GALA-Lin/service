@@ -10,6 +10,7 @@ import com.unlimited.sports.globox.venue.service.IVenueService;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueItemVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
+import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -29,7 +30,7 @@ public class VenueController {
     private IVenueService venueService;
 
     /**
-     * 获取场馆列表（支持搜索、过滤、排序）- 使用ES
+     * 获取场馆列表（支持搜索、过滤、排序）
      *
      * @param dto 查询条件（keyword, sortBy, minPrice, maxPrice等）
      * @return 分页的场馆列表
@@ -91,5 +92,16 @@ public class VenueController {
         dto.setVenueId(venueId);
         venueService.postReview(dto);
         return R.ok(null);
+    }
+
+    /**
+     * 获取场馆搜索过滤字典数据
+     *
+     * @return 包含场地类型、地面类型、场地片数、距离、设施等字典数据
+     */
+    @GetMapping("/dict")
+    public R<VenueDictVo> getSearchFilterDictionary() {
+        VenueDictVo dictVo = venueService.getSearchFilterDictionary();
+        return R.ok(dictVo);
     }
 }

@@ -51,9 +51,21 @@
         </dependency>
 
 
+        <!-- Redisson依赖（需要排除spring-data-35，使用spring-data-27适配Spring Boot 2.7.6） -->
         <dependency>
             <groupId>org.redisson</groupId>
             <artifactId>redisson-spring-boot-starter</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.redisson</groupId>
+                    <artifactId>redisson-spring-data-35</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-data-27</artifactId>
         </dependency>
 
         <dependency>
@@ -96,6 +108,12 @@
         <dependency>
             <groupId>com.unlimited.sports.globox</groupId>
             <artifactId>globox-mq-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-cos-utils</artifactId>
             <version>1.0</version>
         </dependency>
     </dependencies>

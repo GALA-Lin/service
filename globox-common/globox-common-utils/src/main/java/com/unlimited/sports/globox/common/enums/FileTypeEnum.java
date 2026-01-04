@@ -66,6 +66,16 @@ public enum FileTypeEnum {
             "笔记视频",
             new String[]{".mp4", ".mov"},
             100 * 1024 * 1024L  // 100MB
+    ),
+
+    /**
+     * 场馆详情图片
+     */
+    VENUE_IMAGE(
+            "venue-detail",
+            "场馆详情图片",
+            new String[]{".jpg", ".jpeg", ".png", ".webp"},
+            10 * 1024 * 1024L  // 10MB
     );
 
     /**

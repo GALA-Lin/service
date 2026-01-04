@@ -1,16 +1,11 @@
 package com.unlimited.sports.globox.venue.service;
 
 import com.unlimited.sports.globox.common.result.PaginationResult;
-import com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlot;
-import com.unlimited.sports.globox.model.venue.dto.GetReviewRepliesDto;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
+import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
-
-import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
 
 /**
  * 场馆服务接口
@@ -43,5 +38,11 @@ public interface IVenueService {
      */
     void postReview(PostVenueReviewDto dto);
 
+    /**
+     * 获取场馆搜索过滤字典数据
+     *
+     * @return 包含场地类型、地面类型、场地片数、距离、设施等字典数据
+     */
+    VenueDictVo getSearchFilterDictionary();
 
 }

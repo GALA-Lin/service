@@ -16,10 +16,14 @@ public class VenueFacilityRelation {
      */
     private Long venueId;
 
-    private Long facilityId; // todo 后续如果是字典表,需要绑定id,现在暂时为空,2026-02-28
+    /**
+     * 设施ID（对应FacilityType的value）
+     * 1=停车场, 2=更衣室, 3=穿线机
+     */
+    private Integer facilityId;
 
     /**
-     * 设置名称
+     * 设施名称（冗余字段，便于查询）
      */
     private String facilityName;
 

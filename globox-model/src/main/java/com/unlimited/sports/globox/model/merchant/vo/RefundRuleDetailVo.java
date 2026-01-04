@@ -39,12 +39,6 @@ public class RefundRuleDetailVo {
     private BigDecimal refundPercentage;
 
     /**
-     * 是否需要联系商家
-     */
-    @NonNull
-    private Boolean needContactMerchant;
-
-    /**
      * 手续费比例
      */
     @NonNull

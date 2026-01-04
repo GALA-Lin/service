@@ -10,11 +10,13 @@ import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfi
 import com.unlimited.sports.globox.common.message.order.OrderPaidMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
 import com.unlimited.sports.globox.common.service.MQService;
+import com.unlimited.sports.globox.model.order.entity.OrderActivities;
 import com.unlimited.sports.globox.model.order.entity.OrderItems;
 import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
 import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.lock.RedisLock;
+import com.unlimited.sports.globox.order.mapper.OrderActivitiesMapper;
 import com.unlimited.sports.globox.order.mapper.OrderItemsMapper;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
@@ -24,6 +26,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -45,8 +48,12 @@ public class PaymentSuccessConsumer {
 
     @Autowired
     private MQService mqService;
+
     @Autowired
     private OrderItemsMapper orderItemsMapper;
+
+    @Autowired
+    private OrderActivitiesMapper orderActivitiesMapper;
 
 
     /**
@@ -114,11 +121,9 @@ public class PaymentSuccessConsumer {
             log.warn("[支付成功回调] 订单状态不允许支付回调落库，忽略 orderNo={}, orderStatus={}, payStatus={}",
                     orderNo, order.getOrderStatus(), order.getPaymentStatus());
             return;
-            // 如果你更严谨：也可以 throw，让它进重试/最终DLQ，取决于你们是否存在“先取消后回调”的情况
         }
 
         // 5) 金额校验（强烈建议：防止回调篡改/错单）
-        //    这里假设 order 里有 payableAmount / totalAmount 字段，你按真实字段名改一下
         BigDecimal expected = order.getPayAmount();
         if (expected != null && message.getTotalAmount().compareTo(expected) != 0) {
             throw new IllegalStateException("[支付成功回调] 金额不一致 orderNo=" + orderNo
@@ -136,7 +141,7 @@ public class PaymentSuccessConsumer {
         order.setPayAmount(message.getTotalAmount());
         order.setPaymentStatus(OrdersPaymentStatusEnum.PAID);
 
-        // 支付成功后订单状态一般变为已支付/待履约（按你的枚举调整）
+        // 支付成功后订单状态一般变为已支付/待履约
         // 例如：PENDING -> PAID / CONFIRMED / BOOKED 等
         order.setOrderStatus(OrderStatusEnum.PAID);
 
@@ -164,18 +169,32 @@ public class PaymentSuccessConsumer {
 
         // 8) 发送订单支付成功消息给商家
         if (order.getSellerType() == SellerTypeEnum.VENUE) {
-            List<Long> recordIds = new ArrayList<>();
-            List<OrderItems> orderItems = orderItemsMapper.selectList(
-                    Wrappers.<OrderItems>lambdaQuery()
-                            .eq(OrderItems::getOrderNo, orderNo));
-            if (orderItems != null) {
-                recordIds = orderItems.stream().map(OrderItems::getRecordId).toList();
-            }
             OrderPaidMessage paidMessage = OrderPaidMessage.builder()
                     .orderNo(orderNo)
                     .userId(order.getBuyerId())
-                    .recordIds(recordIds)
                     .build();
+
+            OrderActivities orderActivities = orderActivitiesMapper.selectOne(
+                    Wrappers.<OrderActivities>lambdaQuery()
+                            .eq(OrderActivities::getOrderNo, orderNo));
+            if (ObjectUtils.isEmpty(orderActivities)) {
+                // 不是活动订单
+                paidMessage.setIsActivity(false);
+                List<OrderItems> orderItems = orderItemsMapper.selectList(
+                        Wrappers.<OrderItems>lambdaQuery()
+                                .eq(OrderItems::getOrderNo, orderNo));
+                if (orderItems != null) {
+                    paidMessage.setRecordIds(
+                            orderItems.stream()
+                                    .map(OrderItems::getRecordId)
+                                    .toList());
+                }
+            } else {
+                // 是活动订单
+                paidMessage.setIsActivity(true);
+                paidMessage.setRecordIds(List.of(orderActivities.getActivityId()));
+            }
+
             mqService.send(
                     OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
                     OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
@@ -194,7 +213,7 @@ public class PaymentSuccessConsumer {
                         OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT,
                         confirmMessage);
             }
-        } else if (order.getSellerType().equals(SellerTypeEnum.COACH)){
+        } else if (order.getSellerType().equals(SellerTypeEnum.COACH)) {
             // 9.2) 发送订单确认消息给教练 TODO ETA 等待约教练模块完成
         }
 

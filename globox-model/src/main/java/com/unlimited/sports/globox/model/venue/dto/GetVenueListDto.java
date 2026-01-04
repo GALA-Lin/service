@@ -27,6 +27,12 @@ public class GetVenueListDto {
     private String sortBy;
 
     /**
+     * 排序顺序
+     * 1=升序, 2=降序（默认）
+     */
+    private Integer sortOrder = 2;
+
+    /**
      * 最低价格过滤
      */
     @DecimalMin(value = "0", message = "最低价格不能小于0")
@@ -52,9 +58,10 @@ public class GetVenueListDto {
 
     /**
      * 设施过滤（多选）
-     * 传入设施名称列表
+     * 传入设施ID列表（对应FacilityType的value）
+     * 1=停车场, 2=更衣室, 3=穿线机
      */
-    private List<String> facilities;
+    private List<Integer> facilities;
 
     /**
      * 场地片数筛选

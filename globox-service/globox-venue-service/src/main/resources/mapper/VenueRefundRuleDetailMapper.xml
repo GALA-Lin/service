@@ -6,12 +6,12 @@
     <!-- 批量插入明细 -->
     <insert id="batchInsert" useGeneratedKeys="true" keyProperty="venueRefundRuleDetailId">
         INSERT INTO venue_refund_rule_details
-        (venue_refund_rule_id, min_hours_before, max_hours_before, refund_percentage,
-        need_contact_merchant, handling_fee_percentage, refund_rule_detail_desc, sort_order_num)
+        (venue_refund_rule_id, min_hours_before, max_hours_before, refund_percentage
+        , handling_fee_percentage, refund_rule_detail_desc, sort_order_num)
         VALUES
         <foreach collection="details" item="item" separator=",">
             (#{item.venueRefundRuleId}, #{item.minHoursBefore}, #{item.maxHoursBefore},
-            #{item.refundPercentage}, #{item.needContactMerchant}, #{item.handlingFeePercentage},
+            #{item.refundPercentage}, #{item.handlingFeePercentage},
             #{item.refundRuleDetailDesc}, #{item.sortOrderNum})
         </foreach>
     </insert>

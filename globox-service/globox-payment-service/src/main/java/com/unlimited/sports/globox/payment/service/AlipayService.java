@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.payment.service;
 
+import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
+
 import java.util.Map;
 
 /**
@@ -23,18 +25,12 @@ public interface AlipayService {
      */
     String checkCallback(Map<String, String> paramsMap);
 
-//    /**
-//     * 退款
-//     */
-//    boolean refund(Long orderId);
-//
-//    /**
-//     * 查询支付宝交易记录状态
-//     */
-//    Boolean checkPayment(Long orderId);
-//
-//    /**
-//     * 支付宝关闭交易
-//     */
-//    Boolean closePay(Long orderId);
+
+    /**
+     * 处理用户的退款请求。
+     *
+     * @param message 包含退款信息的消息对象，其中包括订单号(orderNo)、外部交易号(outTradeNo)、外部退款请求号(outRequestNo)、退款金额(refundAmount)以及退款原因(refundReason)
+     * @return 如果退款请求处理成功，则返回true；否则返回false
+     */
+    boolean refund(UserRefundMessage message);
 }

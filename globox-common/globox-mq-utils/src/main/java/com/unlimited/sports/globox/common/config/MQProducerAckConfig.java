@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.common.config;
 
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.constants.VenueMQConstants;
 import com.unlimited.sports.globox.common.model.MQRetryCorrelationData;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +79,12 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
                 .get("spring_returned_message_correlation");
 
         if(exchange.equals(OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL)){
+            return;
+        }
+
+        // 场馆延迟消息交换机不需要重试
+        if(exchange.equals(VenueMQConstants.EXCHANGE_TOPIC_ACTIVITY_BOOKING_REMINDER) ||
+           exchange.equals(VenueMQConstants.EXCHANGE_TOPIC_VENUE_BOOKING_REMINDER)){
             return;
         }
 

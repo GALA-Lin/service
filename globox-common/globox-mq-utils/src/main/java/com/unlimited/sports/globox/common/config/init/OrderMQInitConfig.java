@@ -45,6 +45,13 @@ public class OrderMQInitConfig {
     private int paidRetryInterval;
 
     /**
+     * 退款消息 重试间隔
+     * 默认 1000 ms
+     */
+    @Value("${mq.retry.refund-apply-to-payment.interval-ms:1000}")
+    private int refundApplyRetryInterval;
+
+    /**
      * 订单未支付自动关闭（Auto Cancel）
      */
     // 主交换机
@@ -388,5 +395,89 @@ public class OrderMQInitConfig {
                 .bind(orderPaymentConfirmedNotifyMerchantDlq())
                 .to(orderPaymentConfirmedNotifyMerchantFinalDlxExchange())
                 .with(OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL);
+    }
+
+
+
+
+    /**
+     * 订单模块 -> 支付模块：申请退款事件（Refund Apply To Payment）MQ 绑定配置
+     *
+     * 规则：
+     * - 主队列消费失败：reject(false) -> 进入 Retry-DLX -> Retry Queue(TTL) -> TTL 到期后回主 Exchange -> 主队列
+     * - 超过最大次数：由业务主动投递到 Final-DLX -> DLQ
+     */
+    @Bean
+    public TopicExchange orderRefundApplyToPaymentExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_TOPIC_ORDER_REFUND_APPLY_TO_PAYMENT,
+                true,
+                false);
+    }
+
+    @Bean
+    public TopicExchange orderRefundApplyToPaymentRetryDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_REFUND_APPLY_TO_PAYMENT_RETRY_DLX,
+                true,
+                false);
+    }
+
+    @Bean
+    public TopicExchange orderRefundApplyToPaymentFinalDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL_DLX,
+                true,
+                false);
+    }
+
+    @Bean
+    public Queue orderRefundApplyToPaymentQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_ORDER_REFUND_APPLY_TO_PAYMENT_RETRY_DLX)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Queue orderRefundApplyToPaymentRetryQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT_RETRY)
+                .withArgument("x-message-ttl", refundApplyRetryInterval)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_TOPIC_ORDER_REFUND_APPLY_TO_PAYMENT)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT)
+                .build();
+    }
+
+    @Bean
+    public Queue orderRefundApplyToPaymentDlq() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Binding bindOrderRefundApplyToPaymentQueue() {
+        return BindingBuilder
+                .bind(orderRefundApplyToPaymentQueue())
+                .to(orderRefundApplyToPaymentExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT);
+    }
+
+    @Bean
+    public Binding bindOrderRefundApplyToPaymentRetryQueue() {
+        return BindingBuilder
+                .bind(orderRefundApplyToPaymentRetryQueue())
+                .to(orderRefundApplyToPaymentRetryDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_RETRY);
+    }
+
+    @Bean
+    public Binding bindOrderRefundApplyToPaymentDlq() {
+        return BindingBuilder
+                .bind(orderRefundApplyToPaymentDlq())
+                .to(orderRefundApplyToPaymentFinalDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL);
     }
 }

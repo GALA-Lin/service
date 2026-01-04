@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.venue.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.enums.order.ChargeModeEnum;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.dubbo.merchant.dto.ExtraQuote;
 import com.unlimited.sports.globox.dubbo.merchant.dto.OrderLevelExtraQuote;
 import com.unlimited.sports.globox.dubbo.merchant.dto.RecordQuote;
@@ -10,6 +11,8 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplateP
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueExtraChargeTemplate;
 import com.unlimited.sports.globox.model.venue.enums.DayType;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
+import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
+import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplateMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueExtraChargeTemplateMapper;
@@ -41,6 +44,9 @@ public class VenuePriceServiceImpl implements VenuePriceService {
 
     @Autowired
     private VenuePriceTemplateMapper priceTemplateMapper;
+
+    @Autowired
+    private VenueBookingSlotTemplateMapper slotTemplateMapper;
 
     @Autowired
     private VenuePriceTemplatePeriodMapper priceTemplatePeriodMapper;
@@ -237,7 +243,6 @@ public class VenuePriceServiceImpl implements VenuePriceService {
     /**
      * 计算槽位价格并构建SlotQuote列表
      *
-     * @param templates 槽位模板列表
      * @param venueId 场馆ID
      * @param venueName 场馆名称
      * @param bookingDate 预订日期
@@ -245,12 +250,27 @@ public class VenuePriceServiceImpl implements VenuePriceService {
      * @return 槽位价格报价列表
      */
     @Override
-    public List<RecordQuote> calculateSlotQuotes(List<VenueBookingSlotTemplate> templates,
+    public List<RecordQuote> calculateSlotQuotes(List<VenueBookingSlotRecord> records,
                                                Long venueId,
                                                String venueName,
                                                LocalDate bookingDate,
                                                Map<Long, String> courtMap) {
-        log.debug("开始计算槽位价格 - venueId: {}, 槽位数: {}", venueId, templates.size());
+        log.debug("开始计算槽位价格 - venueId: {}, 槽位数: {}", venueId, records.size());
+
+        // 提取所有槽位模板ID
+        List<Long> templateIds = records.stream()
+                .map(VenueBookingSlotRecord::getSlotTemplateId)
+                .collect(Collectors.toList());
+
+        // 批量查询槽位模板
+        List<VenueBookingSlotTemplate> templates = slotTemplateMapper.selectBatchIds(templateIds);
+
+        // 构建 templateId -> template 的映射
+        Map<Long, VenueBookingSlotTemplate> templateMap = templates.stream()
+                .collect(Collectors.toMap(
+                        VenueBookingSlotTemplate::getBookingSlotTemplateId,
+                        t -> t
+                ));
 
         // 批量获取所有槽位的价格
         List<LocalTime> slotStartTimes = templates.stream()
@@ -263,7 +283,13 @@ public class VenuePriceServiceImpl implements VenuePriceService {
 
         List<RecordQuote> recordQuotes = new ArrayList<>();
 
-        for (VenueBookingSlotTemplate template : templates) {
+        for (VenueBookingSlotRecord record : records) {
+            VenueBookingSlotTemplate template = templateMap.get(record.getSlotTemplateId());
+            if (template == null) {
+                log.error("未找到槽位模板 - slotTemplateId: {}", record.getSlotTemplateId());
+                throw new GloboxApplicationException("槽位模板不存在");
+            }
+
             BigDecimal unitPrice = priceMap.get(template.getStartTime());
 
             if (unitPrice == null) {
@@ -284,7 +310,7 @@ public class VenuePriceServiceImpl implements VenuePriceService {
             List<ExtraQuote> slotExtras = calculateSlotExtraCharges(venueId, unitPrice);
 
             RecordQuote recordQuote = RecordQuote.builder()
-                    .recordId(template.getBookingSlotTemplateId())
+                    .recordId(record.getBookingSlotRecordId())  // 使用实际的记录ID
                     .courtId(template.getCourtId())
                     .courtName(String.format("%s %s-%s", courtName, template.getStartTime(), template.getEndTime()))
                     .bookingDate(bookingDate)
@@ -294,8 +320,8 @@ public class VenuePriceServiceImpl implements VenuePriceService {
                     .recordExtras(slotExtras)
                     .build();
 
-            log.debug("槽位计价 - slotTemplateId: {}, courtId: {}, startTime: {}, endTime: {}, unitPrice: {}, 槽位费用数: {}",
-                    template.getBookingSlotTemplateId(), template.getCourtId(),
+            log.debug("槽位计价 - recordId: {}, slotTemplateId: {}, courtId: {}, startTime: {}, endTime: {}, unitPrice: {}, 槽位费用数: {}",
+                    record.getBookingSlotRecordId(), template.getBookingSlotTemplateId(), template.getCourtId(),
                     template.getStartTime(), template.getEndTime(), unitPrice, slotExtras.size());
 
             recordQuotes.add(recordQuote);

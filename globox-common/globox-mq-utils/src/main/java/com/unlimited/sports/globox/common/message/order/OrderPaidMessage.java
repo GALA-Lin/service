@@ -19,4 +19,5 @@ public class OrderPaidMessage implements Serializable {
     private Long orderNo;
     private Long userId;
     private List<Long> recordIds;
+    private Boolean isActivity;
 }

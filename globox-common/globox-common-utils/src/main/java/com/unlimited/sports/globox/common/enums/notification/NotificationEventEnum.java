@@ -24,6 +24,8 @@ public enum NotificationEventEnum {
     VENUE_PAYMENT_SUCCESS(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_PAYMENT_SUCCESS", "支付成功"),
     VENUE_REFUND_APPROVED(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_REFUND_APPROVED", "退款申请已通过"),
     VENUE_REFUND_SUCCESS(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_REFUND_SUCCESS", "退款已到账"),
+    VENUE_BOOKING_REMINDER(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_BOOKING_REMINDER", "订场即将开始提醒"),
+    ACTIVITY_BOOKING_REMINDER(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "ACTIVITY_BOOKING_REMINDER", "活动即将开始提醒"),
 
     // 商家事件
     VENUE_MERCHANT_ORDER_CREATED(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_MERCHANT, "VENUE_MERCHANT_ORDER_CREATED", "订单已创建"),

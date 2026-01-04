@@ -16,7 +16,9 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 
 /**
@@ -71,31 +73,177 @@ public class PaymentsServiceImpl implements PaymentsService {
      * @return 指定条件下的支付信息，如果不存在则返回null
      */
     @Override
-    public Payments getPaymentInfo(String outTradeNo, PaymentTypeEnum paymentType) {
+    public Payments getPaymentInfoByType(String outTradeNo, PaymentTypeEnum paymentType) {
         return paymentsMapper.selectOne(
                 Wrappers.<Payments>lambdaQuery()
                         .eq(Payments::getOutTradeNo, outTradeNo)
                         .eq(Payments::getPaymentType, paymentType));
     }
 
+
+    /**
+     * 根据对外业务编号获取支付信息。
+     *
+     * @param outTradeNo 对外业务编号
+     * @return 指定条件下的支付信息，如果不存在则返回null
+     */
+    @Override
+    public Payments getPaymentInfoByOutTradeNo(String outTradeNo) {
+        return paymentsMapper.selectOne(
+                Wrappers.<Payments>lambdaQuery()
+                        .eq(Payments::getOutTradeNo, outTradeNo));
+    }
+
+    @Override
+    public void updatePayment(Payments payments) {
+        paymentsMapper.updateById(payments);
+    }
+
+
     @Override
     public boolean updatePaymentSuccess(Long id, Map<String, String> paramsMap) {
         String tradeNo = paramsMap.get("trade_no");
-        String callbackContent = jsonUtils.objectToJson(paramsMap);
-        LocalDateTime paymentAt = LocalDateUtils.from(paramsMap.get("gmt_payment"));
+        // 支付宝支付时间字段：gmt_payment（你的代码里已经这么用）
+        LocalDateTime paymentAt= LocalDateUtils.from(paramsMap.get("gmt_payment"));
         LocalDateTime callbackAt = LocalDateUtils.from(paramsMap.get("notify_time"));
+        String callbackContent = jsonUtils.objectToJson(paramsMap);
 
         int rows = paymentsMapper.updatePaidIfUnpaid(
                 id,
                 tradeNo,
-                PaymentStatusEnum.PAID,
-                PaymentStatusEnum.UNPAID,
                 paymentAt,
                 callbackAt,
-                callbackContent);
-
-        // rows == 1：说明本次回调第一次把 UNPAID 改成 PAID（应当发 MQ）
-        // rows == 0：说明已经处理过（重复回调/并发回调），直接认为成功但不再发 MQ
+                callbackContent,
+                PaymentStatusEnum.PAID.getCode(),
+                PaymentStatusEnum.UNPAID.getCode()
+        );
         return rows == 1;
+    }
+
+    @Override
+    public boolean updatePaymentClosed(Long id, Map<String, String> paramsMap) {
+        LocalDateTime callbackAt = LocalDateTime.now();
+        String callbackContent = jsonUtils.objectToJson(paramsMap);
+
+        int rows = paymentsMapper.updateClosedIfUnpaid(
+                id,
+                callbackAt,
+                callbackContent,
+                PaymentStatusEnum.CLOSED.getCode(),
+                PaymentStatusEnum.UNPAID.getCode()
+        );
+        return rows == 1;
+    }
+
+    @Override
+    public void appendCallback(Long id, Map<String, String> paramsMap) {
+        paymentsMapper.updateCallbackOnly(
+                id,
+                LocalDateTime.now(),
+                jsonUtils.objectToJson(paramsMap)
+        );
+    }
+
+    @Override
+    public boolean updateRefundResult(Long id, String outRequestNo, boolean isFullRefund, Map<String, String> paramsMap) {
+        LocalDateTime callbackAt = LocalDateTime.now();
+        String callbackContent = jsonUtils.objectToJson(paramsMap);
+
+        if (isFullRefund) {
+            int rows = paymentsMapper.updateRefundedIfPaidOrPartial(
+                    id,
+                    outRequestNo,
+                    callbackAt,
+                    callbackContent,
+                    PaymentStatusEnum.REFUND.getCode(),
+                    PaymentStatusEnum.PAID.getCode(),
+                    PaymentStatusEnum.PARTIALLY_REFUNDED.getCode()
+            );
+            return rows == 1;
+        } else {
+            int rows = paymentsMapper.updatePartiallyRefundedIfPaid(
+                    id,
+                    outRequestNo,
+                    callbackAt,
+                    callbackContent,
+                    PaymentStatusEnum.PARTIALLY_REFUNDED.getCode(),
+                    PaymentStatusEnum.PAID.getCode()
+            );
+            return rows == 1;
+        }
+    }
+
+
+    @Override
+    public void tryMarkPaidIfUnpaid(Long id, Map<String, String> paramsMap) {
+        // refund 回调里也会带 gmt_payment / trade_no（你给的样例是有的）
+        String tradeNo = paramsMap.get("trade_no");
+        LocalDateTime paymentAt = paymentAt = LocalDateUtils.from(paramsMap.get("gmt_payment"));
+
+        int rows = paymentsMapper.updatePaidIfUnpaid(
+                id,
+                tradeNo,
+                paymentAt,
+                LocalDateTime.now(),
+                jsonUtils.objectToJson(paramsMap),
+                PaymentStatusEnum.PAID.getCode(),
+                PaymentStatusEnum.UNPAID.getCode()
+        );
+
+        if (rows == 1) {
+            log.info("退款回调兜底：已将支付单从 UNPAID 补标记为 PAID, id={}", id);
+        }
+    }
+
+    @Override
+    public boolean updateRefunded(Long id, String outRequestNo, BigDecimal refundFee,
+            LocalDateTime refundAt, Map<String, String> paramsMap) {
+
+        // 全额退款：只允许 PAID / PARTIALLY_REFUNDED -> REFUND
+        int rows = paymentsMapper.updateRefundedIfPaidOrPartial(
+                id,
+                outRequestNo,
+                LocalDateTime.now(),
+                jsonUtils.objectToJson(paramsMap),
+                PaymentStatusEnum.REFUND.getCode(),
+                PaymentStatusEnum.PAID.getCode(),
+                PaymentStatusEnum.PARTIALLY_REFUNDED.getCode()
+        );
+
+        // rows==1 代表第一次进入 REFUND
+        return rows == 1;
+    }
+
+    @Override
+    public boolean updatePartiallyRefunded(Long id, String outRequestNo, BigDecimal refundFee,
+            LocalDateTime refundAt, Map<String, String> paramsMap) {
+
+        String callbackContent = jsonUtils.objectToJson(paramsMap);
+        LocalDateTime callbackAt = LocalDateTime.now();
+
+        // 1) 第一次部分退款：PAID -> PARTIALLY_REFUNDED
+        int rows = paymentsMapper.updatePartialIfPaid(
+                id,
+                outRequestNo,
+                callbackAt,
+                callbackContent,
+                PaymentStatusEnum.PARTIALLY_REFUNDED.getCode(),
+                PaymentStatusEnum.PAID.getCode()
+        );
+
+        if (rows == 1) {
+            return true; // 第一次部分退款成功落库
+        }
+
+        // 2) 后续部分退款：状态已是 PARTIALLY_REFUNDED，仅更新回调记录（不算 first）
+        paymentsMapper.touchPartialIfPartial(
+                id,
+                outRequestNo,
+                callbackAt,
+                callbackContent,
+                PaymentStatusEnum.PARTIALLY_REFUNDED.getCode()
+        );
+
+        return false;
     }
 }

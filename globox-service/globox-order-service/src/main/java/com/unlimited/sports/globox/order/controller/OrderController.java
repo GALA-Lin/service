@@ -14,6 +14,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
 
 /**
  * 订单相关接口 - 控制层
@@ -83,6 +84,7 @@ public class OrderController {
             @Parameter(description = "订单号", required = true, example = "202512180001")
             Long orderNo,
             @ModelAttribute
+            @Valid
             @Parameter(description = "用户地理位置信息")
             GetOrderDetailsDto dto) {
 
@@ -98,6 +100,7 @@ public class OrderController {
     @Operation(summary = "取消订单", description = "用户取消未支付或可取消状态的订单")
     public R<CancelOrderResultVo> cancelOrder(
             @PathVariable("orderNo")
+            @NotNull(message = "订单号不能为空")
             @Parameter(description = "订单号", required = true, example = "202512180001")
             Long orderNo) {
         return R.ok(orderService.cancelUnpaidOrder(orderNo));
@@ -137,6 +140,7 @@ public class OrderController {
     @Operation(summary = "按退款申请ID查询退款进度", description = "通过退款申请ID精确查询退款处理进度（默认返回时间线）")
     public R<GetRefundProgressVo> getRefundProgressByApplyId(
             @PathVariable("refundApplyId")
+            @NotNull(message = "订单号不能为空")
             @Parameter(description = "退款申请ID", required = true, example = "10086")
             Long refundApplyId) {
 

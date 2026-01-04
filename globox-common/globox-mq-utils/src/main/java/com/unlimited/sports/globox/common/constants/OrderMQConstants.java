@@ -163,4 +163,37 @@ public class OrderMQConstants {
     public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_DLQ =
             "queue.order.payment-confirmed.notify-merchant.merchant.dlq";
 
+
+    /**
+     * 订单 -> 支付：申请退款事件（Refund Apply）
+     * 说明：
+     * - 主队列：支付模块消费，执行退款处理逻辑
+     * - Retry：短延迟重试（并发冲突、锁冲突、依赖服务暂不可用）
+     * - Final DLQ：超过最大次数进入最终死信，人工/补偿处理
+     */
+// 主交换机 & 主路由 & 主队列
+    public static final String EXCHANGE_TOPIC_ORDER_REFUND_APPLY_TO_PAYMENT =
+            "exchange.topic.order.refund-apply.to-payment";
+    public static final String ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT =
+            "routing.order.refund-apply.to-payment";
+    public static final String QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT =
+            "queue.order.refund-apply.to-payment.payment";
+
+    // Retry Queue（TTL）
+    public static final String QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT_RETRY =
+            "queue.order.refund-apply.to-payment.payment.retry";
+
+    // Retry-DLX：主队列失败后进入重试队列
+    public static final String EXCHANGE_ORDER_REFUND_APPLY_TO_PAYMENT_RETRY_DLX =
+            "exchange.topic.order.refund-apply.to-payment.retry.dlx";
+    public static final String ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_RETRY =
+            "routing.order.refund-apply.to-payment.retry";
+
+    // Final-DLX：超过最大次数进入最终 DLQ
+    public static final String EXCHANGE_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL_DLX =
+            "exchange.topic.order.refund-apply.to-payment.final.dlx";
+    public static final String ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL =
+            "routing.order.refund-apply.to-payment.final";
+    public static final String QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT_DLQ =
+            "queue.order.refund-apply.to-payment.payment.dlq";
 }

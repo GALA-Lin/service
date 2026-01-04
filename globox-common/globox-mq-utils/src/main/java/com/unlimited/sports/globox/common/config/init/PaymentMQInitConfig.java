@@ -25,6 +25,13 @@ public class PaymentMQInitConfig {
     @Value("${mq.consumer.retry.payment-cancel.retry-interval:1000}")
     private int paymentCancelRetryInterval;
 
+    /**
+     * 退款成功 重试间隔
+     * 默认 1000 ms
+     */
+    @Value("${mq.retry.payment.refund-success.interval-ms:1000}")
+    private int paymentRefundSuccessRetryInterval;
+
 
     /**
      * 支付成功（Pay Success）
@@ -149,5 +156,86 @@ public class PaymentMQInitConfig {
         return BindingBuilder.bind(paymentCancelDlq())
                 .to(paymentCancelFinalDlxExchange())
                 .with(PaymentMQConstants.ROUTING_PAYMENT_CANCEL_FINAL);
+    }
+
+
+    /**
+     * 退款成功
+     */
+    @Bean
+    public TopicExchange paymentRefundSuccessExchange() {
+        return new TopicExchange(
+                PaymentMQConstants.EXCHANGE_TOPIC_PAYMENT_REFUND_SUCCESS,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public TopicExchange paymentRefundSuccessRetryDlxExchange() {
+        return new TopicExchange(
+                PaymentMQConstants.EXCHANGE_PAYMENT_REFUND_SUCCESS_RETRY_DLX,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public TopicExchange paymentRefundSuccessFinalDlxExchange() {
+        return new TopicExchange(
+                PaymentMQConstants.EXCHANGE_PAYMENT_REFUND_SUCCESS_FINAL_DLX,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public Queue paymentRefundSuccessQueue() {
+        return QueueBuilder
+                .durable(PaymentMQConstants.QUEUE_PAYMENT_REFUND_SUCCESS_ORDER)
+                .withArgument("x-dead-letter-exchange", PaymentMQConstants.EXCHANGE_PAYMENT_REFUND_SUCCESS_RETRY_DLX)
+                .withArgument("x-dead-letter-routing-key", PaymentMQConstants.ROUTING_PAYMENT_REFUND_SUCCESS_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Queue paymentRefundSuccessRetryQueue() {
+        return QueueBuilder
+                .durable(PaymentMQConstants.QUEUE_PAYMENT_REFUND_SUCCESS_ORDER_RETRY)
+                .withArgument("x-message-ttl", paymentRefundSuccessRetryInterval)
+                .withArgument("x-dead-letter-exchange", PaymentMQConstants.EXCHANGE_TOPIC_PAYMENT_REFUND_SUCCESS)
+                .withArgument("x-dead-letter-routing-key", PaymentMQConstants.ROUTING_PAYMENT_REFUND_SUCCESS)
+                .build();
+    }
+
+    @Bean
+    public Queue paymentRefundSuccessDlq() {
+        return QueueBuilder
+                .durable(PaymentMQConstants.QUEUE_PAYMENT_REFUND_SUCCESS_ORDER_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Binding bindPaymentRefundSuccessQueue() {
+        return BindingBuilder
+                .bind(paymentRefundSuccessQueue())
+                .to(paymentRefundSuccessExchange())
+                .with(PaymentMQConstants.ROUTING_PAYMENT_REFUND_SUCCESS);
+    }
+
+    @Bean
+    public Binding bindPaymentRefundSuccessRetryQueue() {
+        return BindingBuilder
+                .bind(paymentRefundSuccessRetryQueue())
+                .to(paymentRefundSuccessRetryDlxExchange())
+                .with(PaymentMQConstants.ROUTING_PAYMENT_REFUND_SUCCESS_RETRY);
+    }
+
+    @Bean
+    public Binding bindPaymentRefundSuccessDlq() {
+        return BindingBuilder
+                .bind(paymentRefundSuccessDlq())
+                .to(paymentRefundSuccessFinalDlxExchange())
+                .with(PaymentMQConstants.ROUTING_PAYMENT_REFUND_SUCCESS_FINAL);
     }
 }

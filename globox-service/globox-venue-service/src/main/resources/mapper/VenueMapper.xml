@@ -69,13 +69,34 @@
         ORDER BY
             <choose>
                 <when test="sortBy == 'price'">
-                    v.min_price ASC, distance ASC
+                    <choose>
+                        <when test="sortOrder == 1">
+                            v.min_price ASC, distance ASC
+                        </when>
+                        <otherwise>
+                            v.min_price DESC, distance ASC
+                        </otherwise>
+                    </choose>
                 </when>
                 <when test="sortBy == 'courtCount'">
-                    courtCount DESC, distance ASC
+                    <choose>
+                        <when test="sortOrder == 1">
+                            courtCount ASC, distance ASC
+                        </when>
+                        <otherwise>
+                            courtCount DESC, distance ASC
+                        </otherwise>
+                    </choose>
                 </when>
                 <otherwise>
-                    distance ASC, v.min_price ASC
+                    <choose>
+                        <when test="sortOrder == 1">
+                            distance ASC, v.min_price ASC
+                        </when>
+                        <otherwise>
+                            distance DESC, v.min_price ASC
+                        </otherwise>
+                    </choose>
                 </otherwise>
             </choose>
         LIMIT #{offset}, #{pageSize}

@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.common.utils;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.ResultCode;
+import com.unlimited.sports.globox.common.result.RpcResult;
 
 import java.lang.reflect.Array;
 import java.util.Collection;
@@ -135,6 +136,20 @@ public class Assert {
     public static void resultOk(R r, ResultCode userCode) {
         if (!r.success()) {
             throw new GloboxApplicationException(userCode);
+        }
+    }
+
+
+    /**
+     * 检查给定的 RpcResult 对象是否表示成功的结果。
+     * 如果结果不成功，则抛出一个 GloboxApplicationException 异常，错误码为 RpcResult 中的 resultCode。
+     *
+     * @param <T> 泛型类型
+     * @param r   RpcResult对象
+     */
+    public static <T> void rpcResultOk(RpcResult<T> r) {
+        if (!r.isSuccess()) {
+            throw new GloboxApplicationException(r.getResultCode());
         }
     }
 }

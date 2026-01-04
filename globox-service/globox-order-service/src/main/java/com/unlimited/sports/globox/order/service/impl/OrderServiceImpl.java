@@ -143,6 +143,8 @@ public class OrderServiceImpl implements OrderService {
         requestDto.setUserId(userId);
         PricingActivityResultDto result = merchantDubboService.quoteVenueActivity(requestDto);
 
+        log.info("PricingResultDto: {}", jsonUtils.objectToJson(result));
+
         Assert.isNotEmpty(result.getRecordQuote(), OrderCode.SLOT_HAD_BOOKING);
 
         return thisService.createVenueOrderAction(result, userId, true);
@@ -447,8 +449,7 @@ public class OrderServiceImpl implements OrderService {
 
                     OrderActivities orderActivities = orderActivitiesMapper.selectOne(
                             Wrappers.<OrderActivities>lambdaQuery()
-                                    .eq(OrderActivities::getOrderNo, order.getOrderNo())
-                    );
+                                    .eq(OrderActivities::getOrderNo, order.getOrderNo()));
 
                     GetOrderVo orderVo = GetOrderVo.builder()
                             .orderNo(order.getOrderNo())

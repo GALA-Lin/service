@@ -30,7 +30,9 @@ public enum OrderCode implements ResultCode {
     ORDER_CURRENT_NOT_ALLOW_PAY(1720, "当前订单不可支付"),
 
 
-    ;
+    ORDER_REFUND_ITEM_COUNT_ERROR(1721, "订单退款项有误"),
+    ORDER_REFUND_AMOUNT_INVALID(1722, "订单退款金额无效"),
+    PARAM_ERROR(1723, "参数错误");
     private final Integer code;
     private final String message;
 }

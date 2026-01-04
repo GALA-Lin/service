@@ -42,6 +42,7 @@ public interface VenueMapper extends BaseMapper<Venue> {
             @Param("userLng") Double userLng,
             @Param("maxDistance") Double maxDistance,
             @Param("sortBy") String sortBy,
+            @Param("sortOrder") Integer sortOrder,
             @Param("facilityVenueIds") List<Long> facilityVenueIds,
             @Param("courtTypeVenueIds") List<Long> courtTypeVenueIds,
             @Param("unavailableVenueIds") List<Long> unavailableVenueIds,

@@ -27,7 +27,12 @@ import com.unlimited.sports.globox.venue.mapper.venues.VenueReviewMapper;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
+import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
+import com.unlimited.sports.globox.model.venue.enums.CourtCountFilter;
+import com.unlimited.sports.globox.model.venue.enums.DistanceFilter;
+import com.unlimited.sports.globox.model.venue.enums.FacilityType;
+import com.unlimited.sports.globox.model.venue.enums.GroundType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -333,5 +338,50 @@ public class VenueServiceImpl implements IVenueService {
                 ));
     }
 
+    @Override
+    public VenueDictVo getSearchFilterDictionary() {
+        List<VenueDictVo.DictItem> courtTypes = Arrays.stream(CourtType.values())
+                .map(type -> VenueDictVo.DictItem.builder()
+                        .value(type.getValue())
+                        .description(type.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> groundTypes = Arrays.stream(GroundType.values())
+                .map(type -> VenueDictVo.DictItem.builder()
+                        .value(type.getValue())
+                        .description(type.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> courtCountFilters = Arrays.stream(CourtCountFilter.values())
+                .map(filter -> VenueDictVo.DictItem.builder()
+                        .value(filter.getValue())
+                        .description(filter.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> distances = Arrays.stream(DistanceFilter.values())
+                .map(filter -> VenueDictVo.DictItem.builder()
+                        .value(filter.getValue())
+                        .description(filter.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> facilities = Arrays.stream(FacilityType.values())
+                .map(facility -> VenueDictVo.DictItem.builder()
+                        .value(facility.getValue())
+                        .description(facility.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        return VenueDictVo.builder()
+                .courtTypes(courtTypes)
+                .groundTypes(groundTypes)
+                .courtCountFilters(courtCountFilters)
+                .distances(distances)
+                .facilities(facilities)
+                .build();
+    }
 
 }

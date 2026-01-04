@@ -54,13 +54,6 @@ public class VenueRefundRuleDetail implements Serializable {
      */
     @TableField("refund_percentage")
     private BigDecimal refundPercentage;
-
-    /**
-     * 是否需要联系商家：0-自动退款，1-需要联系商家
-     */
-    @TableField("need_contact_merchant")
-    private Integer needContactMerchant;
-
     /**
      * 手续费比例（0-100）
      */

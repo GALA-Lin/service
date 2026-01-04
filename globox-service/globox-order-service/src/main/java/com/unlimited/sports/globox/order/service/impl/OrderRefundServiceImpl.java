@@ -5,11 +5,19 @@ import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
+import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
+import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
+import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
+import com.unlimited.sports.globox.common.utils.JsonUtils;
+import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
+import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
+import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeRequestDto;
+import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeResultVo;
 import com.unlimited.sports.globox.model.order.dto.ApplyRefundRequestDto;
 import com.unlimited.sports.globox.model.order.dto.CancelRefundApplyRequestDto;
 import com.unlimited.sports.globox.model.order.dto.GetRefundProgressRequestDto;
@@ -18,15 +26,22 @@ import com.unlimited.sports.globox.model.order.vo.*;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
+import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import com.unlimited.sports.globox.order.service.OrderRefundService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 /**
@@ -65,6 +80,16 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     @Autowired
     private MQService mqService;
+
+    @Autowired
+    private ExecutorService businessExecutorService;
+
+    @Autowired
+    private OrderRefundActionService orderRefundActionService;
+
+
+    @DubboReference(group = "rpc")
+    private MerchantRefundRuleDubboService merchantRefundRuleDubboService;
 
     /**
      * 申请订单退款。
@@ -122,17 +147,45 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         .in(OrderItems::getId, reqItemIds));
         Assert.isTrue(items.size() == reqItemIds.size(), OrderCode.ORDER_ITEM_NOT_EXIST);
 
-        // 教练订单不支持部分退款
+        // 教练订单只能全部退款
+        Long allItemCount = orderItemsMapper.selectCount(
+                Wrappers.<OrderItems>lambdaQuery()
+                        .eq(OrderItems::getOrderNo, order.getOrderNo()));
         if (order.getSellerType().equals(SellerTypeEnum.COACH)) {
-            Long allItemCount = orderItemsMapper.selectCount(
-                    Wrappers.<OrderItems>lambdaQuery()
-                            .eq(OrderItems::getOrderNo, orderNo));
-            Assert.isTrue(reqItemIds.size() ==  allItemCount, OrderCode.COACH_ONLY_REFUND_ALL);
+            Assert.isTrue(reqItemIds.size() == allItemCount, OrderCode.COACH_ONLY_REFUND_ALL);
         }
 
-        // 商家订单需要查询退款规则 TODO ETA 等一下林森
+        boolean autoRefund;
+        // 商家订单需要查询退款规则
         if (order.getSellerType().equals(SellerTypeEnum.VENUE)) {
-
+            MerchantRefundRuleJudgeRequestDto requestDto = MerchantRefundRuleJudgeRequestDto.builder()
+                    .venueId(order.getSellerId())
+                    .orderTime(order.getCreatedAt())
+                    .refundApplyTime(appliedAt)
+                    .userId(userId)
+                    .build();
+            OrderItems orderItems = items.stream().min(Comparator.comparing(OrderItems::getStartTime)).get();
+            LocalDateTime eventStartTime = LocalDateTime.of(
+                    orderItems.getBookingDate(),
+                    orderItems.getStartTime()
+            );
+            requestDto.setEventStartTime(eventStartTime);
+            MerchantRefundRuleJudgeResultVo resultVo =
+                    merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
+            if (!resultVo.isCanRefund()) {
+                return ApplyRefundResultVo.builder()
+                        .orderNo(orderNo)
+                        .isRefundable(false)
+                        .refundApplyId(null)
+                        .applyStatus(null)
+                        .appliedAt(appliedAt)
+                        .reason(resultVo.getReason())
+                        .build();
+            } else {
+                autoRefund = true;
+            }
+        } else {
+            autoRefund = false;
         }
 
         // 校验这些 item 当前是否可发起退款：必须是 NONE
@@ -140,6 +193,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             RefundStatusEnum st = item.getRefundStatus();
             assertItemRefundable(st);
         }
+
 
         // 4. 创建退款申请单
         OrderRefundApply refundApply = OrderRefundApply.builder()
@@ -184,7 +238,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         int uo = ordersMapper.updateById(updateOrder);
         Assert.isTrue(uo == 1, OrderCode.ORDER_REFUND_APPLY_CREATE_FAILED);
 
-        // 9. 写订单状态日志
+        // 8. 写订单状态日志
         OrderStatusLogs logEntity = OrderStatusLogs.builder()
                 .orderNo(orderNo)
                 .orderId(order.getId())
@@ -192,7 +246,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .action(OrderActionEnum.REFUND_APPLY)
                 .oldOrderStatus(order.getOrderStatus())
                 .newOrderStatus(OrderStatusEnum.REFUND_APPLYING)
-                .refundApplyId(refundApplyId) // 你字段叫 refund_request_id；如果你想统一语义可后续改名
+                .refundApplyId(refundApplyId)
                 .operatorType(OperatorTypeEnum.USER)
                 .operatorId(userId)
                 .operatorName("USER_" + userId)
@@ -200,17 +254,25 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .build();
         orderStatusLogsMapper.insert(logEntity);
 
-        // 10. afterCommit MQ（可选）
-        // TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-        //     @Override
-        //     public void afterCommit() {
-        //         mqService.send(...通知商家...)
-        //     }
-        // });
+
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                if (autoRefund) {
+                    businessExecutorService.submit(() -> {
+                        // 自动退款时，调用退款方法
+                        orderRefundActionService.refundAction(orderNo, refundApplyId, true, null);
+                    });
+                }
+            }
+        });
+
 
         // 11. 返回结果
         return ApplyRefundResultVo.builder()
                 .orderNo(orderNo)
+                .isRefundable(true)
                 .refundApplyId(refundApplyId)
                 .applyStatus(ApplyRefundStatusEnum.PENDING)
                 .appliedAt(appliedAt)
@@ -474,15 +536,16 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                                     OrderActionEnum.REFUND_COMPLETE)
                             .orderByAsc(OrderStatusLogs::getCreatedAt));
 
-            timeline = (logs == null ? List.<RefundTimelineVo>of() : logs.stream().map(statusLogs -> RefundTimelineVo.builder()
-                    .action(statusLogs.getAction())
-                    .actionName(statusLogs.getAction().getDescription())
-                    .at(statusLogs.getCreatedAt())
-                    .remark(statusLogs.getRemark())
-                    .operatorType(statusLogs.getOperatorType())
-                    .operatorId(statusLogs.getOperatorId())
-                    .operatorName(statusLogs.getOperatorName())
-                    .build()).toList());
+            timeline = (logs == null ? List.<RefundTimelineVo>of() : logs.stream()
+                    .map(statusLogs -> RefundTimelineVo.builder()
+                            .action(statusLogs.getAction())
+                            .actionName(statusLogs.getAction().getDescription())
+                            .at(statusLogs.getCreatedAt())
+                            .remark(statusLogs.getRemark())
+                            .operatorType(statusLogs.getOperatorType())
+                            .operatorId(statusLogs.getOperatorId())
+                            .operatorName(statusLogs.getOperatorName())
+                            .build()).toList());
         }
 
         // 8) 返回
@@ -644,6 +707,8 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .cancelledAt(now)
                 .build();
     }
+
+
 
     private void assertItemRefundable(RefundStatusEnum st) {
         Assert.isTrue(

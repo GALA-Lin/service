@@ -10,6 +10,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum CoachServiceTypeEnum {
+    ALL_TYPE(0, "全部"),
     ONE_ON_ONE(1, "一对一教学"),
     ONE_ON_THREE(2, "一对一陪练"),
     ONE_ON_TWO(3, "一对二"),

@@ -91,7 +91,7 @@ public class CourtManagementServiceImpl implements CourtManagementService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long deleteCourt(Long merchantId, Long courtId) {
+    public void deleteCourt(Long merchantId, Long courtId) {
         // 查询场地
         Court court = courtMapper.selectById(courtId);
         if (court == null) {
@@ -110,7 +110,6 @@ public class CourtManagementServiceImpl implements CourtManagementService {
         courtMapper.deleteById(courtId);
 
         log.info("删除场地成功，场地ID：{}", courtId);
-        return courtId;
     }
 
     @Override

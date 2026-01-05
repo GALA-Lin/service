@@ -40,9 +40,14 @@ public class CoachDetailVo {
     private String coachTeachingStyle;
 
     /**
-     * 教学视频/图片URL列表
+     * 教学图片URL列表
      */
     private List<String> coachWorkPhotos;
+
+    /**
+     * 教学视频URL列表
+     */
+    private List<String> coachWorkVideos;
 
     /**
      * 专长标签列表

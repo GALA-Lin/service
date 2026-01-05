@@ -209,8 +209,8 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
                 .teachingRating(dto.getTeachingRating())
                 .attitudeRating(dto.getAttitudeRating())
                 .reviewContent(dto.getReviewContent())
-                .reviewImages(dto.getReviewImages())  // 直接传 List，由 JacksonTypeHandler 处理
-                .reviewTags(dto.getReviewTags())      // 直接传 List
+                .reviewImages(dto.getReviewImages())
+                .reviewTags(dto.getReviewTags())
                 .isAnonymous(dto.getIsAnonymous() ? 1 : 0)
                 .reviewStatus(1)
                 .createdAt(LocalDateTime.now())

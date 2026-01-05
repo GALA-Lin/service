@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.coach.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -89,8 +90,8 @@ public class CoachApplications implements Serializable {
     /**
      * 工作照片：[url1, url2]
      */
-    @TableField("coach_work_photos")
-    private String coachWorkPhotos;
+    @TableField(value = "coach_work_photos", typeHandler = JacksonTypeHandler.class)
+    private List<String> coachWorkPhotos;
 
     /**
      * 自我介绍
@@ -101,8 +102,8 @@ public class CoachApplications implements Serializable {
     /**
      * 擅长领域标签
      */
-    @TableField("coach_specialty_tags")
-    private String coachSpecialtyTags;
+    @TableField(value = "coach_specialty_tags",typeHandler = JacksonTypeHandler.class)
+    private List<String> coachSpecialtyTags;
 
     /**
      * 申请状态：0-待审核，1-已通过，2-已拒绝，3-需补充材料

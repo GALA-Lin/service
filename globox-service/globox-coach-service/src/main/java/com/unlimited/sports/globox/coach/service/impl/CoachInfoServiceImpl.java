@@ -279,8 +279,10 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 .coachTeachingStyle(profile.getCoachTeachingStyle())
                 .coachWorkPhotos(profile.getCoachWorkPhotos() != null ?
                         profile.getCoachWorkPhotos() : Collections.emptyList())
+                .coachWorkVideos(profile.getCoachWorkVideos() != null ?
+                        profile.getCoachWorkVideos() : Collections.emptyList())
                 .coachSpecialtyTags(profile.getCoachSpecialtyTags() != null ?
-                        Collections.singletonList(profile.getCoachSpecialtyTags()) : Collections.emptyList())
+                        profile.getCoachSpecialtyTags() : Collections.emptyList())
                 .coachRemoteServiceArea(profile.getCoachRemoteServiceArea())
                 .coachRemoteMinHours(profile.getCoachRemoteMinHours())
                 .coachAcceptVenueType(profile.getCoachAcceptVenueType())

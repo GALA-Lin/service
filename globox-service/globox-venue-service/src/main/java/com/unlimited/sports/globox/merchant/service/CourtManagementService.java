@@ -21,17 +21,13 @@ public interface CourtManagementService {
 
     /**
      * 更新场地
-     *
-     * @return
      */
     CourtVo updateCourt(Long merchantId, CourtUpdateDto updateDTO);
 
     /**
      * 删除场地
-     *
-     * @return
      */
-    Long deleteCourt(Long merchantId, Long courtId);
+    void deleteCourt(Long merchantId, Long courtId);
 
     /**
      * 查询场馆的所有场地

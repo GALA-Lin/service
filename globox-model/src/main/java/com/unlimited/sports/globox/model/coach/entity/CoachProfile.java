@@ -50,10 +50,16 @@ public class CoachProfile implements Serializable {
 
 
     /**
-     * 教学视频/图片（JSON数组）
+     * 教学图片（JSON数组）
      */
     @TableField(value = "coach_work_photos", typeHandler = JacksonTypeHandler.class)
     private List<String> coachWorkPhotos;
+
+    /**
+     * 教学视频
+     */
+    @TableField(value = "coach_work_videos", typeHandler = JacksonTypeHandler.class)
+    private List<String> coachWorkVideos;
 
 
     /**
@@ -66,7 +72,8 @@ public class CoachProfile implements Serializable {
     /**
      * 专长标签（JSON数组）
      */
-    private String coachSpecialtyTags;
+    @TableField(value = "coach_specialty_tags",typeHandler = JacksonTypeHandler.class)
+    private List<String> coachSpecialtyTags;
 
     /**
      * 教学风格简述

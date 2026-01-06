@@ -1,10 +1,14 @@
 package com.unlimited.sports.globox.model.social.entity;
 
+/**
+ * 约球申请状态枚举
+ */
 public enum RallyApplyStatusEnum {
     PENDING(0, "待审核"),
     ACCEPTED(1, "已接受"),
     REJECTED(2, "已拒绝"),
-    CANCELLED(3, "已取消");
+    CANCELLED(3, "已取消"),
+    DEFAULT(4, "申请加入");
 
     private final int code;
     private final String description;

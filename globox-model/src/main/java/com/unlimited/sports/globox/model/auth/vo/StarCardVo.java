@@ -46,6 +46,9 @@ public class StarCardVo {
     @Schema(description = "速度", example = "75")
     private Integer speed;
 
+    @Schema(description = "发球", example = "7")
+    private Integer serve;
+
     @Schema(description = "截击", example = "70")
     private Integer volley;
 

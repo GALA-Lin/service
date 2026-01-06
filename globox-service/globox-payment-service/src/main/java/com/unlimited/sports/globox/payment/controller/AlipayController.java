@@ -24,18 +24,6 @@ public class AlipayController {
     private JsonUtils jsonUtils;
 
     /**
-     * 下单
-     *
-     * @param orderNo 订单号
-     * @return orderStr
-     */
-    @PostMapping("/submit/{orderNo}")
-    public R<String> submit(@PathVariable("orderNo") Long orderNo) {
-        return R.ok(alipayService.submit(orderNo));
-    }
-
-
-    /**
      * 支付成功后的接口调用
      * 重定向到网页中
      */

@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.common.message.order;
 
+import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,5 +22,6 @@ public class UserRefundMessage {
     private String outRequestNo;
     private BigDecimal refundAmount;
     private String refundReason;
+    private PaymentTypeEnum paymentType;
 
 }

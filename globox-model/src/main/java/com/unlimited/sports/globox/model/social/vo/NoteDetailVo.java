@@ -19,6 +19,12 @@ public class NoteDetailVo {
     @Schema(description = "作者ID", example = "1")
     private Long userId;
 
+    @Schema(description = "作者昵称", example = "这个是昵称")
+    private String nickName;
+
+    @Schema(description = "作者头像URL", example = "https://globox-dev-1386561970.cos.ap-chengdu.myqcloud.com/avatar/2026-01-03/c2cdd9219824420fa6c8956f760197de.jpg")
+    private String avatarUrl;
+
     @Schema(description = "标题", example = "今天打球收获分享")
     private String title;
 

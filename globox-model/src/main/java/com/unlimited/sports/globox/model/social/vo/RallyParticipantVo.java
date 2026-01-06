@@ -6,6 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
+/**
+ * 参与者VO
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -35,4 +38,9 @@ public class RallyParticipantVo {
      * 加入时间
      */
     private LocalDateTime joinedAt;
+
+    /**
+     * 是否是发起人
+     */
+    private boolean isInitiator;
 }

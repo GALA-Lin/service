@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.model.payment.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
+import com.unlimited.sports.globox.common.enums.payment.PaymentClientTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.model.base.BaseEntity;
 
@@ -46,6 +47,10 @@ public class Payments extends BaseEntity {
      */
     private PaymentTypeEnum paymentType;
 
+    private PaymentClientTypeEnum clientType;
+
+    private String openId;
+
     /**
      * 第三方交易编号，由第三方平台提供
      */
@@ -62,6 +67,11 @@ public class Payments extends BaseEntity {
     private BigDecimal totalAmount;
 
     /**
+     * 已退款金额
+     */
+    private BigDecimal refundAmount;
+
+    /**
      * 交易内容
      */
     private String subject;
@@ -70,6 +80,11 @@ public class Payments extends BaseEntity {
      * 支付状态
      */
     private PaymentStatusEnum paymentStatus;
+
+    /**
+     * 是否是活动订单
+     */
+    private boolean activity;
 
     /**
      * 用户支付时间

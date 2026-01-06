@@ -167,23 +167,23 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             OrderItems orderItems = items.stream().min(Comparator.comparing(OrderItems::getStartTime)).get();
             LocalDateTime eventStartTime = LocalDateTime.of(
                     orderItems.getBookingDate(),
-                    orderItems.getStartTime()
-            );
+                    orderItems.getStartTime());
             requestDto.setEventStartTime(eventStartTime);
+
             MerchantRefundRuleJudgeResultVo resultVo =
                     merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
-            if (!resultVo.isCanRefund()) {
-                return ApplyRefundResultVo.builder()
-                        .orderNo(orderNo)
-                        .isRefundable(false)
-                        .refundApplyId(null)
-                        .applyStatus(null)
-                        .appliedAt(appliedAt)
-                        .reason(resultVo.getReason())
-                        .build();
-            } else {
+//            if (!resultVo.isCanRefund()) {
+//                return ApplyRefundResultVo.builder()
+//                        .orderNo(orderNo)
+//                        .isRefundable(false)
+//                        .refundApplyId(null)
+//                        .applyStatus(null)
+//                        .appliedAt(appliedAt)
+//                        .reason(resultVo.getReason())
+//                        .build();
+//            } else {
                 autoRefund = true;
-            }
+//            }
         } else {
             autoRefund = false;
         }

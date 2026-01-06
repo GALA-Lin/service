@@ -1,6 +1,5 @@
 package com.unlimited.sports.globox.model.coach.vo;
 
-import com.unlimited.sports.globox.model.coach.entity.CoachProfile.*;
 import lombok.Builder;
 import lombok.Data;
 
@@ -47,7 +46,7 @@ public class CoachDetailVo {
     /**
      * 教学视频URL列表
      */
-    private List<String> coachWorkVideos;
+    private List<VideoItem> coachWorkVideos;
 
     /**
      * 专长标签列表

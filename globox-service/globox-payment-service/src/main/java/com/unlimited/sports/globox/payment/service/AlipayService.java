@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.payment.service;
 
 import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
+import com.unlimited.sports.globox.model.payment.entity.Payments;
 
 import java.util.Map;
 
@@ -8,14 +9,6 @@ import java.util.Map;
  * 支付宝支付 服务类
  */
 public interface AlipayService {
-
-    /**
-     * 提交订单至支付宝进行支付处理。
-     *
-     * @param orderId 订单ID
-     * @return 支付宝返回的处理结果信息，通常为 "success" 或者具体的错误信息
-     */
-    String submit(Long orderId);
 
     /**
      * 校验并处理支付宝异步回调请求。
@@ -33,4 +26,12 @@ public interface AlipayService {
      * @return 如果退款请求处理成功，则返回true；否则返回false
      */
     boolean refund(UserRefundMessage message);
+
+    /**
+     * 支付宝提交支付
+     *
+     * @param payments 支付信息
+     * @return orderStr
+     */
+    String submit(Payments payments);
 }

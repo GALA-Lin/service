@@ -65,7 +65,6 @@ public class OrderForPaymentDubboServiceImpl implements OrderForPaymentDubboServ
 
         PaymentGetOrderResultDto resultDto = PaymentGetOrderResultDto.builder()
                 .orderNo(orderNo)
-                .outTradeNo(orders.getOutTradeNo())
                 .totalAmount(orders.getPayAmount())
                 .subject(subjectBuilder.toString())
                 .userId(orders.getBuyerId())

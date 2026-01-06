@@ -97,6 +97,11 @@ public class UserProfile {
     private Integer speed;
     
     /**
+     * 发球
+     */
+    private Integer serve;
+    
+    /**
      * 截击
      */
     private Integer volley;

@@ -2,7 +2,7 @@ package com.unlimited.sports.globox.model.coach.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
+import com.unlimited.sports.globox.model.coach.vo.VideoItem;
 import lombok.*;
 
 import java.io.Serial;
@@ -59,7 +59,7 @@ public class CoachProfile implements Serializable {
      * 教学视频
      */
     @TableField(value = "coach_work_videos", typeHandler = JacksonTypeHandler.class)
-    private List<String> coachWorkVideos;
+    private List<VideoItem> coachWorkVideos;
 
 
     /**

@@ -329,9 +329,8 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         );
 
         // 转换为日程VO
-        List<CoachScheduleVo> schedules = new ArrayList<>(slotRecords.stream()
-                .map(this::buildScheduleFromSlotRecord)
-                .collect(Collectors.toList()));
+        List<CoachScheduleVo> schedules = slotRecords.stream()
+                .map(this::buildScheduleFromSlotRecord).collect(Collectors.toList());
 
         // 2. 查询自定义日程（保留原有逻辑）
         if (dto.getIncludeCustomSchedule()) {
@@ -810,6 +809,7 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
             LocalDate date,
             CoachSlotRecord record) {
         return CoachAvailableSlotVo.builder()
+                .coachSlotTemplateId(template.getCoachSlotTemplateId())
                 .slotRecordId(record != null ? record.getCoachSlotRecordId() : null)
                 .bookingDate(date)
                 .startTime(template.getStartTime())
@@ -929,7 +929,7 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         record.setBookingDate(schedule.getScheduleDate());
         record.setStartTime(schedule.getStartTime());
         record.setEndTime(schedule.getEndTime());
-        record.setStatus(4); // CUSTOM_EVENT
+        record.setStatus(3); // CUSTOM_EVENT
         record.setCustomScheduleId(schedule.getCoachCustomScheduleId());
         record.setOperatorSource(1);
         slotRecordMapper.insert(record);

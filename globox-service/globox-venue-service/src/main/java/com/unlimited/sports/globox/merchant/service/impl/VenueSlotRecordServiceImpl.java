@@ -228,9 +228,9 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
 
                     if (record == null) {
                         // 未生成记录 = 不可预订
-                        vo.setAvailable(false);
-                        vo.setPrice(BigDecimal.ZERO);
-                        vo.setStatusRemark("未开放");
+                        vo.setAvailable(true);
+                        vo.setPrice(calculatePrice(template.getStartTime(), pricePeriods, date));
+                        vo.setStatusRemark("可预订");
                     } else {
                         vo.setBookingSlotId(record.getBookingSlotRecordId());
                         vo.setAvailable(record.getStatus().equals(SlotRecordStatusEnum.AVAILABLE.getCode()));

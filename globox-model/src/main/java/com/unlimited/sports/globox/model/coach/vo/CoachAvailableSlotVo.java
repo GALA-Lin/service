@@ -16,6 +16,11 @@ import java.util.List;
 @Builder
 public class CoachAvailableSlotVo {
     /**
+     * 时段模板ID
+     */
+    private Long coachSlotTemplateId;
+
+    /**
      * 预约记录ID
      */
     private Long slotRecordId;

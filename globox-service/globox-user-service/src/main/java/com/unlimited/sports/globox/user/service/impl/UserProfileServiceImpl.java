@@ -349,6 +349,10 @@ public class UserProfileServiceImpl implements UserProfileService {
             profile.setSpeed(request.getSpeed());
             needUpdate = true;
         }
+        if (request.getServe() != null) {
+            profile.setServe(request.getServe());
+            needUpdate = true;
+        }
         if (request.getVolley() != null) {
             profile.setVolley(request.getVolley());
             needUpdate = true;
@@ -521,6 +525,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setHomeDistrict(profile.getHomeDistrict());
         vo.setPower(profile.getPower());
         vo.setSpeed(profile.getSpeed());
+        vo.setServe(profile.getServe());
         vo.setVolley(profile.getVolley());
         vo.setStamina(profile.getStamina());
         vo.setMental(profile.getMental());

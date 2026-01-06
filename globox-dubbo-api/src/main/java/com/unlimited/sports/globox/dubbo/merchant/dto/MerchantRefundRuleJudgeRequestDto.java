@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
@@ -16,7 +17,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MerchantRefundRuleJudgeRequestDto {
+public class MerchantRefundRuleJudgeRequestDto implements Serializable {
 
     @NotNull(message = "场馆ID不能为空")
     private Long venueId;

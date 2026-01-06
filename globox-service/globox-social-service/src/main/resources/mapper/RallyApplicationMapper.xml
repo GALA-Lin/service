@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.social.mapper.RallyApplicationMapper">
+    <resultMap id="BaseResultMap" type="com.unlimited.sports.globox.model.social.entity.RallyApplication">
+        <id column="application_id" property="applicationId" />
+        <result column="rally_post_id" property="rallyPostId" />
+        <result column="applicant_id" property="applicantId" />
+        <result column="applied_at" property="appliedAt" />
+        <result column="reason" property="reason" />
+        <result column="status" property="status" />
+        <result column="reviewed_at" property="reviewedAt" />
+        <result column="reviewed_by" property="reviewedBy" />
+    </resultMap>
+    <select id="getRallyApplicationByRallyId"
+            resultMap="BaseResultMap">
+        SELECT
+            application_id,
+            rally_post_id,
+            applicant_id,
+            applied_at,
+            reason,
+            status,
+            reviewed_at,
+            reviewed_by
+        FROM
+            rally_application
+        WHERE
+            rally_post_id = #{rallyId}
+            AND applicant_id != #{applicantId}
+            AND status != 1
+    </select>
+
+
+</mapper>

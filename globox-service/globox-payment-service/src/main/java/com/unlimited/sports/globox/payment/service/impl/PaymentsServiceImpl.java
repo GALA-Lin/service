@@ -1,25 +1,39 @@
 package com.unlimited.sports.globox.payment.service.impl;
 
+import com.baomidou.mybatisplus.core.toolkit.ObjectUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
+import com.unlimited.sports.globox.common.enums.payment.PaymentClientTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaymentsCode;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.common.utils.LocalDateUtils;
+import com.unlimited.sports.globox.dubbo.order.OrderForPaymentDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.PaymentGetOrderResultDto;
+import com.unlimited.sports.globox.model.payment.dto.SubmitRequestDto;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
+import com.unlimited.sports.globox.payment.prop.TimeoutProperties;
+import com.unlimited.sports.globox.payment.service.AlipayService;
 import com.unlimited.sports.globox.payment.service.PaymentsService;
 import com.unlimited.sports.globox.payment.mapper.PaymentsMapper;
+import com.unlimited.sports.globox.payment.service.WechatPayService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeParseException;
+import java.util.Calendar;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 针对表【payments(支付信息表)】的数据库操作Service实现
@@ -29,57 +43,23 @@ import java.util.Map;
 public class PaymentsServiceImpl implements PaymentsService {
 
     @Autowired
-    private JsonUtils jsonUtils;
+    private TimeoutProperties timeoutProperties;
 
     @Autowired
     private PaymentsMapper paymentsMapper;
 
+    @DubboReference(group = "rpc")
+    private OrderForPaymentDubboService orderForPaymentDubboService;
 
-    /**
-     * 保存支付信息
-     *
-     * @param orderResultDto order 相关信息
-     * @param paymentType    支付类型枚举
-     * @return 是否插入成功，如果 false 代表之前已存在记录
-     */
-    @Override
-    public boolean savePayments(PaymentGetOrderResultDto orderResultDto, PaymentTypeEnum paymentType) {
-        // 先查询是否存在记录
-        Payments existPayments = paymentsMapper.selectOne(
-                Wrappers.<Payments>lambdaQuery()
-                        .eq(Payments::getOrderNo, orderResultDto.getOrderNo())
-                        .eq(Payments::getPaymentType, paymentType));
+    @Lazy
+    @Autowired
+    private PaymentsService thisService;
 
-        if (existPayments != null) {
-            return false;
-        }
+    @Autowired
+    private AlipayService alipayService;
 
-        Payments payments = new Payments();
-        BeanUtils.copyProperties(orderResultDto, payments);
-
-        payments.setPaymentType(paymentType);
-
-        int insert = paymentsMapper.insert(payments);
-        Assert.isTrue(insert > 0, PaymentsCode.PAYMENT_SAVE_FAILED);
-        return true;
-    }
-
-
-    /**
-     * 获取指定对外业务编号和支付类型的支付信息。
-     *
-     * @param outTradeNo  对外业务编号
-     * @param paymentType 支付类型枚举
-     * @return 指定条件下的支付信息，如果不存在则返回null
-     */
-    @Override
-    public Payments getPaymentInfoByType(String outTradeNo, PaymentTypeEnum paymentType) {
-        return paymentsMapper.selectOne(
-                Wrappers.<Payments>lambdaQuery()
-                        .eq(Payments::getOutTradeNo, outTradeNo)
-                        .eq(Payments::getPaymentType, paymentType));
-    }
-
+    @Autowired
+    private WechatPayService wechatPayService;
 
     /**
      * 根据对外业务编号获取支付信息。
@@ -88,162 +68,120 @@ public class PaymentsServiceImpl implements PaymentsService {
      * @return 指定条件下的支付信息，如果不存在则返回null
      */
     @Override
-    public Payments getPaymentInfoByOutTradeNo(String outTradeNo) {
+    public Payments getPaymentByOutTradeNo(String outTradeNo) {
         return paymentsMapper.selectOne(
                 Wrappers.<Payments>lambdaQuery()
                         .eq(Payments::getOutTradeNo, outTradeNo));
     }
 
     @Override
-    public void updatePayment(Payments payments) {
-        paymentsMapper.updateById(payments);
+    public int updatePayment(Payments payments) {
+        return paymentsMapper.updateById(payments);
     }
 
 
+    /**
+     * 提交下单
+     *
+     * @param dto 下单信息
+     * @return orderStr / prepayId
+     */
     @Override
-    public boolean updatePaymentSuccess(Long id, Map<String, String> paramsMap) {
-        String tradeNo = paramsMap.get("trade_no");
-        // 支付宝支付时间字段：gmt_payment（你的代码里已经这么用）
-        LocalDateTime paymentAt= LocalDateUtils.from(paramsMap.get("gmt_payment"));
-        LocalDateTime callbackAt = LocalDateUtils.from(paramsMap.get("notify_time"));
-        String callbackContent = jsonUtils.objectToJson(paramsMap);
+    public String submit(SubmitRequestDto dto) {
+        Long orderNo = dto.getOrderNo();
+        PaymentTypeEnum paymentType = PaymentTypeEnum.from(dto.getPaymentTypeCode());
+        PaymentClientTypeEnum clientType = PaymentClientTypeEnum.from(dto.getClientTypeCode());
+        // 1) 请求订单 rpc 接口，确认订单信息
+        RpcResult<PaymentGetOrderResultDto> rpcResult = orderForPaymentDubboService.paymentGetOrders(orderNo);
+        Assert.rpcResultOk(rpcResult);
+        PaymentGetOrderResultDto resultDto = rpcResult.getData();
 
-        int rows = paymentsMapper.updatePaidIfUnpaid(
-                id,
-                tradeNo,
-                paymentAt,
-                callbackAt,
-                callbackContent,
-                PaymentStatusEnum.PAID.getCode(),
-                PaymentStatusEnum.UNPAID.getCode()
-        );
-        return rows == 1;
-    }
+        // 2) 查出所有 orderNo 的数据
+        List<Payments> paymentsList = thisService.getPaymentsList(orderNo);
 
-    @Override
-    public boolean updatePaymentClosed(Long id, Map<String, String> paramsMap) {
-        LocalDateTime callbackAt = LocalDateTime.now();
-        String callbackContent = jsonUtils.objectToJson(paramsMap);
+        if (ObjectUtils.isNotEmpty(paymentsList)) {
+            // 3) 如果存在之前的支付信息时，首先判断是否存在已支付的信息
+            for (Payments payments : paymentsList) {
+                Assert.isTrue(payments.getPaymentStatus().equals(PaymentStatusEnum.UNPAID),
+                        PaymentsCode.ORDER_PAID);
+            }
+            // TODO 取消之前所有的未支付订单，预防重复支付
+        }
 
-        int rows = paymentsMapper.updateClosedIfUnpaid(
-                id,
-                callbackAt,
-                callbackContent,
-                PaymentStatusEnum.CLOSED.getCode(),
-                PaymentStatusEnum.UNPAID.getCode()
-        );
-        return rows == 1;
-    }
+        // 4) 生成新的支付订单
+        String outTradeNo = "globox" + UUID.randomUUID().toString().replaceAll("-", "");
 
-    @Override
-    public void appendCallback(Long id, Map<String, String> paramsMap) {
-        paymentsMapper.updateCallbackOnly(
-                id,
-                LocalDateTime.now(),
-                jsonUtils.objectToJson(paramsMap)
-        );
-    }
+        Payments payments = new Payments();
+        BeanUtils.copyProperties(resultDto, payments);
+        payments.setOutTradeNo(outTradeNo);
+        payments.setPaymentType(paymentType);
+        payments.setClientType(clientType);
+        payments.setOpenId(dto.getOpenId());
+        payments.setActivity(resultDto.isActivity());
+        payments.setPaymentStatus(PaymentStatusEnum.UNPAID);
 
-    @Override
-    public boolean updateRefundResult(Long id, String outRequestNo, boolean isFullRefund, Map<String, String> paramsMap) {
-        LocalDateTime callbackAt = LocalDateTime.now();
-        String callbackContent = jsonUtils.objectToJson(paramsMap);
+        int cnt = thisService.insertPayments(payments);
+        Assert.isTrue(cnt > 0, PaymentsCode.PAYMENT_CREATE_FAILED);
 
-        if (isFullRefund) {
-            int rows = paymentsMapper.updateRefundedIfPaidOrPartial(
-                    id,
-                    outRequestNo,
-                    callbackAt,
-                    callbackContent,
-                    PaymentStatusEnum.REFUND.getCode(),
-                    PaymentStatusEnum.PAID.getCode(),
-                    PaymentStatusEnum.PARTIALLY_REFUNDED.getCode()
-            );
-            return rows == 1;
+        // 根据不同支付类型调用不同支付平台
+        if (PaymentTypeEnum.ALIPAY.equals(paymentType)) {
+            // 前往支付宝支付
+            return alipayService.submit(payments);
+        } else if (PaymentTypeEnum.WECHAT_PAY.equals(paymentType)) {
+            // 前往微信支付
+            return wechatPayService.submit(payments);
         } else {
-            int rows = paymentsMapper.updatePartiallyRefundedIfPaid(
-                    id,
-                    outRequestNo,
-                    callbackAt,
-                    callbackContent,
-                    PaymentStatusEnum.PARTIALLY_REFUNDED.getCode(),
-                    PaymentStatusEnum.PAID.getCode()
-            );
-            return rows == 1;
+            throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE);
         }
     }
 
 
+    /**
+     * 查询所有 orderNo 下的 payments 数据
+     *
+     * @param orderNo 订单号
+     * @return payments list
+     */
     @Override
-    public void tryMarkPaidIfUnpaid(Long id, Map<String, String> paramsMap) {
-        // refund 回调里也会带 gmt_payment / trade_no（你给的样例是有的）
-        String tradeNo = paramsMap.get("trade_no");
-        LocalDateTime paymentAt = paymentAt = LocalDateUtils.from(paramsMap.get("gmt_payment"));
+    public List<Payments> getPaymentsList(Long orderNo) {
+        return paymentsMapper.selectList(
+                Wrappers.<Payments>lambdaQuery()
+                        .eq(Payments::getOrderNo, orderNo));
+    }
 
-        int rows = paymentsMapper.updatePaidIfUnpaid(
-                id,
-                tradeNo,
-                paymentAt,
-                LocalDateTime.now(),
-                jsonUtils.objectToJson(paramsMap),
-                PaymentStatusEnum.PAID.getCode(),
-                PaymentStatusEnum.UNPAID.getCode()
-        );
 
-        if (rows == 1) {
-            log.info("退款回调兜底：已将支付单从 UNPAID 补标记为 PAID, id={}", id);
+    /**
+     * 插入支付信息
+     *
+     * @return 影响的记录条数
+     */
+    @Override
+    public int insertPayments(Payments payments) {
+        return paymentsMapper.insert(payments);
+    }
+
+
+
+    @Override
+    public String getPaymentTimeout(Payments payments) {
+        String alipayTimePattern = "yyyy-MM-dd HH:mm:ss";
+        String wechatPayTimePattern = "yyyy-MM-DDTHH:mm:ss+08:00";
+        Calendar calendar = Calendar.getInstance();
+        if (payments.isActivity()) {
+            calendar.add(Calendar.MINUTE, timeoutProperties.getActivity());
+        } else {
+            calendar.add(Calendar.MINUTE, timeoutProperties.getNormal());
         }
-    }
-
-    @Override
-    public boolean updateRefunded(Long id, String outRequestNo, BigDecimal refundFee,
-            LocalDateTime refundAt, Map<String, String> paramsMap) {
-
-        // 全额退款：只允许 PAID / PARTIALLY_REFUNDED -> REFUND
-        int rows = paymentsMapper.updateRefundedIfPaidOrPartial(
-                id,
-                outRequestNo,
-                LocalDateTime.now(),
-                jsonUtils.objectToJson(paramsMap),
-                PaymentStatusEnum.REFUND.getCode(),
-                PaymentStatusEnum.PAID.getCode(),
-                PaymentStatusEnum.PARTIALLY_REFUNDED.getCode()
-        );
-
-        // rows==1 代表第一次进入 REFUND
-        return rows == 1;
-    }
-
-    @Override
-    public boolean updatePartiallyRefunded(Long id, String outRequestNo, BigDecimal refundFee,
-            LocalDateTime refundAt, Map<String, String> paramsMap) {
-
-        String callbackContent = jsonUtils.objectToJson(paramsMap);
-        LocalDateTime callbackAt = LocalDateTime.now();
-
-        // 1) 第一次部分退款：PAID -> PARTIALLY_REFUNDED
-        int rows = paymentsMapper.updatePartialIfPaid(
-                id,
-                outRequestNo,
-                callbackAt,
-                callbackContent,
-                PaymentStatusEnum.PARTIALLY_REFUNDED.getCode(),
-                PaymentStatusEnum.PAID.getCode()
-        );
-
-        if (rows == 1) {
-            return true; // 第一次部分退款成功落库
+        SimpleDateFormat sdf;
+        if (PaymentTypeEnum.WECHAT_PAY.equals(payments.getPaymentType())) {
+            sdf = new SimpleDateFormat(wechatPayTimePattern);
+        } else if (PaymentTypeEnum.ALIPAY.equals(payments.getPaymentType())) {
+            sdf = new SimpleDateFormat(alipayTimePattern);
+        } else {
+            throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE);
         }
-
-        // 2) 后续部分退款：状态已是 PARTIALLY_REFUNDED，仅更新回调记录（不算 first）
-        paymentsMapper.touchPartialIfPartial(
-                id,
-                outRequestNo,
-                callbackAt,
-                callbackContent,
-                PaymentStatusEnum.PARTIALLY_REFUNDED.getCode()
-        );
-
-        return false;
+        return sdf.format(calendar);
     }
+
+
 }

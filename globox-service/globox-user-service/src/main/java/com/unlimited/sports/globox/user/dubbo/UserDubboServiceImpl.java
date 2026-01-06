@@ -33,12 +33,16 @@ public class UserDubboServiceImpl implements UserDubboService {
 
     @Override
     public UserInfoVo getUserInfo(Long userId) {
+        log.info("【RPC调用】查询单个用户信息, userId={}", userId);
+        
         if (userId == null) {
+            log.info("【RPC调用】查询单个用户信息为空, userId=null");
             return null;
         }
 
         UserProfile profile = userProfileService.getUserProfileById(userId);
         if (profile == null) {
+            log.info("【RPC调用】查询单个用户信息为空, userId={}", userId);
             return null;
         }
 
@@ -46,6 +50,8 @@ public class UserDubboServiceImpl implements UserDubboService {
         UserInfoVo vo = new UserInfoVo();
         BeanUtils.copyProperties(profile, vo);
 
+        log.info("【RPC调用】查询单个用户信息成功, userId={}, nickName={}", 
+                 userId, vo.getNickName());
         return vo;
     }
 
@@ -54,16 +60,20 @@ public class UserDubboServiceImpl implements UserDubboService {
         BatchUserInfoResponse response = new BatchUserInfoResponse();
         
         if (request == null || CollectionUtils.isEmpty(request.getUserIds())) {
+            log.info("【RPC调用】批量查询用户信息, 请求数量=0");
             response.setUsers(Collections.emptyList());
             return response;
         }
 
         List<Long> userIds = request.getUserIds();
+        int requestCount = userIds.size();
+        log.info("【RPC调用】批量查询用户信息, 请求数量={}", requestCount);
 
         // 批量查询用户资料
         List<UserProfile> profiles = userProfileService.batchGetUserProfile(userIds);
 
         if (CollectionUtils.isEmpty(profiles)) {
+            log.info("【RPC调用】批量查询用户信息成功, 请求数量={}, 返回数量=0", requestCount);
             response.setUsers(Collections.emptyList());
             return response;
         }
@@ -76,6 +86,10 @@ public class UserDubboServiceImpl implements UserDubboService {
                     return vo;
                 })
                 .collect(Collectors.toList());
+        
+        int responseCount = userInfoList.size();
+        log.info("【RPC调用】批量查询用户信息成功, 请求数量={}, 返回数量={}", 
+                 requestCount, responseCount);
         
         response.setUsers(userInfoList);
         return response;

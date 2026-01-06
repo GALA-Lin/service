@@ -360,6 +360,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .outRequestNo(outRequestNo)
                         .orderNo(order.getOrderNo())
                         .refundAmount(totalRefundAmount)
+                        .paymentType(order.getPaymentType())
                         .build();
 
                 // 向支付服务发起退款
@@ -548,7 +549,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 .operatorType(OperatorTypeEnum.SYSTEM)
                 .operatorId(null)
                 .operatorName("SYSTEM")
-                .extra((extra))
+                .extra(jsonUtils.objectToJson(extra))
                 .remark("支付退款到账回调")
                 .build();
         orderStatusLogsMapper.insert(orderLog);

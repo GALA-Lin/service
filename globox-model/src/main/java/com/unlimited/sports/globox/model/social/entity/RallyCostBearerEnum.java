@@ -1,5 +1,8 @@
 package com.unlimited.sports.globox.model.social.entity;
 
+/**
+ * 约球支付方式枚举
+ */
 public enum RallyCostBearerEnum {
     INITIATOR_BEAR(0, "发起人承担"),
     AA_SHARE(1, "AA分摊");
@@ -14,5 +17,13 @@ public enum RallyCostBearerEnum {
     }
     public String getDesc() {
         return message;
+    }
+    public static String getDescByCode(int code) {
+        for (RallyCostBearerEnum value : RallyCostBearerEnum.values()) {
+            if (value.getCode() == code) {
+                return value.getDesc();
+            }
+        }
+        return null;
     }
 }

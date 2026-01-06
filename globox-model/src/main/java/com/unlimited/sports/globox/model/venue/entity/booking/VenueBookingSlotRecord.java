@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
 @TableName("venue_booking_slot_record")
 
 public class VenueBookingSlotRecord {
-    @TableId(type = IdType.ASSIGN_ID)
+    @TableId(type = IdType.AUTO)
     private Long bookingSlotRecordId;
 
 

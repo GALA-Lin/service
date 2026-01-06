@@ -59,5 +59,8 @@ public class RallyParticipant implements Serializable {
      * 是否主动取消
      */
     @TableField("is_voluntarily_cancel")
-    private boolean isVoluntarilyCancel;
+    private int isVoluntarilyCancel;
+
+    @TableField("is_initiator")
+    private int isInitiator;
 }

@@ -37,7 +37,9 @@ import com.unlimited.sports.globox.user.service.WhitelistService;
 import com.unlimited.sports.globox.common.utils.JwtUtil;
 import com.unlimited.sports.globox.user.util.PasswordUtils;
 import com.unlimited.sports.globox.user.util.PhoneUtils;
+import com.unlimited.sports.globox.dubbo.social.ChatDubboService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -84,6 +86,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Autowired
     private IUserDeviceService userDeviceService;
+
+    @DubboReference(group = "rpc")
+    private ChatDubboService chatDubboService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -266,6 +271,9 @@ public class AuthServiceImpl implements AuthService {
         profile.setNickName("用户" + phone.substring(phone.length() - 4)); // 默认昵称：用户+后4位
 
         userProfileMapper.insert(profile);
+
+        // 导入腾讯IM账号（失败不影响注册流程）
+        importTencentIMAccount(userId, profile.getNickName(), profile.getAvatarUrl());
 
         log.info("新用户注册成功：userId={}, phone={}", userId, phone);
         return newUser;
@@ -473,6 +481,9 @@ public class AuthServiceImpl implements AuthService {
                 profile.setAvatarUrl(avatarUrl);
             }
             userProfileMapper.insert(profile);
+
+            // 导入腾讯IM账号（失败不影响注册流程）
+            importTencentIMAccount(userId, profile.getNickName(), profile.getAvatarUrl());
 
         log.info("新用户注册成功（微信登录）：userId={}, phone={}", userId, phone);
         }
@@ -835,6 +846,32 @@ public class AuthServiceImpl implements AuthService {
         } catch (Exception e) {
             // 设备注册失败不影响登录流程
             log.error("设备注册失败: userId={}, deviceId={}", userId, deviceInfo.getDeviceId(), e);
+        }
+    }
+
+    /**
+     * 导入腾讯IM账号
+     * 失败不影响注册登录流程，仅记录日志
+     *
+     * @param userId 用户ID
+     * @param userName 用户昵称
+     * @param faceUrl 用户头像URL
+     */
+    private void importTencentIMAccount(Long userId, String userName, String faceUrl) {
+        try {
+            String userIdStr = String.valueOf(userId);
+            log.info("IM账号导入开始: userId={}, nickName={}", userId, userName);
+            
+            Boolean result = chatDubboService.accountImport(userIdStr, userName, faceUrl);
+            
+            if (Boolean.TRUE.equals(result)) {
+                log.info("IM账号导入成功: userId={}, nickName={}", userId, userName);
+            } else {
+                log.warn("IM账号导入失败: userId={}, nickName={}, result={}", userId, userName, result);
+            }
+        } catch (Exception e) {
+            log.error("IM账号导入异常: userId={}, nickName={}, error={}", userId, userName, e.getMessage(), e);
+            // 异常不影响注册登录流程，仅记录日志
         }
     }
 }

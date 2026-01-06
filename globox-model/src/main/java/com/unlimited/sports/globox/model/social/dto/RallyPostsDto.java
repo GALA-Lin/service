@@ -23,6 +23,7 @@ import java.time.LocalTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RallyPostsDto {
+
     /**
      * 约球宣言
      */
@@ -54,20 +55,21 @@ public class RallyPostsDto {
     private LocalDate rallyEventDate;
 
     /**
-     * 时间类型: 0=具体时间 1=模糊时间
+     * 时间类型: 0=上午 1=下午 2=晚上
      */
-    private int rallyTimeType = 0;
+    @NotNull
+    private int rallyTimeType ;
 
     /**
      * 时间-开始
      */
 
-    private LocalTime rallyTimeStart;
+    private LocalTime rallyStartTime;
 
     /**
      * 时间-结束
      */
-    private LocalTime rallyTimeEnd;
+    private LocalTime rallyEndTime;
 
     /**
      * 费用
@@ -107,12 +109,12 @@ public class RallyPostsDto {
      * 总人数
      */
     @NotNull
-    private Long rallyTotalPeople;
+    private Integer rallyTotalPeople;
     /**
      * 剩余人数
      */
     @NotNull
-    private Long rallyRemainingPeople;
+    private Integer rallyRemainingPeople;
     /**
      * 备注
      */

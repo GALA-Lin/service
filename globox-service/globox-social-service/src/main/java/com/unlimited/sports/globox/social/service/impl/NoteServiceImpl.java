@@ -26,7 +26,12 @@ import com.unlimited.sports.globox.social.mapper.SocialNoteMediaMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNotePoolMapper;
 import com.unlimited.sports.globox.social.service.NoteService;
 import com.unlimited.sports.globox.social.util.CursorUtils;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -35,11 +40,14 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -66,6 +74,9 @@ public class NoteServiceImpl implements NoteService {
 
     @Autowired
     private SocialNoteLikeMapper socialNoteLikeMapper;
+
+    @DubboReference(group = "rpc")
+    private UserDubboService userDubboService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -344,6 +355,19 @@ public class NoteServiceImpl implements NoteService {
             vo.setLiked(likedNoteIds.contains(noteId));
         }
 
+        // 通过RPC获取作者信息
+        try {
+            UserInfoVo userInfo = userDubboService.getUserInfo(note.getUserId());
+            if (userInfo != null) {
+                vo.setNickName(userInfo.getNickName());
+                vo.setAvatarUrl(userInfo.getAvatarUrl());
+            }
+        } catch (Exception e) {
+            log.warn("获取笔记作者信息失败：noteId={}, userId={}, error={}", 
+                     noteId, note.getUserId(), e.getMessage());
+            // RPC异常不影响笔记主体返回，只记录警告日志
+        }
+
         return R.ok(vo);
     }
 
@@ -363,18 +387,7 @@ public class NoteServiceImpl implements NoteService {
         Page<SocialNote> pageParam = new Page<>(page, pageSize);
         IPage<SocialNote> pageResult = socialNoteMapper.selectPage(pageParam, queryWrapper);
 
-        List<NoteItemVo> voList = pageResult.getRecords().stream()
-                .map(note -> {
-                    NoteItemVo vo = new NoteItemVo();
-                    BeanUtils.copyProperties(note, vo);
-                    vo.setStatus(note.getStatus() != null ? note.getStatus().name() : null);
-                    vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
-                    if (StringUtils.hasText(note.getContent()) && note.getContent().length() > 100) {
-                        vo.setContent(note.getContent().substring(0, 100) + "...");
-                    }
-                    return vo;
-                })
-                .collect(Collectors.toList());
+        List<NoteItemVo> voList = convertToNoteItemVo(pageResult.getRecords(), null);
 
         PaginationResult<NoteItemVo> result = PaginationResult.build(voList, pageResult.getTotal(), page, pageSize);
         return R.ok(result);
@@ -400,18 +413,7 @@ public class NoteServiceImpl implements NoteService {
         Page<SocialNote> pageParam = new Page<>(page, pageSize);
         IPage<SocialNote> pageResult = socialNoteMapper.selectPage(pageParam, queryWrapper);
 
-        List<NoteItemVo> voList = pageResult.getRecords().stream()
-                .map(note -> {
-                    NoteItemVo vo = new NoteItemVo();
-                    BeanUtils.copyProperties(note, vo);
-                    vo.setStatus(note.getStatus() != null ? note.getStatus().name() : null);
-                    vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
-                    if (StringUtils.hasText(note.getContent()) && note.getContent().length() > 100) {
-                        vo.setContent(note.getContent().substring(0, 100) + "...");
-                    }
-                    return vo;
-                })
-                .collect(Collectors.toList());
+        List<NoteItemVo> voList = convertToNoteItemVo(pageResult.getRecords(), userId);
 
         PaginationResult<NoteItemVo> result = PaginationResult.build(voList, pageResult.getTotal(), page, pageSize);
         return R.ok(result);
@@ -1086,6 +1088,54 @@ public class NoteServiceImpl implements NoteService {
                     vo.setLiked(true);
                 }
             });
+        }
+
+        // 4. 批量获取作者信息
+        try {
+            // 收集所有不重复的 userId
+            Set<Long> userIds = notes.stream()
+                    .map(SocialNote::getUserId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            
+            if (!userIds.isEmpty()) {
+                // 批量查询用户信息（最多50个，需要分批处理）
+                List<Long> userIdList = new ArrayList<>(userIds);
+                Map<Long, UserInfoVo> userInfoMap = new HashMap<>();
+                
+                // 分批处理，每批最多50个
+                int batchSize = 50;
+                for (int i = 0; i < userIdList.size(); i += batchSize) {
+                    int end = Math.min(i + batchSize, userIdList.size());
+                    List<Long> batch = userIdList.subList(i, end);
+                    
+                    BatchUserInfoRequest request = new BatchUserInfoRequest();
+                    request.setUserIds(batch);
+                    BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
+                    
+                    if (response != null && response.getUsers() != null) {
+                        response.getUsers().forEach(userInfo -> {
+                            if (userInfo != null && userInfo.getUserId() != null) {
+                                userInfoMap.put(userInfo.getUserId(), userInfo);
+                            }
+                        });
+                    }
+                }
+                
+                // 回填作者信息
+                voList.forEach(vo -> {
+                    UserInfoVo userInfo = userInfoMap.get(vo.getUserId());
+                    if (userInfo != null) {
+                        vo.setNickName(userInfo.getNickName());
+                        vo.setAvatarUrl(userInfo.getAvatarUrl());
+                    }
+                });
+            }
+        } catch (Exception e) {
+            log.warn("批量获取笔记作者信息失败：noteIds={}, error={}", 
+                     notes.stream().map(SocialNote::getNoteId).collect(Collectors.toList()), 
+                     e.getMessage());
+            // RPC异常不影响列表返回，只记录警告日志
         }
 
         return voList;

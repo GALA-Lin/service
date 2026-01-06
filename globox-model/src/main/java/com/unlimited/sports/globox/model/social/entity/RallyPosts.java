@@ -128,13 +128,13 @@ public class RallyPosts implements Serializable {
      * 总人数
      */
     @TableField("total_people")
-    private Long rallyTotalPeople;
+    private Integer rallyTotalPeople;
 
     /**
      * 剩余人数
      */
     @TableField("remaining_people")
-    private Long rallyRemainingPeople;
+    private Integer rallyRemainingPeople;
 
     /**
      * 备注

@@ -37,5 +37,15 @@ public class RallyQueryDto  {
     /**
      * 活动类型
      */
-    private int activityType;
+    private Integer activityType;
+
+    /**
+     * 时间范围开始时间
+     */
+    private String timeRangeStart;
+
+    /**
+     * 时间范围结束时间
+     */
+    private String timeRangeEnd;
 }

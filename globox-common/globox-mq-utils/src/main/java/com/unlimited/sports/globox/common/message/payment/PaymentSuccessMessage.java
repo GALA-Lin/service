@@ -22,6 +22,11 @@ public class PaymentSuccessMessage implements Serializable {
     private Long orderNo;
 
     /**
+     * 第三方订单号
+     */
+    private String outTradeNo;
+
+    /**
      * 第三方交易编号，由第三方平台提供
      */
     private String tradeNo;

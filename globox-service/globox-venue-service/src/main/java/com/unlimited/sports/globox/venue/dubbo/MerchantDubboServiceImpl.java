@@ -15,22 +15,19 @@ import com.unlimited.sports.globox.venue.constants.BookingCacheConstants;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.lock.RedisDistributedLock;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplate;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplateMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.ActivityTypeMapper;
 import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
-import com.unlimited.sports.globox.venue.service.IVenueBookingSlotRecordService;
-import com.unlimited.sports.globox.venue.service.IVenueActivityService;
-import com.unlimited.sports.globox.venue.service.IVenueActivityParticipantService;
-import com.unlimited.sports.globox.venue.service.VenuePriceService;
+import com.unlimited.sports.globox.venue.service.*;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.common.utils.DistanceUtils;
 import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.redisson.api.RLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -57,6 +54,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 @Slf4j
 public class MerchantDubboServiceImpl implements MerchantDubboService {
 
+
+    @Autowired
+    private SqlSessionTemplate sqlSessionTemplate;
     @Autowired
     private CourtMapper courtMapper;
 
@@ -70,16 +70,7 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     private VenueBookingSlotRecordMapper slotRecordMapper;
 
     @Autowired
-    private VenuePriceService venuePriceService;
-
-    @Autowired
     private RedisDistributedLock redisDistributedLock;
-
-    @Autowired
-    private IVenueBookingSlotRecordService slotRecordService;
-
-    @Autowired
-    private VenuePriceTemplateMapper venuePriceTemplateMapper;
 
     @Autowired
     private VenueFacilityRelationMapper venueFacilityRelationMapper;
@@ -93,12 +84,16 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     @Autowired
     private IVenueActivityParticipantService participantService;
 
+    @Autowired
+    private IVenueBookingService venueBookingService;
+
     @Value("${default_image.venue_cover}")
     private String defaultVenueCoverImage;
+    @Autowired
+    private VenueBookingSlotRecordMapper venueBookingSlotRecordMapper;
 
 
     @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PricingResultDto quoteVenue(PricingRequestDto dto) {
         if (dto == null || dto.getSlotIds() == null || dto.getSlotIds().isEmpty()) {
             log.warn("请求参数不合法");
@@ -110,13 +105,8 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             throw new GloboxApplicationException("部分槽位不存在");
         }
 
-        List<VenueBookingSlotTemplate> availableTemplates = validateAndGetSlots(dto.getSlotIds(), dto.getBookingDate());
-        if (availableTemplates.size() != dto.getSlotIds().size()) {
-            log.warn("部分槽位不可用 - 请求{}个，可用{}个", dto.getSlotIds().size(), availableTemplates.size());
-            throw new GloboxApplicationException("部分槽位不可用或已被占用，请重新选择");
-        }
-
-        templates = availableTemplates;
+        // 第一次验证（获取锁前）- 快速失败，无事务环境
+        validateSlots(dto.getSlotIds(), dto.getBookingDate());
 
         List<Long> courtIds = templates.stream()
                 .map(VenueBookingSlotTemplate::getCourtId)
@@ -144,94 +134,42 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
         Map<Long, String> courtNameMap = courts.stream()
                 .collect(Collectors.toMap(Court::getCourtId, Court::getName));
 
-
         List<String> lockKeys = dto.getSlotIds().stream()
                 .map(slotId -> buildLockKey(slotId, dto.getBookingDate()))
                 .collect(Collectors.toList());
 
-        RLock multiLock = null;
-        List<VenueBookingSlotRecord> records = null;
+        List<RLock> locks = null;
 
         try {
-            // 使用Redisson MultiLock批量获取所有槽位的锁
-            // waitTime=1秒：等待锁的超时时间
-            // leaseTime=30秒：锁的持有时间，确保在业务逻辑执行期间保持有效
-            multiLock = redisDistributedLock.tryLockMultiple(lockKeys, 1, 30, TimeUnit.SECONDS);
-            if (multiLock == null) {
+            // 批量获取所有槽位的锁（逐个加锁）
+            locks = redisDistributedLock.tryLockMultiple(lockKeys, 1, -1L, TimeUnit.SECONDS);
+            if (locks == null) {
                 log.warn("获取分布式锁失败 - userId: {}, slotTemplateIds: {}", dto.getUserId(), dto.getSlotIds());
                 throw new GloboxApplicationException("槽位正在被其他用户预订，请稍后重试");
             }
-            log.debug("成功获取分布式锁（MultiLock） - userId: {}, 槽位数: {}", dto.getUserId(), dto.getSlotIds().size());
+            log.info("【锁包事务】成功获取分布式锁 - userId: {}, 槽位数: {}", dto.getUserId(), dto.getSlotIds().size());
 
-            // 二次验证
-            List<VenueBookingSlotTemplate> finalTemplates = validateAndGetSlots(dto.getSlotIds(), dto.getBookingDate());
-            if (finalTemplates.size() != dto.getSlotIds().size()) {
-                log.warn("锁内二次验证失败 - 槽位已被其他用户占用");
-                throw new GloboxApplicationException("槽位已被其他用户抢先预订，请重新选择");
-            }
+            // 调用事务Service执行预订和计价逻辑
+            // 事务在此时才开启，确保能读取到其他已提交事务的最新数据
+            // 使用Lambda表达式创建回调，复用validateSlots方法
+            PricingResultDto result = venueBookingService.executeBookingInTransaction(
+                    dto,
+                    templates,
+                    venue,
+                    courtNameMap,
+                    () -> validateSlots(dto.getSlotIds(), dto.getBookingDate()));
 
-            // 原子性地更新槽位状态，防止超卖
-            records = lockBookingSlots(finalTemplates, dto.getUserId(), dto.getBookingDate());
-            if (records == null) {
-                // lockBookingSlots返回null表示槽位已被其他用户占用（UPDATE失败）
-                log.warn("占用槽位失败 - 槽位已被其他用户占用 userId: {}", dto.getUserId());
-                throw new GloboxApplicationException("槽位已被其他用户占用，请重新选择");
-            }
-            log.debug("槽位占用成功，recordIds: {}", records.stream()
-                    .map(VenueBookingSlotRecord::getBookingSlotRecordId)
-                    .collect(Collectors.toList()));
+            log.info("事务执行成功 - userId: {}", dto.getUserId());
+
+            return result;
 
         } finally {
-            if (multiLock != null) {
-                redisDistributedLock.unlockMultiple(multiLock);
-                log.info("释放分布式锁 - userId: {}", dto.getUserId());
+            // 释放锁（无论事务成功还是失败）
+            if (locks != null) {
+                redisDistributedLock.unlockMultiple(locks);
+                log.info("【锁包事务】释放分布式锁 - userId: {}", dto.getUserId());
             }
         }
-        //  获取并验证价格模板
-        VenuePriceTemplate priceTemplate = venuePriceTemplateMapper.selectById(venue.getTemplateId());
-        if (priceTemplate == null) {
-            log.warn("价格模板不存在: templateId={}", venue.getTemplateId());
-            throw new GloboxApplicationException("场馆价格模板未配置");
-        }
-        if (!priceTemplate.getIsEnabled()) {
-            log.warn("价格模板未启用: templateId={}", priceTemplate.getTemplateId());
-            throw new GloboxApplicationException("场馆价格模板未启用");
-        }
-
-        // 计算槽位价格
-        List<RecordQuote> recordQuotes = venuePriceService.calculateSlotQuotes(
-                records,
-                venueId,
-                venue.getName(),
-                dto.getBookingDate(),
-                courtNameMap
-        );
-        if (recordQuotes.isEmpty()) {
-            log.warn("无法计算任何槽位的价格");
-            throw new GloboxApplicationException("无法计算槽位价格");
-        }
-
-        BigDecimal totalBasePrice = recordQuotes.stream()
-                .map(RecordQuote::getUnitPrice)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-
-        // 计算额外费用
-        List<OrderLevelExtraQuote> extraQuotes = venuePriceService.calculateExtraCharges(
-                venueId,
-                totalBasePrice,
-                templates.size()
-        );
-
-        // 构建返回结果
-        return PricingResultDto.builder()
-                .recordQuote(recordQuotes)
-                .orderLevelExtras(extraQuotes)
-                .sourcePlatform(venue.getVenueType())
-                .sellerName(venue.getName())
-                .sellerId(venueId)
-                .bookingDate(dto.getBookingDate())
-                .build();
     }
 
     @Override
@@ -381,162 +319,36 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
 
 
     /**
-     * 验证并获取槽位信息
+     * 验证槽位是否可用
+     * 直接查询是否存在状态不合法的记录，如果有任何不可用的槽位则抛异常
      *
      * @param slotTemplateIds 请求的槽位模板ID列表
      * @param bookingDate 预订日期
-     * @return 通过验证的槽位模板列表
      */
-    private List<VenueBookingSlotTemplate> validateAndGetSlots(List<Long> slotTemplateIds, LocalDate bookingDate) {
+    private void validateSlots(List<Long> slotTemplateIds, LocalDate bookingDate) {
         if (slotTemplateIds == null || slotTemplateIds.isEmpty()) {
-            return Collections.emptyList();
+            return;
         }
 
-        // 查询槽位模板
-        List<VenueBookingSlotTemplate> templates = slotTemplateMapper.selectBatchIds(slotTemplateIds);
+        // 直接查询是否存在状态不是AVAILABLE的记录
+        LambdaQueryWrapper<VenueBookingSlotRecord> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.in(VenueBookingSlotRecord::getSlotTemplateId, slotTemplateIds)
+                .eq(VenueBookingSlotRecord::getBookingDate, bookingDate.atStartOfDay())
+                .ne(VenueBookingSlotRecord::getStatus, BookingSlotStatus.AVAILABLE.getValue());
+        Long count = slotRecordMapper.selectCount(queryWrapper);
+        log.error("count{}",count);
+        List<VenueBookingSlotRecord> venueBookingSlotRecords = venueBookingSlotRecordMapper.selectList(new LambdaQueryWrapper<VenueBookingSlotRecord>()
+                .in(VenueBookingSlotRecord::getSlotTemplateId, List.of(5001438L, 5001435L, 5001432L)));
+        log.info("查询到的venueBookingSlotRecords{}",venueBookingSlotRecords);
+        // 如果存在任何状态不合法的记录，说明有槽位不可用
+        if (count > 0) {
+            log.warn("检测到{}个不可用的槽位", count);
+            throw new GloboxApplicationException("部分槽位不可用或已被占用，请重新选择");
+        }
 
-        // 批量查询槽位记录
-        List<Long> templateIds = templates.stream()
-                .map(VenueBookingSlotTemplate::getBookingSlotTemplateId)
-                .collect(Collectors.toList());
-
-        List<VenueBookingSlotRecord> records = slotRecordMapper.selectByTemplateIdsAndDate(
-                templateIds,
-                bookingDate
-        );
-
-        // 构建记录映射
-        Map<Long, VenueBookingSlotRecord> recordMap = records.stream()
-                .collect(Collectors.toMap(VenueBookingSlotRecord::getSlotTemplateId, record -> record));
-
-        log.debug("批量查询槽位记录 - 返回数: {}", records.size());
-
-        // 过滤可用的槽位（没有记录或状态为AVAILABLE）
-        List<VenueBookingSlotTemplate> validTemplates = templates.stream()
-                .filter(template -> {
-                    VenueBookingSlotRecord record = recordMap.get(template.getBookingSlotTemplateId());
-                    boolean isAvailable;
-
-                    if (record == null) {
-                        // 没有记录，表示未被占用，可用
-                        isAvailable = true;
-                    } else {
-                        // 检查状态
-                        try {
-                            isAvailable = BookingSlotStatus.fromValue(record.getStatus()) == BookingSlotStatus.AVAILABLE;
-                            if (!isAvailable) {
-                                log.debug("槽位不可用 - slotTemplateId: {}, status: {}",
-                                        template.getBookingSlotTemplateId(), record.getStatus());
-                            }
-                        } catch (IllegalArgumentException e) {
-                            log.warn("槽位状态值非法 - slotTemplateId: {}, status: {}",
-                                    template.getBookingSlotTemplateId(), record.getStatus());
-                            isAvailable = false;
-                        }
-                    }
-                    return isAvailable;
-                })
-                .collect(Collectors.toList());
-
-        return validTemplates;
+        log.debug("槽位验证通过 - 所有{}个槽位可用", slotTemplateIds.size());
     }
 
-    /**
-     * 占用预订槽位
-     * 将槽位状态改为LOCKED_IN，并记录操作人信息
-     *
-     * @return 返回占用的槽位记录列表（按templates顺序）
-     */
-    private List<VenueBookingSlotRecord> lockBookingSlots(List<VenueBookingSlotTemplate> templates, Long userId, LocalDate bookingDate) {
-        log.info("开始占用槽位 - userId: {}, 槽位数: {}", userId, templates.size());
-
-        if (templates.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        // 提取所有模板ID
-        List<Long> templateIds = templates.stream()
-                .map(VenueBookingSlotTemplate::getBookingSlotTemplateId)
-                .collect(Collectors.toList());
-
-        // 批量查询已存在的记录
-        List<VenueBookingSlotRecord> existingRecords = slotRecordMapper.selectByTemplateIdsAndDate(
-                templateIds,
-                bookingDate
-        );
-
-        // 构建已有记录的ID集合
-        Set<Long> existingTemplateIds = existingRecords.stream()
-                .map(VenueBookingSlotRecord::getSlotTemplateId)
-                .collect(Collectors.toSet());
-
-        // 保持 template 和 record 的对应关系
-        Map<Long, VenueBookingSlotRecord> templateToRecordMap = new LinkedHashMap<>();
-        List<VenueBookingSlotRecord> toInsert = new ArrayList<>();
-        List<VenueBookingSlotRecord> toUpdate = new ArrayList<>();
-
-        for (VenueBookingSlotTemplate template : templates) {
-            if (existingTemplateIds.contains(template.getBookingSlotTemplateId())) {
-                // 已有记录 - 更新状态和操作人信息
-                VenueBookingSlotRecord record = existingRecords.stream()
-                        .filter(r -> r.getSlotTemplateId().equals(template.getBookingSlotTemplateId()))
-                        .findFirst()
-                        .orElse(null);
-                if (record != null) {
-                    record.setStatus(BookingSlotStatus.LOCKED_IN.getValue());
-                    record.setOperatorId(userId);
-                    record.setOperatorSource(OperatorSourceEnum.USER);
-                    toUpdate.add(record);
-                    templateToRecordMap.put(template.getBookingSlotTemplateId(), record);
-                }
-            } else {
-                // 新记录 - 创建并设置操作人信息
-                VenueBookingSlotRecord record = new VenueBookingSlotRecord();
-                record.setSlotTemplateId(template.getBookingSlotTemplateId());
-                record.setBookingDate(bookingDate.atStartOfDay());
-                record.setStatus(BookingSlotStatus.LOCKED_IN.getValue());
-                record.setOperatorId(userId);
-                record.setOperatorSource(OperatorSourceEnum.USER);
-                toInsert.add(record);
-                templateToRecordMap.put(template.getBookingSlotTemplateId(), record);
-            }
-        }
-
-        // 批量insert
-        if (!toInsert.isEmpty()) {
-            slotRecordService.saveBatch(toInsert);
-        }
-
-        // 批量update - 使用原子性更新，只有当前状态为AVAILABLE时才能更新
-        // 如果返回0表示槽位已被其他用户占用（超卖防护）
-        int successUpdateCount = 0;
-        for (VenueBookingSlotRecord record : toUpdate) {
-            int affectedRows = slotRecordMapper.updateStatusIfAvailable(
-                    record.getBookingSlotRecordId(),
-                    BookingSlotStatus.LOCKED_IN.getValue(),
-                    userId
-            );
-            if (affectedRows == 0) {
-                // 该槽位已被其他用户占用，这不应该发生（因为有Redis锁）
-                // 但如果发生了，说明另一个用户的事务还没提交，等待片刻后重试或直接返回错误
-                log.warn("槽位已被其他用户占用 - recordId: {}, slotTemplateId: {}",
-                        record.getBookingSlotRecordId(), record.getSlotTemplateId());
-                return null;  // 返回null表示占用失败
-            }
-            successUpdateCount++;
-        }
-
-        // 按照 templates 的顺序返回 records，确保顺序正确
-        List<VenueBookingSlotRecord> records = templates.stream()
-                .map(template -> templateToRecordMap.get(template.getBookingSlotTemplateId()))
-                .collect(Collectors.toList());
-
-        log.info("槽位占用完成 - userId: {}, 槽位数: {}, 新增: {}, 更新: {} (成功: {}), recordIds: {}", userId, templates.size(),
-                toInsert.size(), toUpdate.size(), successUpdateCount,
-                records.stream().map(VenueBookingSlotRecord::getBookingSlotRecordId).collect(Collectors.toList()));
-
-        return records;
-    }
 
     /**
      * 构建锁键

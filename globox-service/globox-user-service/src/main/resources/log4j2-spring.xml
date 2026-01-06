@@ -81,6 +81,12 @@
         <Logger name="org.hibernate.validator.internal.util.Version" level="WARN"/>
         <Logger name="org.springframework.boot.actuate.endpoint.jmx" level="WARN"/>
 
+        <!-- Dubbo RPC 服务日志 -->
+        <Logger name="com.unlimited.sports.globox.user.dubbo" level="INFO" additivity="false">
+            <AppenderRef ref="Console"/>
+            <AppenderRef ref="AsyncAppender"/>
+        </Logger>
+
         <!-- Root Logger（关键） -->
         <Root level="INFO" includeLocation="true">
             <AppenderRef ref="Console"/>

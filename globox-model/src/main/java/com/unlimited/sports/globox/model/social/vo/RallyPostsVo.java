@@ -1,5 +1,9 @@
 package com.unlimited.sports.globox.model.social.vo;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.unlimited.sports.globox.model.social.dto.RallyPostsDto;
+import com.unlimited.sports.globox.model.social.dto.RallyQueryDto;
+import com.unlimited.sports.globox.model.social.entity.RallyActivityTypeEnum;
 import com.unlimited.sports.globox.model.social.entity.RallyParticipant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,8 +12,10 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 约球帖子视图对象
@@ -68,16 +74,19 @@ public class RallyPostsVo {
     /**
      * 约球开始时间
      */
-    private LocalTime rallyTimeStart;
+    @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
+    private LocalTime rallyStartTime;
 
     /**
      * 约球结束时间
      */
-    private LocalTime rallyTimeEnd;
+    @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
+    private LocalTime rallyEndTime;
+
     /**
-     * 约球性别限制
+     * 约球标签
      */
-    private Integer rallyGenderLimit;
+    private List<String> rallyLabel;
 
     /**
      * NTRP最低等级
@@ -93,15 +102,21 @@ public class RallyPostsVo {
     /**
      * 约球总人数
      */
-    private Long rallyTotalPeople;
+    private Integer rallyTotalPeople;
 
-    /**
-     * 约球剩余人数
-     */
-    private Long rallyRemainingPeople;
-    
     /**
      * 约球状态
      */
-    private int rallyStatus;
+    private String rallyStatus;
+
+    /**
+     * 约球参与人列表
+     */
+    private List<RallyParticipantVo> rallyParticipants;
+
+    /**
+     * 约球创建时间
+     */
+    private LocalDateTime createdAt;
+
 }

@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.model.social.vo;
 
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,6 +13,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 /**
+ * 约球帖子详情VO
  **/
 @Data
 @Builder
@@ -55,12 +58,14 @@ public class RallyPostsDetailsVo {
     /**
      * 约球开始时间
      */
-    private LocalTime rallyTimeStart;
+    @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
+    private LocalTime rallyStartTime;
 
     /**
      * 约球结束时间
      */
-    private LocalTime rallyTimeEnd;
+    @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
+    private LocalTime rallyEndTime;
     /**
      * 约球性别限制
      */
@@ -84,16 +89,42 @@ public class RallyPostsDetailsVo {
     /**
      * 约球总人数
      */
-    private Long rallyTotalPeople;
+    private Integer rallyTotalPeople;
 
     /**
      * 约球剩余人数
      */
-    private Long rallyRemainingPeople;
+    private Integer rallyRemainingPeople;
 
     /**
      * 约球状态
      */
     private Integer rallyStatus;
+
+    /**
+     * 费用
+     */
+    private BigDecimal rallyCost;
+
+    /**
+     * 承担方式: 0=发起人承担 1=AA分摊
+     */
+    private String rallyCostBearer;
+
+    /**
+     * 约球标签
+     */
+    private List<String> rallyLabel;
+
+
+    /**
+     *
+     */
+    private int rallyApplicationStatus;
+
+
+    private boolean isOwner;
+
+    private boolean isRallyCancel;
 
 }

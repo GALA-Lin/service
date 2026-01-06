@@ -16,12 +16,6 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PaymentGetOrderResultDto implements Serializable {
-
-    /**
-     * 对外业务编号
-     */
-    private String outTradeNo;
-
     private Long orderNo;
 
     /**

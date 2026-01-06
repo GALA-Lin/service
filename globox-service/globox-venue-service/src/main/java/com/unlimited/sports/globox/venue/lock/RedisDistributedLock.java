@@ -21,16 +21,16 @@ public class RedisDistributedLock {
     private RedissonClient redissonClient;
 
     /**
-     * 使用Redisson MultiLock批量获取多个锁
+     * 批量获取多个锁（逐个加锁，确保所有锁都获取成功）
      * 内部自动排序避免死锁
      *
      * @param lockKeys 锁键列表
      * @param waitTime 等待时间
      * @param leaseTime 锁持有时间
      * @param timeUnit 时间单位
-     * @return 所有锁都获取成功返回MultiLock对象，否则返回null
+     * @return 所有锁都获取成功返回锁列表，否则返回null
      */
-    public RLock tryLockMultiple(List<String> lockKeys, long waitTime, long leaseTime, TimeUnit timeUnit) {
+    public List<RLock> tryLockMultiple(List<String> lockKeys, long waitTime, long leaseTime, TimeUnit timeUnit) {
         if (lockKeys == null || lockKeys.isEmpty()) {
             log.warn("锁键列表为空");
             return null;
@@ -42,65 +42,86 @@ public class RedisDistributedLock {
                 .sorted()
                 .toList();
 
-        log.debug("开始使用MultiLock批量获取锁，共{}个锁，已排序", sortedKeys.size());
+        log.debug("开始批量获取锁（逐个加锁），共{}个锁，已排序，锁键: {}", sortedKeys.size(), sortedKeys);
+
+        List<RLock> acquiredLocks = new java.util.ArrayList<>();
 
         try {
-            // 创建所有RLock对象
-            List<RLock> locks = sortedKeys.stream()
-                    .map(redissonClient::getLock)
-                    .toList();
+            // 逐个获取锁，确保所有锁都必须成功
+            for (String key : sortedKeys) {
+                RLock lock = redissonClient.getLock(key);
+                boolean lockAcquired = lock.tryLock(waitTime, leaseTime, timeUnit);
 
-            // 使用Redisson MultiLock批量获取所有锁
-            // MultiLock内部会自动排序和处理失败回滚，比循环加锁更高效
-            RLock multiLock = redissonClient.getMultiLock(locks.toArray(new RLock[0]));
-
-            // 方法签名: tryLock(waitTime, leaseTime, unit)
-            // 指定leaseTime确保锁在业务逻辑执行期间保持有效
-            boolean acquired = multiLock.tryLock(waitTime, leaseTime, timeUnit);
-
-            if (acquired) {
-                log.info("成功获取所有锁（MultiLock），共{}个，等待时间: {} {}，锁持有时间: {} {}",
-                        locks.size(), waitTime, timeUnit, leaseTime, timeUnit);
-                return multiLock;
-            } else {
-                log.warn("获取锁失败，在 {} {} 内未能成功获取所有锁", waitTime, timeUnit);
-                return null;
+                if (lockAcquired) {
+                    acquiredLocks.add(lock);
+                    log.info("成功获取锁: {}, 锁是否被当前线程持有: {}", key, lock.isHeldByCurrentThread());
+                } else {
+                    // 任何一个锁获取失败，释放已获取的所有锁
+                    log.warn("获取锁失败: {}，释放已获取的{}个锁", key, acquiredLocks.size());
+                    unlockMultiple(acquiredLocks);
+                    return null;
+                }
             }
+
+            log.info("成功获取所有锁，共{}个，等待时间: {} {}，锁持有时间: {} {}，锁键: {}",
+                    acquiredLocks.size(), waitTime, timeUnit, leaseTime, timeUnit, sortedKeys);
+            return acquiredLocks;
 
         } catch (InterruptedException e) {
             log.error("获取锁被中断", e);
             Thread.currentThread().interrupt();
+            unlockMultiple(acquiredLocks);
             return null;
         } catch (Exception e) {
             log.error("获取锁异常", e);
+            unlockMultiple(acquiredLocks);
             return null;
         }
     }
 
     /**
-     * 释放MultiLock锁
-     * 直接释放MultiLock对象
+     * 释放多个锁
      *
-     * @param multiLock MultiLock对象
+     * @param locks 锁列表
      */
-    public void unlockMultiple(RLock multiLock) {
-        if (multiLock == null) {
+    public void unlockMultiple(List<RLock> locks) {
+        if (locks == null || locks.isEmpty()) {
+            log.warn("尝试释放null或空锁列表");
             return;
         }
 
-        try {
-            // 检查当前线程是否持有该锁
-            if (!multiLock.isHeldByCurrentThread()) {
-                log.warn("当前线程不持有该锁，跳过释放");
-                return;
+        String threadName = Thread.currentThread().getName();
+        long threadId = Thread.currentThread().getId();
+
+        log.info("准备释放{}个锁 - 线程: {}, 线程ID: {}", locks.size(), threadName, threadId);
+
+        int successCount = 0;
+        int skipCount = 0;
+
+        for (RLock lock : locks) {
+            try {
+                if (lock == null) {
+                    continue;
+                }
+
+                // 检查当前线程是否持有该锁
+                if (!lock.isHeldByCurrentThread()) {
+                    log.debug("当前线程不持有该锁，跳过释放");
+                    skipCount++;
+                    continue;
+                }
+
+                lock.unlock();
+                successCount++;
+                log.debug("成功释放锁");
+
+            } catch (Exception e) {
+                log.error("释放锁异常 - 线程: {}, 异常: {}", threadName, e.getMessage(), e);
             }
-
-            multiLock.unlock();
-            log.info("MultiLock释放完成");
-
-        } catch (Exception e) {
-            log.error("释放MultiLock异常", e);
         }
+
+        log.info("锁释放完成 - 线程: {}, 线程ID: {}, 成功: {}, 跳过: {}, 总数: {}",
+                threadName, threadId, successCount, skipCount, locks.size());
     }
 
 }

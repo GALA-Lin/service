@@ -137,6 +137,7 @@ public class PaymentSuccessConsumer {
         order.setPaymentStatus(OrdersPaymentStatusEnum.PAID);
         order.setPaidAt(message.getPaymentAt());
         order.setTradeNo(message.getTradeNo());
+        order.setOutTradeNo(message.getOutTradeNo());
         order.setPaymentType(message.getPaymentType());
         order.setPayAmount(message.getTotalAmount());
         order.setPaymentStatus(OrdersPaymentStatusEnum.PAID);

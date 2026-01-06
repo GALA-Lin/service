@@ -263,12 +263,8 @@ public class OrderServiceImpl implements OrderService {
         // 5) 创建 orders（金额只信：baseAmount + links 汇总 extraTotal）
         BigDecimal discountAmount = BigDecimal.ZERO;
 
-        // 生成对外订单号
-        String outTradeNo = "globox" + UUID.randomUUID().toString().replaceAll("-","");
-
         Orders order = Orders.builder()
                 .orderNo(orderNo)
-                .outTradeNo(outTradeNo)
                 .sourcePlatform(result.getSourcePlatform())
                 .buyerId(userId)
                 .sellerName(result.getSellerName())

@@ -21,7 +21,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName(value = "coach_reviews")
+@TableName(value = "coach_reviews", autoResultMap = true)
 public class CoachReviews implements Serializable {
 
     @Serial

@@ -13,6 +13,9 @@
                 typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
         <result property="coachWorkPhotos" column="coach_work_photos"
                 typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="coachWorkVideos" column="coach_work_videos"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"
+                javaType="java.util.List"/>
         <result property="coachSpecialtyTags" column="coach_specialty_tags"
                 typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
 
@@ -49,6 +52,8 @@
             coach_user_id,
             coach_certification_level,
             coach_service_area,
+            coach_work_photos,
+            coach_work_videos,
             coach_min_price,
             coach_max_price,
             coach_status,

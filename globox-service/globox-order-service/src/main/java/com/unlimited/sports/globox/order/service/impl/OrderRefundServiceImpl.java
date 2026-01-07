@@ -157,6 +157,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
         boolean autoRefund;
         // 商家订单需要查询退款规则
+        BigDecimal refundPercentage;
         if (order.getSellerType().equals(SellerTypeEnum.VENUE)) {
             MerchantRefundRuleJudgeRequestDto requestDto = MerchantRefundRuleJudgeRequestDto.builder()
                     .venueId(order.getSellerId())
@@ -172,19 +173,21 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
             MerchantRefundRuleJudgeResultVo resultVo =
                     merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
-//            if (!resultVo.isCanRefund()) {
-//                return ApplyRefundResultVo.builder()
-//                        .orderNo(orderNo)
-//                        .isRefundable(false)
-//                        .refundApplyId(null)
-//                        .applyStatus(null)
-//                        .appliedAt(appliedAt)
-//                        .reason(resultVo.getReason())
-//                        .build();
-//            } else {
+            if (!resultVo.isCanRefund()) {
+                return ApplyRefundResultVo.builder()
+                        .orderNo(orderNo)
+                        .isRefundable(false)
+                        .refundApplyId(null)
+                        .applyStatus(null)
+                        .appliedAt(appliedAt)
+                        .reason(resultVo.getReason())
+                        .build();
+            } else {
+                refundPercentage =  resultVo.getRefundPercentage();
                 autoRefund = true;
-//            }
+            }
         } else {
+            refundPercentage = new BigDecimal(100);
             autoRefund = false;
         }
 
@@ -254,15 +257,13 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .build();
         orderStatusLogsMapper.insert(logEntity);
 
-
-
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 if (autoRefund) {
                     businessExecutorService.submit(() -> {
                         // 自动退款时，调用退款方法
-                        orderRefundActionService.refundAction(orderNo, refundApplyId, true, null);
+                        orderRefundActionService.refundAction(orderNo, refundApplyId, true, null, refundPercentage);
                     });
                 }
             }

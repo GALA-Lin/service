@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.model.order.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.unlimited.sports.globox.common.enums.order.ApplyRefundCreatorEnum;
 import com.unlimited.sports.globox.common.enums.order.ApplyRefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.RefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.UserRefundReasonEnum;
@@ -76,6 +77,11 @@ public class OrderRefundApply extends BaseEntity implements Serializable {
      * 支付平台返回的退款交易 ID
      */
     private String refundTransactionId;
+
+    /**
+     * 申请的创建人
+     */
+    private ApplyRefundCreatorEnum creator;
 
 
     @Serial

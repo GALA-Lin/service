@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * @since 2025/12/31 13:56
- * 教练评价Vo
+ * 教练/用户共用教练评价Vo
  */
 @Data
 @Builder

@@ -145,11 +145,11 @@ public class CoachSlotController {
      * 创建自定义日程
      */
     @PostMapping("/custom-schedule")
-    public R<List<CoachSlotConflictVo>> createCustomSchedule(
+    public R<Long> createCustomSchedule(
             @Valid @RequestBody CoachCustomScheduleDto dto) {
         log.info("创建自定义日程 - coachUserId: {}", dto.getCoachUserId());
-        List<CoachSlotConflictVo> conflicts = coachSlotService.createCustomSchedule(dto);
-        if (!conflicts.isEmpty()) {
+        Long conflicts = coachSlotService.createCustomSchedule(dto);
+        if (conflicts > 0) {
             log.error("创建自定义日程 - 时段冲突: {}", conflicts);
             return R.ok(conflicts);
         }

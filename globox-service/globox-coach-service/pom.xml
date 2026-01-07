@@ -92,6 +92,24 @@
             <groupId>com.alibaba.fastjson2</groupId>
             <artifactId>fastjson2</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-venue-service</artifactId>
+            <version>1.0</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-mq-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-cos-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
 
     </dependencies>
 

@@ -12,6 +12,9 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum UserRefundReasonEnum {
 
+
+    NONE(0,"无"),
+
     CHANGE_OF_MIND(1, "改变主意，不想预订了"),
 
     SCHEDULE_CONFLICT(2, "时间冲突，无法到场"),

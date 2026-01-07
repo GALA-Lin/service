@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
@@ -30,13 +31,13 @@ public class VenueActivityParticipantServiceImpl extends ServiceImpl<VenueActivi
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public VenueActivityParticipant registerUserToActivity(Long activityId, Long userId) {
         if (activityId == null || userId == null) {
-            throw new GloboxApplicationException("活动ID和用户ID不能为空");
+            throw new GloboxApplicationException(VenueCode.ACTIVITY_PARAM_INVALID);
         }
 
         // 查询活动详情
         VenueActivity activity = activityMapper.selectById(activityId);
         if (activity == null) {
-            throw new GloboxApplicationException("活动不存在");
+            throw new GloboxApplicationException(VenueCode.ACTIVITY_NOT_EXIST);
         }
 
         // 检查是否已经报名（快速失败路径）
@@ -46,7 +47,7 @@ public class VenueActivityParticipantServiceImpl extends ServiceImpl<VenueActivi
                         .eq(VenueActivityParticipant::getUserId, userId)
         );
         if (existing != null) {
-            throw new GloboxApplicationException("您已经报名过该活动，无法重复报名");
+            throw new GloboxApplicationException(VenueCode.ACTIVITY_ALREADY_REGISTERED);
         }
 
         // 原子操作：检查人数限制并增加参与人数
@@ -69,7 +70,7 @@ public class VenueActivityParticipantServiceImpl extends ServiceImpl<VenueActivi
 
         if (updated == 0) {
             log.warn("活动名额已满或不存在 - activityId: {}, userId: {}", activityId, userId);
-            throw new GloboxApplicationException("活动名额已满，无法报名");
+            throw new GloboxApplicationException(VenueCode.ACTIVITY_FULL);
         }
 
         log.info("活动人数已增加 - activityId: {}, userId: {}", activityId, userId);

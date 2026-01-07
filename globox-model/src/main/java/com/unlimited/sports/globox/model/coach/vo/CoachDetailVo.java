@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * @since 2025/12/31 14:24
- * 教练详情
+ * 供用户查询教练详情
  */
 @Data
 @Builder
@@ -52,6 +52,11 @@ public class CoachDetailVo {
      * 专长标签列表
      */
     private List<String> coachSpecialtyTags;
+
+    /**
+     * 教练主要奖项
+     */
+    private List<String> coachAwards;
 
     /**
      * 可接受的远距离服务区域

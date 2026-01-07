@@ -1,0 +1,5 @@
+com\unlimited\sports\globox\cos\vo\BatchUploadResultVo.class
+com\unlimited\sports\globox\cos\CosFileUploadUtil.class
+com\unlimited\sports\globox\cos\vo\BatchUploadResultVo$FailedFileInfo$FailedFileInfoBuilder.class
+com\unlimited\sports\globox\cos\vo\BatchUploadResultVo$FailedFileInfo.class
+com\unlimited\sports\globox\cos\vo\BatchUploadResultVo$BatchUploadResultVoBuilder.class

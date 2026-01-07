@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * @since 2026/1/3 13:16
- * 时段记录Vo
+ * 用户端展示时段模板时段记录Vo
  */
 @Data
 @Builder

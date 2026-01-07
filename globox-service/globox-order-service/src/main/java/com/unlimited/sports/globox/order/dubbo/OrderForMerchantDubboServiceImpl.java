@@ -48,32 +48,13 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
     private OrderItemsMapper orderItemsMapper;
 
     @Autowired
-    private OrderRefundApplyMapper orderRefundApplyMapper;
-
-    @Autowired
-    private OrderExtraChargesMapper orderExtraChargesMapper;
-
-    @Autowired
     private OrderStatusLogsMapper orderStatusLogsMapper;
 
     @Autowired
-    private OrderItemRefundsMapper orderItemRefundsMapper;
-
-    @Autowired
-    private OrderExtraChargeLinksMapper orderExtraChargeLinksMapper;
-
-    @Autowired
-    private OrderRefundApplyItemsMapper orderRefundApplyItemsMapper;
-
-    @Autowired
-    private OrderRefundExtraChargesMapper orderRefundExtraChargesMapper;
-
-    @Autowired
     private MQService mqService;
+
     @Autowired
     private OrderActivitiesMapper orderActivitiesMapper;
-    @Autowired
-    private OrderRefundService orderRefundService;
 
     /**
      * 商家分页查询用户订单信息。
@@ -82,7 +63,7 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
      * @return 返回分页后的订单信息列表，每个订单信息包括订单号、用户ID、场馆信息、价格明细、支付状态、订单状态等
      */
     @Override
-    public RpcResult<IPage<MerchantGetOrderResultDto>> merchantGetOrderPage(
+    public RpcResult<IPage<MerchantGetOrderResultDto>> getOrderPage(
             MerchantGetOrderPageRequestDto dto) {
         // 1. 分页查询订单主表
         Page<Orders> page = new Page<>(dto.getPageNum(), dto.getPageSize());
@@ -188,7 +169,7 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
     }
 
     @Override
-    public RpcResult<MerchantGetOrderResultDto> merchantGetOrderDetails(MerchantGetOrderDetailsRequestDto dto) {
+    public RpcResult<MerchantGetOrderResultDto> getOrderDetails(MerchantGetOrderDetailsRequestDto dto) {
         Long orderNo = dto.getOrderNo();
         Long venueId = dto.getVenueId();
 
@@ -286,7 +267,7 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
     @Override
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
-    public RpcResult<MerchantCancelOrderResultDto> merchantCancelUnpaidOrder(
+    public RpcResult<MerchantCancelOrderResultDto> cancelUnpaidOrder(
             MerchantCancelOrderRequestDto dto) {
 
         Long orderNo = dto.getOrderNo();
@@ -414,7 +395,7 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
     @Override
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
-    public RpcResult<MerchantConfirmResultDto> merchantConfirm(MerchantConfirmRequestDto dto) {
+    public RpcResult<MerchantConfirmResultDto> confirm(MerchantConfirmRequestDto dto) {
         Long orderNo = dto.getOrderNo();
         LocalDateTime now = LocalDateTime.now();
 
@@ -491,16 +472,17 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
 
 
     /**
-     * 是否能通过商户取消
+     * 是否能通过商户取消/退款
      *
      * @param orderStatusEnum           订单当前状态
      * @param orderItemRefundStatusEnum 订单项当前退款状态
-     * @return 商户是否可取消
+     * @return 商户是否可取消/退款
      */
     private boolean isOrderItemCancelableByMerchant(OrderStatusEnum orderStatusEnum, RefundStatusEnum orderItemRefundStatusEnum) {
         // 订单已完成 / 已取消 / 已退款 则 不可取消
-        if (orderStatusEnum == OrderStatusEnum.COMPLETED
+        if (orderStatusEnum == OrderStatusEnum.REFUNDING
                 || orderStatusEnum == OrderStatusEnum.CANCELLED
+                || orderStatusEnum == OrderStatusEnum.REFUND_APPLYING
                 || orderStatusEnum == OrderStatusEnum.REFUNDED) {
             return false;
         }

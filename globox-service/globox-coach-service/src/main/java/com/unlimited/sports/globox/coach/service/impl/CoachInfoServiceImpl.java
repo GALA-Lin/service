@@ -225,6 +225,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                     return CoachServiceVo.builder()
                             .serviceTypeId(service.getCoachCourseTypeId())
                             .serviceName(service.getCoachCourseTypeName())
+                            .courseCover(service.getCourseCover())
                             .serviceType(service.getCoachServiceTypeEnum())
                             .serviceTypeDesc(typeEnum.getDescription())
                             .duration(service.getCoachDuration())
@@ -277,6 +278,8 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 .coachTotalStudents(profile.getCoachTotalStudents())
                 .coachTotalHours(profile.getCoachTotalHours())
                 .coachTeachingStyle(profile.getCoachTeachingStyle())
+                .coachAwards(profile.getCoachAward() != null ?
+                        profile.getCoachAward() : Collections.emptyList())
                 .coachWorkPhotos(profile.getCoachWorkPhotos() != null ?
                         profile.getCoachWorkPhotos() : Collections.emptyList())
                 .coachWorkVideos(profile.getCoachWorkVideos() != null ?

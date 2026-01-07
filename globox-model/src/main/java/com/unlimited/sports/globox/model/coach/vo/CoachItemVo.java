@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * @since 2025/12/31 13:59
- * 教练信息列表项
+ * 供用户查询的教练信息列表项
  */
 @Data
 @Builder

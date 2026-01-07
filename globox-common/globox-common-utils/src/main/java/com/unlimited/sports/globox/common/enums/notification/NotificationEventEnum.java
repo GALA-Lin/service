@@ -3,6 +3,9 @@ package com.unlimited.sports.globox.common.enums.notification;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 /**
  * 通知事件枚举（三级分类）
  * 强绑定到模块和角色
@@ -18,12 +21,7 @@ public enum NotificationEventEnum {
 
 
     // 订场者事件
-    VENUE_ORDER_CONFIRMED(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_ORDER_CONFIRMED", "订单已确认"),
-    VENUE_ORDER_CANCELLED(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_ORDER_CANCELLED", "订单已取消"),
-    VENUE_ORDER_COMPLETED(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_ORDER_COMPLETED", "订单已完成"),
-    VENUE_PAYMENT_SUCCESS(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_PAYMENT_SUCCESS", "支付成功"),
     VENUE_REFUND_APPROVED(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_REFUND_APPROVED", "退款申请已通过"),
-    VENUE_REFUND_SUCCESS(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_REFUND_SUCCESS", "退款已到账"),
     VENUE_BOOKING_REMINDER(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_BOOKING_REMINDER", "订场即将开始提醒"),
     ACTIVITY_BOOKING_REMINDER(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "ACTIVITY_BOOKING_REMINDER", "活动即将开始提醒"),
 
@@ -40,7 +38,7 @@ public enum NotificationEventEnum {
     // 预约者事件
     COACH_APPOINTMENT_CONFIRMED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_APPOINTMENT_CONFIRMED", "预约已确认"),
     COACH_APPOINTMENT_CANCELLED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_APPOINTMENT_CANCELLED", "预约已取消"),
-    COACH_PAYMENT_SUCCESS(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_PAYMENT_SUCCESS", "支付成功"),
+    COACH_CLASS_BOOKER_REMINDER(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_CLASS_BOOKER_REMINDER", "您的教练课程即将开始"),
 
     // 教练事件
     COACH_PROVIDER_APPOINTMENT_CREATED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_PROVIDER, "COACH_PROVIDER_APPOINTMENT_CREATED", "预约已创建"),
@@ -49,6 +47,8 @@ public enum NotificationEventEnum {
     COACH_PROVIDER_REFUND_APPLIED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_PROVIDER, "COACH_PROVIDER_REFUND_APPLIED", "收到预约退款申请"),
     COACH_PROVIDER_APPROVAL_PASSED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_PROVIDER, "COACH_PROVIDER_APPROVAL_PASSED", "审核已通过"),
     COACH_PROVIDER_APPROVAL_FAILED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_PROVIDER, "COACH_PROVIDER_APPROVAL_FAILED", "审核未通过"),
+    COACH_CLASS_PROVIDER_REMINDER(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_PROVIDER, "COACH_CLASS_PROVIDER_REMINDER","您有一节课程即将开始"
+    ),
     /**
      * PLAY_MATCHING 约球模块
      */
@@ -60,9 +60,10 @@ public enum NotificationEventEnum {
 
     // 参与者事件
     RALLY_APPLICATION_ACCEPTED(NotificationModuleEnum.PLAY_MATCHING, NotificationRoleEnum.RALLY_PARTICIPANT, "RALLY_APPLICATION_ACCEPTED", "申请被接受"),
-    RALLY_APPLICATION_REJECTED(NotificationModuleEnum.PLAY_MATCHING, NotificationRoleEnum.RALLY_PARTICIPANT, "RALLY_APPLICATION_REJECTED", "申请被拒绝"),
     RALLY_CANCELLED(NotificationModuleEnum.PLAY_MATCHING, NotificationRoleEnum.RALLY_PARTICIPANT, "RALLY_CANCELLED", "约球已取消"),
-
+    RALLY_PARTICIPANTS_FULL_ACCEPTED(NotificationModuleEnum.PLAY_MATCHING, NotificationRoleEnum.RALLY_PARTICIPANT, "RALLY_PARTICIPANTS_FULL_ACCEPTED", "人数已满，您已成功加入"),
+    RALLY_PARTICIPANTS_FULL_REJECTED(NotificationModuleEnum.PLAY_MATCHING, NotificationRoleEnum.RALLY_PARTICIPANT, "RALLY_PARTICIPANTS_FULL_REJECTED", "人数已满，您的申请未被通过"
+    ),
     /**
      * SOCIAL 社交模块
      */
@@ -70,6 +71,8 @@ public enum NotificationEventEnum {
     SOCIAL_NOTE_COMMENTED(NotificationModuleEnum.SOCIAL, NotificationRoleEnum.SOCIAL_USER, "SOCIAL_NOTE_COMMENTED", "帖子被评论"),
     SOCIAL_FOLLOWED(NotificationModuleEnum.SOCIAL, NotificationRoleEnum.SOCIAL_USER, "SOCIAL_FOLLOWED", "被关注"),
     SOCIAL_NOTE_MENTIONED(NotificationModuleEnum.SOCIAL, NotificationRoleEnum.SOCIAL_USER, "SOCIAL_NOTE_MENTIONED", "被@提及"),
+    SOCIAL_CHAT_MESSAGE_RECEIVED(NotificationModuleEnum.SOCIAL, NotificationRoleEnum.SOCIAL_USER, "SOCIAL_CHAT_MESSAGE_RECEIVED", "收到一条新消息"
+    ),
 
     /**
      * SYSTEM 系统模块
@@ -103,11 +106,9 @@ public enum NotificationEventEnum {
      * 通过完整编码获取事件
      */
     public static NotificationEventEnum fromFullCode(String fullCode) {
-        for (NotificationEventEnum event : values()) {
-            if (event.getFullCode().equals(fullCode)) {
-                return event;
-            }
-        }
-        throw new IllegalArgumentException("未知的事件编码: " + fullCode);
+        return Arrays.stream(values())
+                .filter(event -> Objects.equals(event.getFullCode(),fullCode))
+                .findFirst()
+                .orElse(null);
     }
 }

@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.coach.mapper;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.unlimited.sports.globox.model.coach.entity.CoachCustomSchedule;
 import org.apache.ibatis.annotations.Mapper;
@@ -39,15 +40,16 @@ public interface CoachCustomScheduleMapper extends BaseMapper<CoachCustomSchedul
     /**
      * 根据日期范围查询自定义日程
      */
-    @Select("SELECT * FROM coach_custom_schedule " +
-            "WHERE coach_user_id = #{coachUserId} " +
-            "AND schedule_date BETWEEN #{startDate} AND #{endDate} " +
-            "AND status = 1 " +
-            "ORDER BY schedule_date, start_time")
-    List<CoachCustomSchedule> selectByDateRange(
-            @Param("coachUserId") Long coachUserId,
-            @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate
-    );
+    default List<CoachCustomSchedule> selectByDateRange(
+            Long coachUserId,
+            LocalDate startDate,
+            LocalDate endDate) {
+        return selectList(new LambdaQueryWrapper<CoachCustomSchedule>()
+                .eq(CoachCustomSchedule::getCoachUserId, coachUserId)
+                .between(CoachCustomSchedule::getScheduleDate, startDate, endDate)
+                .eq(CoachCustomSchedule::getStatus, 1)
+                .orderByAsc(CoachCustomSchedule::getScheduleDate)
+                .orderByAsc(CoachCustomSchedule::getStartTime));
+    }
 
 }

@@ -37,6 +37,12 @@ public class CoachCourseType implements Serializable {
     private Long coachUserId;
 
     /**
+     * 课程封面
+     */
+    @TableField(value = "course_cover")
+    private String courseCover;
+
+    /**
      * 服务名称："一对一私教课"
      */
     @TableField(value = "coach_course_type_name")

@@ -83,7 +83,7 @@ public interface ICoachSlotService {
      * 创建自定义日程(按需生成占位记录)
      * 返回冲突列表,如果有冲突则不创建
      */
-    List<CoachSlotConflictVo> createCustomSchedule(CoachCustomScheduleDto dto);
+    Long createCustomSchedule(CoachCustomScheduleDto dto);
 
     /**
      * 更新自定义日程

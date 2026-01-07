@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: globox-gateway-server
+  profiles:
+    active: dev

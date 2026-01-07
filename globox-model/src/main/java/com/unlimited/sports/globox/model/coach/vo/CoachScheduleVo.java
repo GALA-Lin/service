@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 /**
- * 教练日程VO
+ * 供教练查询自己日程VO
  */
 @Data
 @Builder

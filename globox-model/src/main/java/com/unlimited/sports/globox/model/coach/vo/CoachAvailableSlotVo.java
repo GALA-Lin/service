@@ -10,7 +10,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 /**
- * 可预约时段VO
+ * 供用户查询可预约时段VO
  */
 @Data
 @Builder
@@ -66,4 +66,14 @@ public class CoachAvailableSlotVo {
      * 服务名称
      */
     private String serviceName;
+
+    /**
+     * 时段状态
+     */
+    private Integer slotStatus;
+
+    /**
+     * 时段状态描述（前端友好展示）
+     */
+    private String slotStatusDesc;
 }

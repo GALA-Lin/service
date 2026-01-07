@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * 商家同意退款请求的数据传输对象。
@@ -30,6 +31,9 @@ public class MerchantApproveRefundRequestDto implements Serializable {
 
     @NotNull(message = "商家ID不能为空")
     private Long merchantId;
+
+    @NotNull(message = "退款比例不能为空")
+    private BigDecimal refundPercentage;
 
     /**
      * 可选：商家备注

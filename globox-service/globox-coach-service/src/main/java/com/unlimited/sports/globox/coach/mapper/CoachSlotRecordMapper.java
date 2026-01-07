@@ -63,18 +63,25 @@ public interface CoachSlotRecordMapper extends BaseMapper<CoachSlotRecord> {
     );
 
     /**
-     * 原子性更新锁定状态(只有AVAILABLE状态才能锁定)
+     * 原子性地更新时段状态为锁定（只有当前状态为AVAILABLE时才能更新）
+     * 返回受影响的行数，0表示该时段已被其他用户占用
+     *
+     * @param recordId 记录ID
+     * @param newStatus 新状态
+     * @param userId 操作人ID
+     * @param lockedUntil 锁定截止时间
+     * @return 受影响的行数
      */
-    @Update("UPDATE coach_slot_record SET " +
-            "status = #{newStatus}, " +
-            "locked_by_user_id = #{userId}, " +
-            "locked_until = #{lockedUntil}, " +
-            "locked_type = 1, " +
-            "operator_id = #{userId}, " +
-            "operator_source = 2, " +
-            "updated_at = NOW() " +
+    @Update("UPDATE coach_slot_record " +
+            "SET status = #{newStatus}, " +
+            "    locked_by_user_id = #{userId}, " +
+            "    locked_until = #{lockedUntil}, " +
+            "    locked_type = 1, " +
+            "    operator_id = #{userId}, " +
+            "    operator_source = 2, " +
+            "    updated_at = NOW() " +
             "WHERE coach_slot_record_id = #{recordId} " +
-            "AND status = 1")
+            "AND (status = 1 OR (status = 1 AND locked_by_user_id = #{userId}))")
     int updateLockIfAvailable(
             @Param("recordId") Long recordId,
             @Param("newStatus") Integer newStatus,

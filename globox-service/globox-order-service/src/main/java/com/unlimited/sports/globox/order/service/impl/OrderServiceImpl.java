@@ -10,6 +10,7 @@ import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -115,7 +116,9 @@ public class OrderServiceImpl implements OrderService {
         PricingRequestDto pricingRequestDto = new PricingRequestDto();
         BeanUtils.copyProperties(dto, pricingRequestDto);
         pricingRequestDto.setUserId(userId);
-        PricingResultDto result = merchantDubboService.quoteVenue(pricingRequestDto);
+        RpcResult<PricingResultDto> rpcResult = merchantDubboService.quoteVenue(pricingRequestDto);
+        Assert.rpcResultOk(rpcResult);
+        PricingResultDto result = rpcResult.getData();
 //        PricingResultDto result = getPricingResultDto();
 
         Assert.isNotEmpty(result.getRecordQuote(), OrderCode.SLOT_HAD_BOOKING);
@@ -141,7 +144,9 @@ public class OrderServiceImpl implements OrderService {
         PricingActivityRequestDto requestDto = new PricingActivityRequestDto();
         BeanUtils.copyProperties(dto, requestDto);
         requestDto.setUserId(userId);
-        PricingActivityResultDto result = merchantDubboService.quoteVenueActivity(requestDto);
+        RpcResult<PricingActivityResultDto> rpcResult = merchantDubboService.quoteVenueActivity(requestDto);
+        Assert.rpcResultOk(rpcResult);
+        PricingActivityResultDto result = rpcResult.getData();
 
         log.info("PricingResultDto: {}", jsonUtils.objectToJson(result));
 
@@ -571,8 +576,11 @@ public class OrderServiceImpl implements OrderService {
                     .longitude(dto.getLongitude())
                     .build();
 
-            VenueSnapshotResultDto snap = merchantDubboService.getVenueSnapshot(req);
-            Assert.isNotEmpty(snap, OrderCode.ORDER_NOT_EXIST);
+
+            RpcResult<VenueSnapshotResultDto> rpcResult = merchantDubboService.getVenueSnapshot(req);
+            Assert.rpcResultOk(rpcResult);
+            VenueSnapshotResultDto snap = rpcResult.getData();
+                    Assert.isNotEmpty(snap, OrderCode.ORDER_NOT_EXIST);
 
             venueSnapshotVo = new GetOrderDetailsVo.VenueSnapshotVo();
             BeanUtils.copyProperties(snap, venueSnapshotVo);

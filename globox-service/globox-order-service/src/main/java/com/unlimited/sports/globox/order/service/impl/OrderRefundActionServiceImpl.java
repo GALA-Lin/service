@@ -23,6 +23,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -76,7 +77,8 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
     public int refundAction(Long orderNo,
             Long refundApplyId,
             boolean isAutoRefund,
-            Long merchantId) {
+            Long merchantId,
+            BigDecimal refundPercentage) {
 
         // 订单项退款总基础金额
         BigDecimal totalItemAmount = BigDecimal.ZERO;
@@ -131,7 +133,6 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
         if (apply.getApplyStatus() == ApplyRefundStatusEnum.APPROVED) {
             return 0;
         }
-
 
         // 6) 判断“本次审批后是否整单退款”
         //    规则：除本次 applyItemIds 之外，订单内不允许存在 NONE/WAIT_APPROVING（其它申请）这类“未纳入退款闭环”的 item
@@ -248,10 +249,12 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 Assert.isNotEmpty(itemAmount, OrderCode.ORDER_ITEM_NOT_EXIST);
 
                 BigDecimal extraChargeAmount = itemExtraSum.getOrDefault(it.getId(), BigDecimal.ZERO);
-                // TODO 手续费策略
-                BigDecimal refundFee = BigDecimal.ZERO;
+
+                // 扣除手续费
+                BigDecimal refundFee = itemAmount.multiply(refundPercentage).divide(new  BigDecimal(100),  RoundingMode.HALF_UP);
                 BigDecimal refundAmount = itemAmount.add(extraChargeAmount).subtract(refundFee);
 
+                // 计算总金额
                 totalItemAmount = totalItemAmount.add(itemAmount);
                 totalItemExtra = totalItemExtra.add(extraChargeAmount);
 

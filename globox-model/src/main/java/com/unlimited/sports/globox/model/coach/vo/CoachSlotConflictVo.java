@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 /**
- * 时段冲突VO
+ * 教练端查询时段冲突Vo
  */
 @Data
 @Builder

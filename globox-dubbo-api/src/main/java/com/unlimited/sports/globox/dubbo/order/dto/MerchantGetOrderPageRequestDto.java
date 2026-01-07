@@ -13,13 +13,14 @@ import java.io.Serializable;
 public class MerchantGetOrderPageRequestDto implements Serializable {
 
     /**
-     * 商家 ID 列表
-     * - 不能为空
-     * - 至少包含一个商家
+     * 商家 ID
      */
     @NotNull(message = "商家ID不能为空")
     private Long merchantId;
 
+    /**
+     * 场地 ID
+     */
     @NotNull(message = "场地ID不能为空")
     private Long venueId;
 

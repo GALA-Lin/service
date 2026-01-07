@@ -175,7 +175,8 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
      * 核心逻辑:
      * 1. 查询所有模板
      * 2. 查询指定日期范围内的所有记录
-     * 3. 对比模板和记录,无记录或记录状态为AVAILABLE的时段即为可用
+     * 3. 对比模板和记录,记录状态为AVAILABLE的时段即为可用
+     * 4. 将所有时段状态写入CoachAvailableSlotVo的slotStatus和slotStatusDesc字段
      */
     @Override
     public Map<String, List<CoachAvailableSlotVo>> getAvailableSlots(CoachAvailableSlotQueryDto dto) {
@@ -227,10 +228,17 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
 
                 CoachSlotRecord record = dateRecords.get(template.getCoachSlotTemplateId());
 
-                // 判断可用性:无记录或记录状态为AVAILABLE(1)
-                if (record == null || record.getStatus() == 1) {
-                    daySlots.add(buildAvailableSlotVo(template, finalCurrentDate, record));
+                // 构建可用时段Vo对象，并设置slotStatus和slotStatusDesc
+                CoachAvailableSlotVo slotVo = buildAvailableSlotVo(template, finalCurrentDate, record);
+                if (record == null) {
+                    slotVo.setSlotStatus(1); // 假设1表示AVAILABLE
+                    slotVo.setSlotStatusDesc("可用");
+                } else {
+                    slotVo.setSlotStatus(record.getStatus());
+                    slotVo.setSlotStatusDesc(getStatusDescription(record.getStatus()));
                 }
+
+                daySlots.add(slotVo);
             }
 
             if (!daySlots.isEmpty()) {
@@ -246,6 +254,19 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         return availableSlotsMap;
     }
 
+    /**
+     * 根据状态码获取状态描述
+     * @param status 状态码
+     * @return 状态描述
+     */
+    private String getStatusDescription(int status) {
+        return switch (status) {
+            case 1 -> "可用";
+            case 2 -> "已预约";
+            case 3 -> "不可用";
+            default -> "未知状态";
+        };
+    }
     /**
      * 查询时段可用性状态(新增接口)
      * 用于快速判断某个时段是否可用,不返回详细信息
@@ -358,7 +379,7 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
                 .scheduleDate(slotRecord.getBookingDate()) // 日程日期
                 .startTime(slotRecord.getStartTime()) // 开始时间
                 .endTime(slotRecord.getEndTime()) // 结束时间
-                .scheduleType("CUSTOM") // 自定义日程标识
+                .scheduleType("PLATFORM_SLOT") // 自定义日程标识
                 .build();
     }
 
@@ -605,10 +626,11 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public List<CoachSlotConflictVo> createCustomSchedule(CoachCustomScheduleDto dto) {
+    public Long createCustomSchedule(CoachCustomScheduleDto dto) {
         log.info("创建自定义日程 - coachUserId: {}, date: {}",
                 dto.getCoachUserId(), dto.getScheduleDate());
 
+        // 验证时间合法性
         validateTimeRange(dto.getStartTime(), dto.getEndTime());
 
         // 检查时间冲突
@@ -619,12 +641,13 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
                 dto.getEndTime());
 
         if (!conflicts.isEmpty()) {
-            return conflicts;
+            throw new GloboxApplicationException("时间段与现有日程冲突: " + conflicts.get(0).getConflictReason());
         }
 
-        // 创建自定义日程
+        // 计算时长
         long minutes = ChronoUnit.MINUTES.between(dto.getStartTime(), dto.getEndTime());
 
+        // 创建自定义日程
         CoachCustomSchedule schedule = new CoachCustomSchedule();
         schedule.setCoachUserId(dto.getCoachUserId());
         schedule.setStudentName(dto.getStudentName());
@@ -637,20 +660,91 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         schedule.setCourseType(dto.getCoachServiceType());
         schedule.setReminderMinutes(dto.getReminderMinutes());
         schedule.setRemark(dto.getRemark());
+        schedule.setStatus(1); // 正常
+        log.debug("准备插入自定义日程: {}", schedule);
+        customScheduleMapper.insert(schedule);
+        log.info("自定义日程插入成功 - scheduleId: {}", schedule.getCoachCustomScheduleId());
 
-        customScheduleMapper.updateById(schedule);
+        // 创建对应的slot record占位
+        createRecordForCustomSchedule(schedule);
 
-        // 如果时间改变,创建新的占位记录
-        boolean timeChanged = !schedule.getScheduleDate().equals(dto.getScheduleDate()) ||
-                !schedule.getStartTime().equals(dto.getStartTime()) ||
-                !schedule.getEndTime().equals(dto.getEndTime());
-        if (timeChanged) {
-            createRecordForCustomSchedule(schedule);
+        log.info("自定义日程创建成功 - scheduleId: {}", schedule.getCoachCustomScheduleId());
+        return schedule.getCoachCustomScheduleId();
+    }
+
+    /**
+     * 验证时间范围合法性
+     */
+    private void validateTimeRange(LocalTime startTime, LocalTime endTime) {
+        if (startTime == null || endTime == null) {
+            throw new GloboxApplicationException("开始时间和结束时间不能为空");
         }
 
-        log.info("自定义日程更新成功");
+        if (!startTime.isBefore(endTime)) {
+            throw new GloboxApplicationException("开始时间必须早于结束时间");
+        }
+
+//        long minutes = ChronoUnit.MINUTES.between(startTime, endTime);
+//        if (minutes < 30) {
+//            throw new GloboxApplicationException("时长至少为30分钟");
+//        }
+    }
+
+    /**
+     * 检查时间冲突
+     */
+    private List<CoachSlotConflictVo> checkTimeConflicts(
+            Long coachUserId,
+            LocalDate date,
+            LocalTime startTime,
+            LocalTime endTime) {
+
+        List<CoachSlotConflictVo> conflicts = new ArrayList<>();
+
+        // 1. 检查平台订单冲突
+        List<CoachBookings> bookings = bookingsMapper.selectList(
+                new LambdaQueryWrapper<CoachBookings>()
+                        .eq(CoachBookings::getCoachUserId, coachUserId)
+                        .eq(CoachBookings::getCoachBookingDate, date)
+                        .in(CoachBookings::getCoachBookingStatus, 2, 3, 4) // 已确认/进行中/已完成
+        );
+
+        for (CoachBookings booking : bookings) {
+            if (isTimeOverlap(startTime, endTime, booking.getStartTime(), booking.getEndTime())) {
+                conflicts.add(CoachSlotConflictVo.builder()
+                        .date(date)
+                        .startTime(booking.getStartTime())
+                        .endTime(booking.getEndTime())
+                        .conflictReason("与平台订单冲突")
+                        .relatedId(booking.getCoachBookingsId())
+                        .build());
+            }
+        }
+
+        // 2. 检查其他自定义日程冲突
+        List<CoachCustomSchedule> existingSchedules = customScheduleMapper.selectList(
+                new LambdaQueryWrapper<CoachCustomSchedule>()
+                        .eq(CoachCustomSchedule::getCoachUserId, coachUserId)
+                        .eq(CoachCustomSchedule::getScheduleDate, date)
+                        .eq(CoachCustomSchedule::getStatus, 1) // 正常状态
+        );
+
+        for (CoachCustomSchedule schedule : existingSchedules) {
+            if (isTimeOverlap(startTime, endTime, schedule.getStartTime(), schedule.getEndTime())) {
+                conflicts.add(CoachSlotConflictVo.builder()
+                        .date(date)
+                        .startTime(schedule.getStartTime())
+                        .endTime(schedule.getEndTime())
+                        .conflictReason("与自定义日程冲突")
+                        .relatedId(schedule.getCoachCustomScheduleId())
+                        .build());
+            }
+        }
+
         return conflicts;
     }
+
+
 
     /**
      * 更新自定义日程
@@ -850,20 +944,6 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
                 .build();
     }
 
-    private void validateTimeRange(LocalTime startTime, LocalTime endTime) {
-        if (!startTime.isBefore(endTime)) {
-            throw new GloboxApplicationException("结束时间必须晚于开始时间");
-        }
-    }
-
-    private List<CoachSlotConflictVo> checkTimeConflicts(
-            Long coachUserId,
-            LocalDate date,
-            LocalTime startTime,
-            LocalTime endTime) {
-        return checkTimeConflicts(coachUserId, date, startTime, endTime, null);
-    }
-
     private List<CoachSlotConflictVo> checkTimeConflicts(
             Long coachUserId,
             LocalDate date,
@@ -878,7 +958,8 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
                 new LambdaQueryWrapper<CoachBookings>()
                         .eq(CoachBookings::getCoachUserId, coachUserId)
                         .eq(CoachBookings::getCoachBookingDate, date)
-                        .in(CoachBookings::getCoachBookingStatus, 2, 3, 4)
+                        .in(CoachBookings::getCoachBookingStatus, 2, 3, 4,5)
+                //1-待支付，2-待确认，3-已确认，4-进行中，5-已完成，6-已取消，7-已退款
         );
 
         for (CoachBookings booking : bookings) {
@@ -902,7 +983,7 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         );
 
         for (CoachCustomSchedule schedule : schedules) {
-            if (excludeScheduleId != null && schedule.getCoachCustomScheduleId().equals(excludeScheduleId)) {
+            if (schedule.getCoachCustomScheduleId().equals(excludeScheduleId)) {
                 continue;
             }
             if (isTimeOverlap(startTime, endTime, schedule.getStartTime(), schedule.getEndTime())) {
@@ -932,7 +1013,10 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
         record.setStatus(3); // CUSTOM_EVENT
         record.setCustomScheduleId(schedule.getCoachCustomScheduleId());
         record.setOperatorSource(1);
+        log.debug("准备插入自定义记录: {}", record);
         slotRecordMapper.insert(record);
+        log.debug("插入后的ID: {}",record.getCoachSlotRecordId() );
+
     }
 
     private void deleteRecordForCustomSchedule(Long scheduleId) {

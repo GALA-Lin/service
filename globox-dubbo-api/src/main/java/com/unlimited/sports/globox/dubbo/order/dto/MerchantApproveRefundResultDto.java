@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 
@@ -36,8 +37,12 @@ public class MerchantApproveRefundResultDto implements Serializable {
 
     @NotNull
     private OrderStatusEnum orderStatus;
+
     @NotNull
     private String orderStatusName;
+
+    @NotNull
+    private BigDecimal refundPercentage;
 
     /**
      * 本次同意退款的 item 数量

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.social.mapper.SocialNoteLikeMapper">
+
+    <!-- 结果映射：SocialNote -->
+    <resultMap id="SocialNoteResultMap" type="com.unlimited.sports.globox.model.social.entity.SocialNote">
+        <id column="note_id" property="noteId"/>
+        <result column="user_id" property="userId"/>
+        <result column="title" property="title"/>
+        <result column="content" property="content"/>
+        <result column="cover_url" property="coverUrl"/>
+        <result column="media_type" property="mediaType" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="allow_comment" property="allowComment"/>
+        <result column="like_count" property="likeCount"/>
+        <result column="comment_count" property="commentCount"/>
+        <result column="collect_count" property="collectCount"/>
+        <result column="status" property="status" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 使用 JOIN 查询用户点赞的笔记列表（只返回 PUBLISHED 状态的笔记） -->
+    <select id="selectLikedNotesWithJoin" resultMap="SocialNoteResultMap">
+        SELECT
+            n.note_id,
+            n.user_id,
+            n.title,
+            n.content,
+            n.cover_url,
+            n.media_type,
+            n.allow_comment,
+            n.like_count,
+            n.comment_count,
+            n.collect_count,
+            n.status,
+            n.created_at,
+            n.updated_at
+        FROM
+            social_note_like l
+        INNER JOIN social_note n ON l.note_id = n.note_id
+        WHERE
+            l.user_id = #{userId}
+            AND n.status = 'PUBLISHED'
+        <if test="cursorTime != null and cursorLikeId != null">
+            AND (
+                l.created_at &lt; #{cursorTime}
+                OR (l.created_at = #{cursorTime} AND l.like_id &lt; #{cursorLikeId})
+            )
+        </if>
+        ORDER BY
+            l.created_at DESC,
+            l.like_id DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 批量查询用户对指定笔记的点赞状态 -->
+    <select id="selectLikedNoteIdsByUser" resultType="java.lang.Long">
+        SELECT
+            note_id
+        FROM
+            social_note_like
+        WHERE
+            user_id = #{userId}
+            AND note_id IN
+            <foreach collection="noteIds" item="noteId" open="(" separator="," close=")">
+                #{noteId}
+            </foreach>
+    </select>
+
+</mapper>
+

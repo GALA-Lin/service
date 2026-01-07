@@ -2,7 +2,10 @@ package com.unlimited.sports.globox.model.venue.entity.booking;
 
 import com.baomidou.mybatisplus.annotation.*;
 import com.unlimited.sports.globox.model.venue.enums.OperatorSourceEnum;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
@@ -11,8 +14,10 @@ import java.time.LocalDateTime;
  *
  */
 @Data
+@Builder
 @TableName("venue_booking_slot_record")
-
+@AllArgsConstructor
+@NoArgsConstructor
 public class VenueBookingSlotRecord {
     @TableId(type = IdType.AUTO)
     private Long bookingSlotRecordId;

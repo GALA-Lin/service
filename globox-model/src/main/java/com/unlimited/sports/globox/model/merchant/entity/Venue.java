@@ -1,13 +1,17 @@
 package com.unlimited.sports.globox.model.merchant.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 
 /**
  * @since 2025-12-18-10:41
@@ -15,6 +19,7 @@ import java.time.LocalTime;
  */
 
 @Data
+@Slf4j
 @TableName("venues")
 public class Venue implements Serializable {
 
@@ -160,4 +165,46 @@ public class Venue implements Serializable {
      */
     @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+
+
+    /**
+     * 检查是否允许查看该日期的槽位
+     * 控制逻辑：
+     * 1. 检查当前日期是否在允许的预订范围内（不超过maxAdvanceDays）
+     * 2. 检查当前时间是否已经到达slotVisibilityTime
+     * @param bookingDate 要查看的预订日期
+     */
+    public boolean validSlotVisibilityPermission(LocalDate bookingDate) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
+        LocalTime currentTime = now.toLocalTime();
+
+        if (maxAdvanceDays == null || maxAdvanceDays < 0) {
+            log.warn("[checkSlotVisibilityPermission]场馆{}: {}未配置预定时间",venueId,name);
+            return false;
+        }
+
+        if (slotVisibilityTime == null) {
+            slotVisibilityTime = LocalTime.of(0, 0);
+            log.debug("场馆 {} 未配置slotVisibilityTime，使用默认值00:00", venueId);
+        }
+
+        // 预订日期不能超过最大提前天数
+        long daysUntilBooking = ChronoUnit.DAYS.between(today, bookingDate);
+        if (daysUntilBooking > maxAdvanceDays) {
+            log.warn("用户尝试查看过远的预订日期 - venueId={}, bookingDate={}, 距今{}天，最多允许{}天",
+                    venueId, bookingDate, daysUntilBooking, maxAdvanceDays);
+            return false;
+        }
+        // 如果预订日期就是今天，需要检查当前时间是否已经到达开放时间
+        if (bookingDate.equals(today)) {
+            if (currentTime.isBefore(slotVisibilityTime)) {
+                log.warn("用户尝试查看今日槽位，但还未到开放时间 - venueId={}, 当前时间={}, 开放时间={}",
+                        venueId, currentTime, slotVisibilityTime);
+                return false;
+            }
+        }
+        return true;
+    }
 }

@@ -1,12 +1,18 @@
 package com.unlimited.sports.globox.model.venue.vo;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
+import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
+import com.unlimited.sports.globox.model.venue.enums.SlotTypeEnum;
+import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NonNull;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.Map;
 
 /**
  * 预订槽位VO
@@ -98,4 +104,71 @@ public class BookingSlotVo {
      * 活动单人价格
      */
     private BigDecimal unitPrice;
+
+    /**
+     * 构建普通槽位VO
+     */
+    public static BookingSlotVo buildNormalSlot(
+            VenueBookingSlotTemplate template,
+            VenueBookingSlotRecord record,
+            Map<LocalTime, BigDecimal> priceMap,
+            Long userId) {
+
+        Long templateId = template.getBookingSlotTemplateId();
+
+        // 如果没有记录，则默认为可预订状态
+        int status = record != null ? record.getStatus() : BookingSlotStatus.AVAILABLE.getValue();
+
+        // slotId: 如果有记录使用记录ID，否则使用模板ID
+        Long slotId = record != null ? record.getBookingSlotRecordId() : templateId;
+
+        String statusDesc;
+        boolean isAvailable;
+        try {
+            BookingSlotStatus statusEnum = BookingSlotStatus.fromValue(status);
+            statusDesc = statusEnum.getDescription();
+            isAvailable = statusEnum == BookingSlotStatus.AVAILABLE;
+        } catch (Exception e) {
+            statusDesc = "未知状态";
+            isAvailable = false;
+        }
+
+        // 从预先批量获取的priceMap中获取价格（O(1)查询，无数据库访问）
+        BigDecimal price = priceMap.get(template.getStartTime());
+        if (price == null) {
+            price = new BigDecimal(999);
+        }
+
+        // 判断是否是本人预定的槽位
+        Boolean isMyBooking = record != null && record.getOperatorId() != null && record.getOperatorId().equals(userId);
+
+        return BookingSlotVo.builder()
+                .bookingSlotId(slotId)
+                .slotType(SlotTypeEnum.NORMAL.getCode())
+                .startTime(template.getStartTime())
+                .endTime(template.getEndTime())
+                .status(status)
+                .statusDesc(statusDesc)
+                .isAvailable(isAvailable)
+                .price(price)
+                .isMyBooking(isMyBooking)
+                .build();
+    }
+
+    /**
+     * 构建活动槽位VO
+     */
+    public static BookingSlotVo buildActivitySlot(VenueActivity activity) {
+        return BookingSlotVo.builder()
+                .bookingSlotId(activity.getActivityId())
+                .slotType(SlotTypeEnum.ACTIVITY.getCode())
+                .startTime(activity.getStartTime())
+                .endTime(activity.getEndTime())
+                .activityName(activity.getActivityName())
+                .minNtrpLevel(activity.getMinNtrpLevel())
+                .currentParticipants(activity.getCurrentParticipants())
+                .maxParticipants(activity.getMaxParticipants())
+                .unitPrice(activity.getUnitPrice())
+                .build();
+    }
 }

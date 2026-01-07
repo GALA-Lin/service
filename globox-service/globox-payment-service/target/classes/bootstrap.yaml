@@ -1,0 +1,8 @@
+server:
+  port: 12027
+
+spring:
+  application:
+    name: globox-payment-service
+  profiles:
+    active: dev

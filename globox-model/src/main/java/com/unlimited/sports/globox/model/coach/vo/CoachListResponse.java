@@ -8,7 +8,7 @@ import java.util.Set;
 
 /**
  * @since 2026/1/3 10:37
- * 教练列表响应（包含筛选选项）
+ * 供用户查询的教练列表响应（包含筛选选项）
  */
 @Data
 @Builder

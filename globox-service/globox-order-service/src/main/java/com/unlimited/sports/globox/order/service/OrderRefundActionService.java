@@ -2,6 +2,8 @@ package com.unlimited.sports.globox.order.service;
 
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 
+import java.math.BigDecimal;
+
 /**
  * 订单退款实际动作执行
  */
@@ -17,7 +19,8 @@ public interface OrderRefundActionService {
     int refundAction(Long orderNo,
             Long refundApplyId,
             boolean isAutoRefund,
-            Long merchantId);
+            Long merchantId,
+            BigDecimal refundPercentage);
 
     void refundSuccess(PaymentRefundMessage message);
 }

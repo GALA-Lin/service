@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * 用户信息VO（用于RPC返回）
@@ -45,4 +46,9 @@ public class UserInfoVo implements Serializable {
      * 性别
      */
     private GenderEnum gender;
+
+    /**
+     * 用户网球水平（NTRP）
+     */
+    private BigDecimal userNtrpLevel;
 }

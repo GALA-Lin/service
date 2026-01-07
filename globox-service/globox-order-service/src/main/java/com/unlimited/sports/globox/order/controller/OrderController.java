@@ -62,6 +62,22 @@ public class OrderController {
 
 
     /**
+     * 用户创建教练订单
+     */
+    @PostMapping("venues/coach")
+    @Operation(summary = "创建教练订单", description = "用户创建教练订单")
+    public R<CreateOrderResultVo> createVenueActivityOrder(
+            @Valid
+            @RequestBody
+            @Parameter(description = "创建活动订单请求参数", required = true)
+            CreateCoachOrderDto dto) {
+
+        CreateOrderResultVo result = orderService.createCoachOrder(dto);
+        return R.ok(result);
+    }
+
+
+    /**
      * 用户获取订单列表
      */
     @GetMapping

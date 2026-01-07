@@ -49,6 +49,9 @@ public class UserDubboServiceImpl implements UserDubboService {
         // 转换为VO
         UserInfoVo vo = new UserInfoVo();
         BeanUtils.copyProperties(profile, vo);
+        // 手动映射枚举和字段名不一致的字段
+        vo.setGender(profile.getGender());
+        vo.setUserNtrpLevel(profile.getNtrp());
 
         log.info("【RPC调用】查询单个用户信息成功, userId={}, nickName={}", 
                  userId, vo.getNickName());
@@ -83,6 +86,9 @@ public class UserDubboServiceImpl implements UserDubboService {
                 .map(profile -> {
                     UserInfoVo vo = new UserInfoVo();
                     BeanUtils.copyProperties(profile, vo);
+                    // 手动映射枚举和字段名不一致的字段
+                    vo.setGender(profile.getGender());
+                    vo.setUserNtrpLevel(profile.getNtrp());
                     return vo;
                 })
                 .collect(Collectors.toList());

@@ -8,23 +8,24 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Null;
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+
 /**
- * 商家拒绝退款结果的数据传输对象。
- * 该类用于封装商家对退款申请的处理结果，特别是当商家决定拒绝退款时的相关信息。
- * 包含订单号、退款申请ID、退款申请状态、审核时间、订单状态及名称，以及被拒绝的item数量等字段。
+ * 商家同意退款结果的数据传输对象。
+ * 该类用于封装商家对退款申请的处理结果，包括订单状态、退款申请状态等信息。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MerchantRejectRefundResultDto implements Serializable {
+public class SellerApproveRefundResultDto implements Serializable {
 
     @NotNull
     private Long orderNo;
+
     @NotNull
     private Long refundApplyId;
 
@@ -35,12 +36,16 @@ public class MerchantRejectRefundResultDto implements Serializable {
 
     @NotNull
     private OrderStatusEnum orderStatus;
+
     @NotNull
     private String orderStatusName;
 
+    @NotNull
+    private BigDecimal refundPercentage;
+
     /**
-     * 本次拒绝影响的 item 数量（通常等于 apply_items 数量）
+     * 本次同意退款的 item 数量
      */
     @NotNull
-    private Integer rejectedItemCount;
+    private Integer approvedItemCount;
 }

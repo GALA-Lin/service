@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.gateway.filter;
 
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
+import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.utils.JwtUtil;
 import com.unlimited.sports.globox.gateway.prop.AuthWhitelistProperties;
 import lombok.RequiredArgsConstructor;
@@ -40,8 +41,14 @@ public class AuthGlobalFilter implements GlobalFilter {
     @Value("${auth.enabled:true}")
     private boolean authEnabled;
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
+    @Value("${user.jwt.secret}")
+    private String userJwtSecret;
+
+    @Value("${merchant.jwt.secret}")
+    private String merchantJwtSecret;
+
+    @Value("${third-party.jwt.secret}")
+    private String thirdPartyJwtSecret;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -56,34 +63,88 @@ public class AuthGlobalFilter implements GlobalFilter {
             return chain.filter(exchange);
         }
 
+        // 1. 获取并验证客户端类型
+        String clientTypeValue = request.getHeaders().getFirst(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        if (!StringUtils.hasText(clientTypeValue)) {
+            return unauthorized(exchange, "Missing X-Client-Type header");
+        }
+
+        ClientType clientType = ClientType.fromValue(clientTypeValue);
+        if (clientType == null) {
+            return unauthorized(exchange, "Invalid X-Client-Type: " + clientTypeValue);
+        }
+
+        // 2. 根据客户端类型选择 JWT secret
+        String secret = getSecretByClientType(clientType);
+
+        // 3. 验证 token
         String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         String token = JwtUtil.extractTokenFromHeader(authHeader);
         if (!StringUtils.hasText(token)) {
             return unauthorized(exchange, "Missing token");
         }
 
-        if (!JwtUtil.validateToken(token, jwtSecret)) {
+        if (!JwtUtil.validateToken(token, secret)) {
             return unauthorized(exchange, "Invalid or expired token");
         }
 
-        String userId = JwtUtil.getSubject(token, jwtSecret);
-        String role = Optional.ofNullable(JwtUtil.getClaim(token, jwtSecret, "role", Object.class))
+        // 4. 解析 token
+        String subject = JwtUtil.getSubject(token, secret);
+        String role = Optional.ofNullable(JwtUtil.getClaim(token, secret, "role", Object.class))
                 .map(Object::toString)
                 .orElse(null);
 
-        if (!StringUtils.hasText(userId) || !StringUtils.hasText(role)) {
+        if (!StringUtils.hasText(subject) || !StringUtils.hasText(role)) {
             return unauthorized(exchange, "Token missing subject or role");
         }
 
-        // 覆盖同名头，防伪造
+        // 5. 根据客户端类型注入对应的 headers
         ServerHttpRequest mutatedRequest = request.mutate()
-                .headers(headers -> {
-                    headers.set(RequestHeaderConstants.HEADER_USER_ID, userId);
-                    headers.set(RequestHeaderConstants.HEADER_USER_ROLE, role);
-                })
+                .headers(headers -> injectHeaders(headers, clientType, subject, role))
                 .build();
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
+    }
+
+    /**
+     * 根据客户端类型获取对应的 JWT secret
+     */
+    private String getSecretByClientType(ClientType clientType) {
+        return switch (clientType) {
+            case APP, JSAPI -> userJwtSecret;
+            case MERCHANT -> merchantJwtSecret;
+            case THIRD_PARTY_JSAPI -> thirdPartyJwtSecret;
+            default -> throw new IllegalArgumentException("Unsupported client type: " + clientType);
+        };
+    }
+
+    /**
+     * 根据客户端类型注入对应的 headers（清除所有身份相关 headers，防止伪造）
+     */
+    private void injectHeaders(HttpHeaders headers, ClientType clientType, String subject, String role) {
+        // 清除所有身份相关 headers，防止伪造
+        headers.remove(RequestHeaderConstants.HEADER_USER_ID);
+        headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
+        headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);
+        headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ROLE);
+
+        // 根据客户端类型注入对应的 headers
+        switch (clientType) {
+            case APP, JSAPI:
+                headers.set(RequestHeaderConstants.HEADER_USER_ID, subject);
+                headers.set(RequestHeaderConstants.HEADER_USER_ROLE, role);
+                break;
+            case MERCHANT:
+                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ID, subject);
+                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ROLE, role);
+                break;
+            case THIRD_PARTY_JSAPI:
+                headers.set(RequestHeaderConstants.HEADER_THIRD_PARTY_ID, subject);
+                headers.set(RequestHeaderConstants.HEADER_THIRD_PARTY_ROLE, role);
+                break;
+        }
     }
 
     private boolean isWhite(String path) {

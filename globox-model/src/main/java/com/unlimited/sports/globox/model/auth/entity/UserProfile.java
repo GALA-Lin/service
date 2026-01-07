@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -54,7 +55,8 @@ public class UserProfile {
     /**
      * 性别
      */
-    private Gender gender;
+    @TableField("gender")
+    private GenderEnum gender;
     
     /**
      * 球龄
@@ -128,7 +130,9 @@ public class UserProfile {
     
     /**
      * 性别枚举
+     * @deprecated 已废弃，请使用 {@link GenderEnum} 替代
      */
+    @Deprecated
     public enum Gender {
         MALE,
         FEMALE,

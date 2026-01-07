@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * @author makeronbean
+ * 支付宝配置信息
  */
 @Data
 @Component

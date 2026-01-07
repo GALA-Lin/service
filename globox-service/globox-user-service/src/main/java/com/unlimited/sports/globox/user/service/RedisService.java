@@ -122,8 +122,9 @@ public interface RedisService {
      * 删除Refresh Token
      *
      * @param refreshToken Refresh Token字符串
+     * @param jwtSecret    JWT密钥（用于解析token）
      */
-    void deleteRefreshToken(String refreshToken);
+    void deleteRefreshToken(String refreshToken, String jwtSecret);
 
     /**
      * 清除用户的所有Refresh Token

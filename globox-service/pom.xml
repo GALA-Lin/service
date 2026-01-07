@@ -76,6 +76,12 @@
             <artifactId>globox-common-utils</artifactId>
             <version>1.0</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-redis-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
     </dependencies>
 
 </project>

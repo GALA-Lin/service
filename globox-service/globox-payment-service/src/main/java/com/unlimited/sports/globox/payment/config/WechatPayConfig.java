@@ -5,43 +5,66 @@ import com.wechat.pay.java.core.Config;
 import com.wechat.pay.java.core.RSAAutoCertificateConfig;
 import com.wechat.pay.java.core.RSAPublicKeyConfig;
 import com.wechat.pay.java.core.notification.NotificationConfig;
+import com.wechat.pay.java.core.notification.RSAPublicKeyNotificationConfig;
 import com.wechat.pay.java.service.payments.app.AppServiceExtension;
 import com.wechat.pay.java.service.payments.jsapi.JsapiServiceExtension;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 /**
  * 微信支付注入
  */
+@Slf4j
 @Configuration
 public class WechatPayConfig {
 
     @Autowired
     private WechatPayProperties wechatPayProperties;
 
-
     @Bean
-    public Config wechatPayConfig() {
+    public Config wechatPayClientConfig() throws IOException {
+        String apiV3KeyPath = wechatPayProperties.getApiV3Key();
+
+        String apiV3Key = Files.readString(Path.of(apiV3KeyPath), StandardCharsets.UTF_8).trim();
         // 使用微信支付公钥的RSA配置
         return new RSAPublicKeyConfig.Builder()
                 .merchantId(wechatPayProperties.getMchid())
-                .privateKey(wechatPayProperties.getPrivateKey())
-//                .privateKeyFromPath(privateKeyPath)
-                .publicKey(wechatPayProperties.getWechatPayPublicKey())
-//                .publicKeyFromPath(publicKeyPath)
+                .privateKeyFromPath(wechatPayProperties.getPrivateKey())
                 .publicKeyId(wechatPayProperties.getWechatPayPublicKeyId())
+                .publicKeyFromPath(wechatPayProperties.getWechatPayPublicKey())
                 .merchantSerialNumber(wechatPayProperties.getCertificateSerialNo())
-                .apiV3Key(wechatPayProperties.getApiV3Key())
+                .apiV3Key(apiV3Key)
                 .build();
     }
+
+    @Bean
+    public NotificationConfig notificationConfig() throws IOException {
+
+        String apiV3KeyPath = wechatPayProperties.getApiV3Key();
+
+        String apiV3Key = Files.readString(Path.of(apiV3KeyPath), StandardCharsets.UTF_8).trim();
+        return new RSAPublicKeyNotificationConfig.Builder()
+                .apiV3Key(apiV3Key)
+                .publicKeyId(wechatPayProperties.getWechatPayPublicKeyId())
+                .publicKeyFromPath(wechatPayProperties.getWechatPayPublicKey())
+                .build();
+
+    }
+
 
     /**
      * app 支付客户端
      */
     @Bean
-    public AppServiceExtension appService() {
-        return new AppServiceExtension.Builder().config(wechatPayConfig()).build();
+    public AppServiceExtension appService(Config wechatPayClientConfig) {
+        return new AppServiceExtension.Builder().config(wechatPayClientConfig).build();
     }
 
 
@@ -49,24 +72,7 @@ public class WechatPayConfig {
      * jsapi 支付客户端
      */
     @Bean
-    public JsapiServiceExtension jsapiService() {
-        return new JsapiServiceExtension.Builder().config(wechatPayConfig()).build();
-    }
-
-
-    @Bean
-    public NotificationConfig notificationConfig() {
-        return new RSAAutoCertificateConfig.Builder()
-                //商户号
-                .merchantId(wechatPayProperties.getMchid())
-                //商户API私钥路径
-                .privateKey(wechatPayProperties.getPrivateKey())
-//                .privateKeyFromPath("F:\\wxpay\\apiclient_key.pem")
-                //商户证书序列号
-                .merchantSerialNumber(wechatPayProperties.getCertificateSerialNo())
-                //商户APIV3密钥
-                .apiV3Key(wechatPayProperties.getApiV3Key())
-                .build();
-
+    public JsapiServiceExtension jsapiService(Config wechatPayClientConfig) {
+        return new JsapiServiceExtension.Builder().config(wechatPayClientConfig).build();
     }
 }

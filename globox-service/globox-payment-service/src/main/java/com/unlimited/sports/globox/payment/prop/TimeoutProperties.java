@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  */
 @Data
 @Component
-@ConfigurationProperties(prefix = "timeout")
+@ConfigurationProperties(prefix = "payment.timeout")
 public class TimeoutProperties {
 
     private Integer normal;

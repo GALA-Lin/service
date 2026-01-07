@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.math.BigDecimal;
 
 /**
  * 用户信息DTO（RPC专用出参）
@@ -34,4 +35,9 @@ public class UserInfoDto implements Serializable {
      * 性别：MALE/FEMALE/OTHER
      */
     private String gender;
+
+    /**
+     * 用户网球水平（NTRP）
+     */
+    private BigDecimal userNtrpLevel;
 }

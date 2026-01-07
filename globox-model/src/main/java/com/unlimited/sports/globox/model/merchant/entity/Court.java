@@ -62,6 +62,12 @@ public class Court implements Serializable {
     private Integer status;
 
     /**
+     * 该场地在第三方平台的ID
+     */
+    @TableField("third_party_court_id")
+    private String thirdPartyCourtId;
+
+    /**
      * 创建时间
      */
     @TableField(value = "created_at", fill = FieldFill.INSERT)

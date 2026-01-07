@@ -2,7 +2,6 @@ package com.unlimited.sports.globox.common.enums.payment;
 
 import com.baomidou.mybatisplus.annotation.EnumValue;
 import com.fasterxml.jackson.annotation.JsonValue;
-import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 

@@ -3,32 +3,25 @@ package com.unlimited.sports.globox.order.dubbo;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
-import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
-import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.dubbo.order.OrderForMerchantDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
-import com.unlimited.sports.globox.model.order.vo.RefundTimelineVo;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
-import com.unlimited.sports.globox.order.service.OrderRefundService;
+import com.unlimited.sports.globox.order.service.OrderDubboService;
+import com.unlimited.sports.globox.order.service.OrderService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ObjectUtils;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -55,6 +48,9 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
 
     @Autowired
     private OrderActivitiesMapper orderActivitiesMapper;
+
+    @Autowired
+    private OrderDubboService orderDubboService;
 
     /**
      * 商家分页查询用户订单信息。
@@ -112,8 +108,8 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
                                 return RecordDto.builder()
                                         .recordId(item.getRecordId())
                                         .orderNo(item.getOrderNo())
-                                        .courtId(item.getResourceId())
-                                        .courtName(item.getResourceName())
+                                        .resourceId(item.getResourceId())
+                                        .resourceName(item.getResourceName())
                                         .bookingDate(item.getBookingDate())
                                         .startTime(item.getStartTime())
                                         .endTime(item.getEndTime())
@@ -208,8 +204,8 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
                     return RecordDto.builder()
                             .recordId(item.getRecordId())
                             .orderNo(item.getOrderNo())
-                            .courtId(item.getResourceId())
-                            .courtName(item.getResourceName())
+                            .resourceId(item.getResourceId())
+                            .resourceName(item.getResourceName())
                             .bookingDate(item.getBookingDate())
                             .startTime(item.getStartTime())
                             .endTime(item.getEndTime())
@@ -265,125 +261,9 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
      * @return 取消订单的结果，包括订单号、当前订单状态、状态描述及取消时间
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
-    @Transactional(rollbackFor = Exception.class)
-    public RpcResult<MerchantCancelOrderResultDto> cancelUnpaidOrder(
+    public RpcResult<SellerCancelOrderResultDto> cancelUnpaidOrder(
             MerchantCancelOrderRequestDto dto) {
-
-        Long orderNo = dto.getOrderNo();
-        Long merchantId = dto.getMerchantId();
-        Long venueId = dto.getVenueId();
-
-        // 1) 查询订单（行锁，防并发支付/取消）
-        Orders order = ordersMapper.selectOne(
-                Wrappers.<Orders>lambdaQuery()
-                        .eq(Orders::getOrderNo, orderNo)
-                        .eq(Orders::getSellerId, venueId)
-                        .last("FOR UPDATE"));
-
-        // 订单必须存在
-        if (ObjectUtils.isEmpty(order)) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
-        }
-
-        // 只能取消场馆订单
-        if (order.getSellerType() != SellerTypeEnum.VENUE) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
-        }
-
-        // 2) 幂等：如果已取消，直接返回成功
-        if (order.getOrderStatus() == OrderStatusEnum.CANCELLED) {
-            MerchantCancelOrderResultDto resultDto = MerchantCancelOrderResultDto.builder()
-                    .orderNo(orderNo)
-                    .success(true)
-                    .orderStatus(order.getOrderStatus())
-                    .orderStatusName(order.getOrderStatus().getDescription())
-                    .cancelledAt(order.getCancelledAt())
-                    .build();
-            return RpcResult.ok(resultDto);
-        }
-
-        // 3) 状态校验：只能取消未支付 + PENDING
-        if (order.getPaymentStatus() != OrdersPaymentStatusEnum.UNPAID) {
-            return RpcResult.error(OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
-        }
-
-        if (order.getOrderStatus() != OrderStatusEnum.PENDING) {
-            return RpcResult.error(OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-
-        // 4) 更新订单为 CANCELLED
-        Orders update = new Orders();
-        update.setId(order.getId());
-        update.setOrderStatus(OrderStatusEnum.CANCELLED);
-        update.setCancelledAt(now);
-
-        int rows = ordersMapper.updateById(update);
-        if (rows <= 0) {
-            return RpcResult.error(OrderCode.ORDER_CANCEL_FAILED);
-        }
-
-        // 5) 写状态流转日志（订单级）
-        OrderStatusLogs logEntity = OrderStatusLogs.builder()
-                .orderNo(orderNo)
-                .orderId(order.getId())
-                .orderItemId(null)
-                .action(OrderActionEnum.CANCEL)
-                .oldOrderStatus(order.getOrderStatus())
-                .newOrderStatus(OrderStatusEnum.CANCELLED)
-                .operatorType(OperatorTypeEnum.MERCHANT)
-                .operatorId(merchantId)
-                .operatorName("MERCHANT_" + merchantId)
-                .remark("商家取消未支付订单")
-                .build();
-        orderStatusLogsMapper.insert(logEntity);
-
-        // 6) 事务提交后发送“取消锁场”消息
-        List<OrderItems> items = orderItemsMapper.selectList(
-                Wrappers.<OrderItems>lambdaQuery()
-                        .eq(OrderItems::getOrderNo, orderNo)
-                        .orderByAsc(OrderItems::getId));
-
-        // 保险起见，因为除了下订场订单代码逻辑不对，否则一定通过
-        if (ObjectUtils.isEmpty(items)) {
-            return RpcResult.error(OrderCode.ORDER_ITEM_NOT_EXIST);
-        }
-
-        List<Long> recordIds = items.stream()
-                .map(OrderItems::getRecordId)
-                .filter(java.util.Objects::nonNull)
-                .toList();
-
-        LocalDate bookingDate = items.get(0).getBookingDate();
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
-                        .userId(order.getBuyerId())
-                        .recordIds(recordIds)
-                        .bookingDate(bookingDate)
-                        .build();
-
-                mqService.send(
-                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-                        OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
-                        unlockMsg);
-            }
-        });
-
-        // 7) 返回
-        MerchantCancelOrderResultDto resultDto = MerchantCancelOrderResultDto.builder()
-                .orderNo(orderNo)
-                .success(true)
-                .orderStatus(OrderStatusEnum.CANCELLED)
-                .orderStatusName(OrderStatusEnum.CANCELLED.getDescription())
-                .cancelledAt(now)
-                .build();
-
-        return RpcResult.ok(resultDto);
+        return orderDubboService.sellerCancelUnpaidOrder(dto.getOrderNo(), dto.getMerchantId(), dto.getMerchantId(), SellerTypeEnum.VENUE);
     }
 
     /**
@@ -393,81 +273,8 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
      * @return 返回商家确认订单的结果，包括订单号、是否确认成功、当前订单状态、状态描述以及确认时间
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
-    @Transactional(rollbackFor = Exception.class)
-    public RpcResult<MerchantConfirmResultDto> confirm(MerchantConfirmRequestDto dto) {
-        Long orderNo = dto.getOrderNo();
-        LocalDateTime now = LocalDateTime.now();
-
-        // 1) 查询订单
-        Orders orders = ordersMapper.selectOne(
-                Wrappers.<Orders>lambdaQuery()
-                        .eq(Orders::getOrderNo, orderNo));
-
-        if (ObjectUtils.isEmpty(orders)) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
-        }
-
-        OrderStatusEnum currentOrderStatus = orders.getOrderStatus();
-        OrderStatusEnum newOrderStatus = OrderStatusEnum.CONFIRMED;
-
-        // 是否已经被确认
-        if (!orders.isConfirmed()) {
-            // 2) 只有 已支付、退款被拒绝、退款已取消、部分退款成功 才可以确认订单
-            if (currentOrderStatus == OrderStatusEnum.PAID
-                    || currentOrderStatus == OrderStatusEnum.REFUND_REJECTED
-                    || currentOrderStatus == OrderStatusEnum.REFUND_CANCELLED
-                    || currentOrderStatus == OrderStatusEnum.PARTIALLY_REFUNDED) {
-                int updated = ordersMapper.update(
-                        null,
-                        Wrappers.<Orders>lambdaUpdate()
-                                .eq(Orders::getOrderNo, orderNo)
-                                .eq(Orders::isConfirmed, false)
-                                .in(Orders::getOrderStatus,
-                                        OrderStatusEnum.PAID,
-                                        OrderStatusEnum.REFUND_REJECTED,
-                                        OrderStatusEnum.REFUND_CANCELLED,
-                                        OrderStatusEnum.PARTIALLY_REFUNDED)
-                                .set(Orders::getOrderStatus, OrderStatusEnum.CONFIRMED)
-                                .set(Orders::getConfirmedAt, now)
-                                .set(Orders::isConfirmed, true));
-                if (updated > 0) {
-                    // 3) 记录订单日志表
-                    OrderStatusLogs statusLogs = OrderStatusLogs.builder()
-                            .orderId(orders.getId())
-                            .orderNo(orders.getOrderNo())
-                            .action(OrderActionEnum.CONFIRM)
-                            .oldOrderStatus(currentOrderStatus)
-                            .newOrderStatus(newOrderStatus)
-                            .operatorType(dto.isAutoConfirm() ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
-                            .operatorName(dto.isAutoConfirm() ?
-                                    OperatorTypeEnum.SYSTEM.getOperatorTypeName() : "MERCHANT_" + dto.getMerchantId())
-                            .operatorId(dto.isAutoConfirm() ? null : dto.getMerchantId())
-                            .remark("订单服务提供方已被确认")
-                            .build();
-
-                    orderStatusLogsMapper.insert(statusLogs);
-
-                    MerchantConfirmResultDto resultDto = MerchantConfirmResultDto.builder()
-                            .orderNo(orderNo)
-                            .orderStatus(newOrderStatus)
-                            .confirmAt(now)
-                            .success(true)
-                            .orderStatusName(newOrderStatus.getDescription())
-                            .build();
-                    return RpcResult.ok(resultDto);
-                }
-            }
-        }
-
-        MerchantConfirmResultDto resultDto = MerchantConfirmResultDto.builder()
-                .orderNo(orderNo)
-                .orderStatus(currentOrderStatus)
-                .confirmAt(null)
-                .success(false)
-                .orderStatusName(currentOrderStatus.getDescription())
-                .build();
-        return RpcResult.ok(resultDto);
+    public RpcResult<SellerConfirmResultDto> confirm(MerchantConfirmRequestDto dto) {
+        return orderDubboService.sellerConfirm(dto.getOrderNo(), dto.isAutoConfirm(), dto.getMerchantId(), SellerTypeEnum.VENUE);
     }
 
 

@@ -8,16 +8,15 @@ import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
-/**
- * 商家确认订单 rpc - 结果类
- */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MerchantConfirmResultDto {
+public class SellerCancelOrderResultDto implements Serializable {
+
     /**
      * 订单号
      */
@@ -46,5 +45,5 @@ public class MerchantConfirmResultDto {
      * 取消时间
      */
     @Null
-    private LocalDateTime confirmAt;
+    private LocalDateTime cancelledAt;
 }

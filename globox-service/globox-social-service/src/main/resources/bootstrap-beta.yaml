@@ -2,7 +2,7 @@ spring:
   cloud:
     nacos:
       server-addr: 10.0.0.13:8848
-      username: nacos
+      username: client_beta
       password: Globox1113!
       discovery:
         namespace: globox_beta
@@ -22,12 +22,15 @@ spring:
           - data-id: common-rabbitmq.yaml
             group: beta
             refresh: true
+          - data-id: common-dubbo.yaml
+            group: beta
+            refresh: true
           - data-id: common-tencentcos.yaml
             group: beta
             refresh: true
-#          - data-id: common-dubbo.yaml
-#            group: dev
-#            refresh: true
+          - data-id: common-dubbo.yaml
+            group: beta
+            refresh: true
 #          - data-id: common-seata.yaml
 #            group: dev
 #            refresh: true

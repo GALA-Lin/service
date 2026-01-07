@@ -31,10 +31,10 @@ public class CoachGetOrderResultDto implements Serializable {
     private Long userId;
 
     /**
-     * 场馆ID
+     * 教练ID
      */
     @NotNull
-    private Long coach;
+    private Long coachId;
 
     /**
      * 场馆名称

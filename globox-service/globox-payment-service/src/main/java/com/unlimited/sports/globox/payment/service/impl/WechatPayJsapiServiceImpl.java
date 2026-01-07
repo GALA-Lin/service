@@ -7,6 +7,7 @@ import com.unlimited.sports.globox.payment.service.PaymentsService;
 import com.unlimited.sports.globox.payment.service.WechatPayJsapiService;
 import com.wechat.pay.java.service.payments.jsapi.model.Amount;
 import com.wechat.pay.java.service.payments.jsapi.JsapiServiceExtension;
+import com.wechat.pay.java.service.payments.jsapi.model.Payer;
 import com.wechat.pay.java.service.payments.jsapi.model.PrepayRequest;
 import com.wechat.pay.java.service.payments.jsapi.model.PrepayWithRequestPaymentResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +47,10 @@ public class WechatPayJsapiServiceImpl implements WechatPayJsapiService {
         prepayRequest.setOutTradeNo(payments.getOutTradeNo());
         prepayRequest.setTimeExpire(paymentsService.getPaymentTimeout(payments));
         prepayRequest.setNotifyUrl(wechatPayProperties.getNotifyPaymentUrl());
+        Payer payer = new Payer();
+        // TODO 填充 open id
+//        payer.setOpenid();
+        prepayRequest.setPayer(payer);
         Amount amount = new Amount();
         amount.setTotal(payments.getTotalAmount()
                 .movePointRight(2)

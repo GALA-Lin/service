@@ -12,7 +12,7 @@ public enum OrderCode implements ResultCode {
     ORDER_CREATE_FAILED(1701, "订单创建失败"),
     ORDER_EXTRA_CHARGE_ERROR(1702, "额外费用计算有误"),
     ORDER_NOT_EXIST(1703, "订单不存在"),
-    ORDER_ITEM_NOT_EXIST(1704, "订单项不存在"),
+    ORDER_ITEM_NOT_EXIST(1704, "当前订单不存在订单项"),
     SLOT_HAD_BOOKING(1705, "当前场地已被预订"),
     ORDER_STATUS_NOT_ALLOW_CANCEL(1706, "当前订单不允许被取消"),
     ORDER_CANCEL_FAILED(1707, "订单取消失败"),

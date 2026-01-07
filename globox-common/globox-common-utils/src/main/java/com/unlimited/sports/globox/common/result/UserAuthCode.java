@@ -61,6 +61,11 @@ public enum UserAuthCode implements ResultCode {
     UPLOAD_FILE_FAILED(2053, "文件上传失败"),
     MEDIA_URL_REQUIRED(2054, "媒体地址不能为空"),
     VIDEO_COVER_REQUIRED(2055, "视频封面不能为空"),
+
+    // 商家登录相关 2060-2069
+    MERCHANT_ACCOUNT_NOT_EXIST(2060, "账号不存在，请检查账号是否正确或联系管理员"),
+    MERCHANT_PASSWORD_ERROR(2061, "账号或密码错误，请重新输入"),
+    MERCHANT_ACCOUNT_DISABLED(2062, "账号已被禁用，请联系管理员"),
     ;
 
     private final Integer code;

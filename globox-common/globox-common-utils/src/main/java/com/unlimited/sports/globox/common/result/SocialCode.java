@@ -31,6 +31,15 @@ public enum SocialCode implements ResultCode {
     NOTE_DRAFT_EMPTY(3018, "草稿不能完全为空，标题、正文、媒体至少填写一项"),
     NOTE_PUBLISH_VALIDATION_FAILED(3020, "发布失败：正文和媒体不能为空"),
 
+    // 评论相关 3021-3027
+    COMMENT_CONTENT_EMPTY(3021, "评论内容不能为空"),
+    COMMENT_CLOSED(3022, "评论已关闭"),
+    COMMENT_NOT_FOUND(3023, "评论不存在或已删除"),
+    COMMENT_PERMISSION_DENIED(3024, "无权限删除评论"),
+    COMMENT_PARENT_INVALID(3025, "父评论不存在或不属于该笔记"),
+    COMMENT_CURSOR_INVALID(3026, "评论游标格式错误"),
+    COMMENT_PAGE_SIZE_EXCEEDED(3027, "每页数量不能超过50"),
+
     ;
 
     private final Integer code;

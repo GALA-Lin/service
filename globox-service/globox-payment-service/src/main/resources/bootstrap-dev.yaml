@@ -2,7 +2,7 @@ spring:
   cloud:
     nacos:
       server-addr: 10.0.0.13:8848
-      username: nacos
+      username: client_dev
       password: Globox1113!
       discovery:
         namespace: globox
@@ -28,3 +28,7 @@ spring:
           - data-id: common-alipay.yaml
             group: dev
             refresh: true
+          - data-id: common-wechat-pay.yaml
+            group: dev
+            refresh: true
+

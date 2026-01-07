@@ -16,6 +16,7 @@
         <module>globox-web-utils</module>
         <module>globox-mq-utils</module>
         <module>globox-cos-utils</module>
+        <module>globox-redis-utils</module>
     </modules>
 
     <properties>

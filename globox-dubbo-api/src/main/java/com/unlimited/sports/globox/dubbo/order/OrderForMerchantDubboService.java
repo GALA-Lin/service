@@ -41,7 +41,7 @@ public interface OrderForMerchantDubboService {
      * @param dto 包含订单号、商家ID以及可选的取消原因的请求参数
      * @return 取消订单的结果，包括订单号、当前订单状态、状态描述及取消时间
      */
-    RpcResult<MerchantCancelOrderResultDto> cancelUnpaidOrder(
+    RpcResult<SellerCancelOrderResultDto> cancelUnpaidOrder(
             @Valid @NotNull(message = "请求参数不能为空")
             MerchantCancelOrderRequestDto dto);
 
@@ -51,5 +51,5 @@ public interface OrderForMerchantDubboService {
      * @param dto 包含订单号的请求参数
      * @return 返回商家确认订单的结果，包括订单号、是否确认成功、当前订单状态、状态描述以及确认时间
      */
-    RpcResult<MerchantConfirmResultDto> confirm(MerchantConfirmRequestDto dto);
+    RpcResult<SellerConfirmResultDto> confirm(MerchantConfirmRequestDto dto);
 }

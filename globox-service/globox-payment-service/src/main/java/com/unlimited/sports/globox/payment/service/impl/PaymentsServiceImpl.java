@@ -30,6 +30,9 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
@@ -109,7 +112,7 @@ public class PaymentsServiceImpl implements PaymentsService {
         }
 
         // 4) 生成新的支付订单
-        String outTradeNo = "globox" + UUID.randomUUID().toString().replaceAll("-", "");
+        String outTradeNo = UUID.randomUUID().toString().replaceAll("-", "");
 
         Payments payments = new Payments();
         BeanUtils.copyProperties(resultDto, payments);
@@ -164,23 +167,19 @@ public class PaymentsServiceImpl implements PaymentsService {
 
     @Override
     public String getPaymentTimeout(Payments payments) {
-        String alipayTimePattern = "yyyy-MM-dd HH:mm:ss";
-        String wechatPayTimePattern = "yyyy-MM-DDTHH:mm:ss+08:00";
-        Calendar calendar = Calendar.getInstance();
-        if (payments.isActivity()) {
-            calendar.add(Calendar.MINUTE, timeoutProperties.getActivity());
-        } else {
-            calendar.add(Calendar.MINUTE, timeoutProperties.getNormal());
-        }
-        SimpleDateFormat sdf;
+        int minutes = payments.isActivity() ? timeoutProperties.getActivity() : timeoutProperties.getNormal();
+
         if (PaymentTypeEnum.WECHAT_PAY.equals(payments.getPaymentType())) {
-            sdf = new SimpleDateFormat(wechatPayTimePattern);
-        } else if (PaymentTypeEnum.ALIPAY.equals(payments.getPaymentType())) {
-            sdf = new SimpleDateFormat(alipayTimePattern);
-        } else {
-            throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE);
+            return OffsetDateTime.now(ZoneOffset.ofHours(8))
+                    .plusMinutes(minutes)
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX"));
         }
-        return sdf.format(calendar);
+        if (PaymentTypeEnum.ALIPAY.equals(payments.getPaymentType())) {
+            return LocalDateTime.now()
+                    .plusMinutes(minutes)
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        }
+        throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE);
     }
 
 

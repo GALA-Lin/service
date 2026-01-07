@@ -16,5 +16,19 @@
         WHERE note_id = #{noteId}
     </update>
 
+    <!-- 原子增加评论数 -->
+    <update id="incrementCommentCount">
+        UPDATE social_note
+        SET comment_count = comment_count + 1
+        WHERE note_id = #{noteId}
+    </update>
+
+    <!-- 原子减少评论数（确保不为负数） -->
+    <update id="decrementCommentCount">
+        UPDATE social_note
+        SET comment_count = GREATEST(comment_count - #{count}, 0)
+        WHERE note_id = #{noteId}
+    </update>
+
 </mapper>
 

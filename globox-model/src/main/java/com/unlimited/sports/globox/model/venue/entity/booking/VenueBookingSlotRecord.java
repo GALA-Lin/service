@@ -53,6 +53,12 @@ public class VenueBookingSlotRecord {
     private OperatorSourceEnum operatorSource;
 
     /**
+     * 第三方平台的订单/锁场ID（用于解锁时调用第三方API）
+     */
+    @TableField("third_party_booking_id")
+    private String thirdPartyBookingId;
+
+    /**
      * 创建时间
      */
     @TableField(value = "created_at", fill = FieldFill.INSERT)

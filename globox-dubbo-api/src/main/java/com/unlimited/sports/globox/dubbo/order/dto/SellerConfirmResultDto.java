@@ -1,6 +1,5 @@
 package com.unlimited.sports.globox.dubbo.order.dto;
 
-import com.unlimited.sports.globox.common.enums.order.ApplyRefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,29 +7,44 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
-import java.io.Serializable;
+import javax.validation.constraints.Null;
+import java.time.LocalDateTime;
 
 /**
- * 商家退款 结果 dto
+ * 商家确认订单 rpc - 结果类
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MerchantRefundResultDto implements Serializable {
-
+public class SellerConfirmResultDto {
+    /**
+     * 订单号
+     */
     @NotNull
     private Long orderNo;
 
+    /**
+     * 是否取消成功
+     */
     @NotNull
-    private Long refundApplyId;
+    private boolean success;
 
-    @NotNull
-    private ApplyRefundStatusEnum applyStatus;
-
+    /**
+     * 当前订单状态
+     */
     @NotNull
     private OrderStatusEnum orderStatus;
 
+    /**
+     * 状态描述
+     */
     @NotNull
     private String orderStatusName;
+
+    /**
+     * 取消时间
+     */
+    @Null
+    private LocalDateTime confirmAt;
 }

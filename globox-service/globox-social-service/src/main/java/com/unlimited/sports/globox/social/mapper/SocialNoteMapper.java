@@ -26,5 +26,22 @@ public interface SocialNoteMapper extends BaseMapper<SocialNote> {
      * @return 更新的行数
      */
     int decrementLikeCount(@Param("noteId") Long noteId);
+
+    /**
+     * 原子增加评论数
+     * 
+     * @param noteId 笔记ID
+     * @return 更新的行数
+     */
+    int incrementCommentCount(@Param("noteId") Long noteId);
+
+    /**
+     * 原子减少评论数（确保不为负数）
+     * 
+     * @param noteId 笔记ID
+     * @param count 减少的数量
+     * @return 更新的行数
+     */
+    int decrementCommentCount(@Param("noteId") Long noteId, @Param("count") Integer count);
 }
 

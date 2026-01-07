@@ -263,7 +263,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 if (autoRefund) {
                     businessExecutorService.submit(() -> {
                         // 自动退款时，调用退款方法
-                        orderRefundActionService.refundAction(orderNo, refundApplyId, true, null, refundPercentage);
+                        orderRefundActionService.refundAction(orderNo, refundApplyId, true, null, order.getSellerType(), refundPercentage);
                     });
                 }
             }

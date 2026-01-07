@@ -19,10 +19,9 @@ import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
-import com.unlimited.sports.globox.model.order.dto.CreateVenueActivityOrderDto;
-import com.unlimited.sports.globox.model.order.dto.CreateVenueOrderDto;
-import com.unlimited.sports.globox.model.order.dto.GetOrderDetailsDto;
-import com.unlimited.sports.globox.model.order.dto.GetOrderPageDto;
+import com.unlimited.sports.globox.dubbo.order.dto.SellerCancelOrderResultDto;
+import com.unlimited.sports.globox.dubbo.order.dto.SellerConfirmResultDto;
+import com.unlimited.sports.globox.model.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.*;
 import com.unlimited.sports.globox.model.order.vo.GetOrderDetailsVo.ExtraChargeVo;
@@ -45,7 +44,6 @@ import org.springframework.util.ObjectUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -119,11 +117,10 @@ public class OrderServiceImpl implements OrderService {
         RpcResult<PricingResultDto> rpcResult = merchantDubboService.quoteVenue(pricingRequestDto);
         Assert.rpcResultOk(rpcResult);
         PricingResultDto result = rpcResult.getData();
+        // TODO ETA 等微信支付测试通过后删除
 //        PricingResultDto result = getPricingResultDto();
 
         Assert.isNotEmpty(result.getRecordQuote(), OrderCode.SLOT_HAD_BOOKING);
-
-        log.info("PricingResultDto: {}", jsonUtils.objectToJson(result));
 
         return thisService.createVenueOrderAction(result, userId, false);
     }
@@ -140,7 +137,6 @@ public class OrderServiceImpl implements OrderService {
         Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
-
         PricingActivityRequestDto requestDto = new PricingActivityRequestDto();
         BeanUtils.copyProperties(dto, requestDto);
         requestDto.setUserId(userId);
@@ -148,11 +144,33 @@ public class OrderServiceImpl implements OrderService {
         Assert.rpcResultOk(rpcResult);
         PricingActivityResultDto result = rpcResult.getData();
 
-        log.info("PricingResultDto: {}", jsonUtils.objectToJson(result));
-
         Assert.isNotEmpty(result.getRecordQuote(), OrderCode.SLOT_HAD_BOOKING);
 
         return thisService.createVenueOrderAction(result, userId, true);
+    }
+
+
+    /**
+     * 创建教练订单
+     *
+     * @param dto 包含创建教练订单所需参数的数据传输对象，包括预订日期和预订的场地时段ID列表
+     * @return 包含创建订单结果的信息对象，主要包含生成的订单号
+     */
+    @Override
+    public CreateOrderResultVo createCoachOrder(CreateCoachOrderDto dto) {
+        // 0) 基础校验
+        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
+
+        // TODO 校验并获取价格
+
+
+        return null;
+//        Long orderNo = idGenerator.nextId();
+//        // 2) 先创建 order_items（每个 item 的 subtotal 只含 unitPrice + extra）
+//        List<ItemCtx> itemCtxList = new ArrayList<>();
+//        BigDecimal baseAmount = BigDecimal.ZERO;
+//        LocalDateTime createdAt = LocalDateTime.now();
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -679,7 +697,6 @@ public class OrderServiceImpl implements OrderService {
         Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
-
         // 1. 查询订单
         Orders order = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()
@@ -774,65 +791,5 @@ public class OrderServiceImpl implements OrderService {
             List<ExtraQuote> recordExtras) { }
 
 
-    //TODO ETA 2026/01/03 TEST
-    private PricingResultDto getPricingResultDto() {
-        return PricingResultDto.builder()
-                .recordQuote(List.of(
-                        RecordQuote.builder()
-                                .recordId(2000003L)
-                                .courtId(2000001L)
-                                .courtName("1号红土场 14:00-15:00")
-                                .bookingDate(LocalDate.of(2026, 1, 2))
-                                .startTime(LocalTime.of(14, 0))
-                                .endTime(LocalTime.of(15, 0))
-                                .unitPrice(new BigDecimal("150.00"))
-                                .recordExtras(List.of(
-                                        ExtraQuote.builder()
-                                                .chargeTypeId(19L)
-                                                .chargeName("灯光费")
-                                                .chargeMode(ChargeModeEnum.FIXED)
-                                                .fixedValue(new BigDecimal("20.00"))
-                                                .amount(new BigDecimal("20.00"))
-                                                .build()
-                                ))
-                                .build(),
 
-                        RecordQuote.builder()
-                                .recordId(2000004L)
-                                .courtId(2000001L)
-                                .courtName("1号红土场 18:00-19:00")
-                                .bookingDate(LocalDate.of(2026, 1, 2))
-                                .startTime(LocalTime.of(18, 0))
-                                .endTime(LocalTime.of(19, 0))
-                                .unitPrice(new BigDecimal("180.00"))
-                                .recordExtras(List.of(
-                                        ExtraQuote.builder()
-                                                .chargeTypeId(19L)
-                                                .chargeName("灯光费")
-                                                .chargeMode(ChargeModeEnum.FIXED)
-                                                .fixedValue(new BigDecimal("20.00"))
-                                                .amount(new BigDecimal("20.00"))
-                                                .build()
-                                ))
-                                .build()
-                ))
-                .orderLevelExtras(List.of(
-                        OrderLevelExtraQuote.builder()
-                                .chargeTypeId(20L)
-                                .chargeName("清洁费")
-                                .chargeMode(ChargeModeEnum.FIXED)
-                                .fixedValue(new BigDecimal("10.00"))
-                                .amount(new BigDecimal("10.00"))
-                                .build()
-                ))
-                .sourcePlatform(1)
-                .sellerName("成都锦江国际网球中心")
-                .sellerId(2000001L)
-                .bookingDate(LocalDate.of(2026, 1, 2))
-                .build();
-    }
 }
-
-
-
-

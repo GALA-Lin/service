@@ -18,7 +18,7 @@ public interface OrderForMerchantRefundDubboService {
      * @param dto 包含订单号、退款申请ID、场馆ID和商家ID等信息的请求参数
      * @return 返回商家同意退款的结果，包括订单状态、退款申请状态等信息
      */
-    RpcResult<MerchantApproveRefundResultDto> approveRefund(
+    RpcResult<SellerApproveRefundResultDto> approveRefund(
             @Valid @NotNull(message = "请求参数不能为空")
             MerchantApproveRefundRequestDto dto);
 
@@ -29,7 +29,7 @@ public interface OrderForMerchantRefundDubboService {
      * @param dto 包含订单号、退款申请ID、场馆ID和商家ID等信息的请求参数
      * @return 返回商家拒绝退款的结果，包括订单状态、退款申请状态等信息
      */
-    RpcResult<MerchantRejectRefundResultDto> rejectRefund(
+    RpcResult<SellerRejectRefundResultDto> rejectRefund(
             @Valid @NotNull(message = "请求参数不能为空")
             MerchantRejectRefundRequestDto dto);
 
@@ -61,5 +61,7 @@ public interface OrderForMerchantRefundDubboService {
      * @param dto 包含订单号、退款申请ID、场馆ID和商家ID等信息的请求参数
      * @return 返回商家退款的结果，包括订单状态、退款申请状态等信息
      */
-    RpcResult<MerchantRefundResultDto> refund(MerchantRefundRequestDto dto);
+    RpcResult<SellerRefundResultDto> refund(
+            @Valid @NotNull(message = "请求参数不能为空")
+            MerchantRefundRequestDto dto);
 }

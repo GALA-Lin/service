@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.dubbo.common.lang.Nullable;
 
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
@@ -38,6 +39,6 @@ public class MerchantApproveRefundRequestDto implements Serializable {
     /**
      * 可选：商家备注
      */
-    @Null
+    @Nullable
     private String remark;
 }

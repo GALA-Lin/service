@@ -77,7 +77,8 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
     public int refundAction(Long orderNo,
             Long refundApplyId,
             boolean isAutoRefund,
-            Long merchantId,
+            Long operatorId,
+            SellerTypeEnum sellerType,
             BigDecimal refundPercentage) {
 
         // 订单项退款总基础金额
@@ -296,9 +297,9 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .newItemRefundStatus(RefundStatusEnum.APPROVED)
                         .refundApplyId(refundApplyId)
                         .operatorType(isAutoRefund ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
-                        .operatorId(isAutoRefund ? null : merchantId)
-                        .operatorName("MERCHANT_" + merchantId)
-                        .remark(isAutoRefund ? "商家自动审批退款" : "商家同意退款")
+                        .operatorId(isAutoRefund ? null : operatorId)
+                        .operatorName(sellerType.getDescription() + "_" + operatorId)
+                        .remark(isAutoRefund ? "服务提供方自动审批退款" : "服务提供方同意退款")
                         .build();
                 orderStatusLogsMapper.insert(itemLog);
             }
@@ -344,9 +345,9 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 .refundApplyId(refundApplyId)
                 .refundApplyId(refundApplyId)
                 .operatorType(isAutoRefund ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
-                .operatorId(isAutoRefund ? null : merchantId)
-                .operatorName("MERCHANT_" + merchantId)
-                .remark(isAutoRefund ? "商家自动审批退款" : "商家同意退款")
+                .operatorId(isAutoRefund ? null : operatorId)
+                .operatorName(sellerType.getDescription() + "_" + operatorId)
+                .remark(isAutoRefund ? "服务提供方自动审批退款" : "服务提供方同意退款")
                 .build();
         orderStatusLogsMapper.insert(orderLog);
 
@@ -373,16 +374,21 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         refundMessage);
 
                 // 取消锁场
-                UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
-                        .userId(order.getBuyerId())
-                        .recordIds(recordIds)
-                        .bookingDate(bookingDate)
-                        .build();
+                if (sellerType.equals(SellerTypeEnum.VENUE)) {
 
-                mqService.send(
-                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-                        OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
-                        unlockMsg);
+                    UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
+                            .userId(order.getBuyerId())
+                            .recordIds(recordIds)
+                            .bookingDate(bookingDate)
+                            .build();
+
+                    mqService.send(
+                            OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
+                            OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
+                            unlockMsg);
+                } else if (sellerType.equals(SellerTypeEnum.COACH)) {
+                    // TODO 教练取消
+                }
             }
         });
         return approvedCount;

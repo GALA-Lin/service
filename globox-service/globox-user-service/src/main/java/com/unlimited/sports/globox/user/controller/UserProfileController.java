@@ -206,4 +206,6 @@ public class UserProfileController {
             @RequestParam("file") MultipartFile file) {
         return userMediaService.uploadMediaVideo(file);
     }
+
+
 }

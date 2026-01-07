@@ -10,7 +10,7 @@ spring:
     nacos:
 #      server-addr: 127.0.0.1:8848
       server-addr: 10.0.0.13:8848
-      username: nacos
+      username: client_dev
       password: Globox1113!
       discovery:
         namespace: globox

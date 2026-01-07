@@ -2,7 +2,7 @@ spring:
   cloud:
     nacos:
       server-addr: 10.0.0.13:8848
-      username: nacos
+      username: client_beta
       password: Globox1113!
       discovery:
         namespace: globox_beta

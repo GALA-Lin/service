@@ -12,6 +12,7 @@ import com.unlimited.sports.globox.model.auth.entity.StyleTag;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.entity.UserRacket;
 import com.unlimited.sports.globox.model.auth.entity.UserStyleTag;
+import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.RacketDictNodeVo;
@@ -314,12 +315,12 @@ public class UserProfileServiceImpl implements UserProfileService {
             needUpdate = true;
         }
         if (StringUtils.hasText(request.getGender())) {
-            try {
-                profile.setGender(UserProfile.Gender.valueOf(request.getGender()));
-                needUpdate = true;
-            } catch (IllegalArgumentException e) {
+            GenderEnum genderEnum = GenderEnum.fromValue(request.getGender());
+            if (genderEnum == null) {
                 throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
             }
+            profile.setGender(genderEnum);
+            needUpdate = true;
         }
         if (request.getSportsYears() != null) {
             profile.setSportsYears(request.getSportsYears());

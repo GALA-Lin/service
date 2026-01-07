@@ -31,16 +31,16 @@ public class RecordDto implements Serializable {
     private Long orderNo;
 
     /**
-     * 场地ID
+     * 教练 或 场地 ID
      */
     @NotNull
-    private Long courtId;
+    private Long resourceId;
 
     /**
-     * 场地名称
+     * 教练 或 场地名称
      */
     @NotNull
-    private String courtName;
+    private String resourceName;
 
     /**
      * 预订日期

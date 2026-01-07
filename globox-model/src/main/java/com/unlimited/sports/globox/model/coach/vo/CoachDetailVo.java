@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.model.coach.vo;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -31,7 +32,7 @@ public class CoachDetailVo {
     /**
      * 累计授课时长
      */
-    private java.math.BigDecimal coachTotalHours;
+    private BigDecimal coachTotalHours;
 
     /**
      * 教学介绍/教学风格

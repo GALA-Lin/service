@@ -28,9 +28,6 @@ public class RedisServiceImpl implements RedisService {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    @Value("${jwt.secret}")
-    private String jwtSecret;
-
     @Override
     public void saveSmsCode(String phone, String code, long expireSeconds) {
         String key = RedisKeyConstants.SMS_CODE_PREFIX + phone;
@@ -135,9 +132,9 @@ public class RedisServiceImpl implements RedisService {
     }
 
     @Override
-    public void deleteRefreshToken(String refreshToken) {
+    public void deleteRefreshToken(String refreshToken, String jwtSecret) {
         try {
-            // 从token中解析userId
+            // 从token中解析userId（使用传入的secret）
             String userId = JwtUtil.getSubject(refreshToken, jwtSecret);
             String hash = sha256(refreshToken);
             // 删除两个key

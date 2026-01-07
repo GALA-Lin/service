@@ -211,6 +211,48 @@ public class CursorUtils {
     }
 
     /**
+     * 解析评论列表游标（格式：{createdAt}|{commentId}）
+     * 示例：2025-12-28T10:00:00|123
+     *
+     * @param cursor 游标字符串
+     * @return 评论列表游标对象，如果cursor为null或空，返回null
+     * @throws GloboxApplicationException 如果游标格式错误
+     */
+    public static CommentCursor parseCommentCursor(String cursor) {
+        if (cursor == null || cursor.trim().isEmpty()) {
+            return null;
+        }
+
+        String[] parts = cursor.split("\\" + CURSOR_SEPARATOR, 2);
+        if (parts.length != 2) {
+            throw new GloboxApplicationException(SocialCode.COMMENT_CURSOR_INVALID);
+        }
+
+        try {
+            LocalDateTime createdAt = LocalDateTime.parse(parts[0], ISO_FORMATTER);
+            Long commentId = Long.parseLong(parts[1]);
+            return new CommentCursor(createdAt, commentId);
+        } catch (Exception e) {
+            throw new GloboxApplicationException(SocialCode.COMMENT_CURSOR_INVALID);
+        }
+    }
+
+    /**
+     * 构建评论列表游标字符串
+     * 格式：{createdAt}|{commentId}
+     *
+     * @param createdAt 创建时间
+     * @param commentId 评论ID
+     * @return 游标字符串
+     */
+    public static String buildCommentCursor(LocalDateTime createdAt, Long commentId) {
+        if (createdAt == null || commentId == null) {
+            return null;
+        }
+        return createdAt.format(ISO_FORMATTER) + CURSOR_SEPARATOR + commentId;
+    }
+
+    /**
      * 游标对象
      */
     public static class Cursor {
@@ -303,6 +345,27 @@ public class CursorUtils {
 
         public Long getLikeId() {
             return likeId;
+        }
+    }
+
+    /**
+     * 评论列表游标对象
+     */
+    public static class CommentCursor {
+        private final LocalDateTime createdAt;
+        private final Long commentId;
+
+        public CommentCursor(LocalDateTime createdAt, Long commentId) {
+            this.createdAt = createdAt;
+            this.commentId = commentId;
+        }
+
+        public LocalDateTime getCreatedAt() {
+            return createdAt;
+        }
+
+        public Long getCommentId() {
+            return commentId;
         }
     }
 }

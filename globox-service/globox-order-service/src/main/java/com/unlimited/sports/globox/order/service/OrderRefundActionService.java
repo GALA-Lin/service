@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.order.service;
 
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 
 import java.math.BigDecimal;
@@ -13,13 +14,14 @@ public interface OrderRefundActionService {
      * @param orderNo 订单编号
      * @param refundApplyId 退款单号
      * @param isAutoRefund 商家是否自动确认
-     * @param merchantId 商家 id
+     * @param operatorId 商家 id
      * @return 退款涉及到的总订单项数
      */
     int refundAction(Long orderNo,
             Long refundApplyId,
             boolean isAutoRefund,
-            Long merchantId,
+            Long operatorId,
+            SellerTypeEnum sellerType,
             BigDecimal refundPercentage);
 
     void refundSuccess(PaymentRefundMessage message);

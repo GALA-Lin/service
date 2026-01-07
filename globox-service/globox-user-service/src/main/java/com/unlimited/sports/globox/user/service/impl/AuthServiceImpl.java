@@ -90,13 +90,13 @@ public class AuthServiceImpl implements AuthService {
     @DubboReference(group = "rpc")
     private ChatDubboService chatDubboService;
 
-    @Value("${jwt.secret}")
+    @Value("${user.jwt.secret}")
     private String jwtSecret;
 
-    @Value("${jwt.access-token-expire}")
+    @Value("${user.jwt.access-token-expire}")
     private long accessTokenExpire;
 
-    @Value("${jwt.refresh-token-expire}")
+    @Value("${user.jwt.refresh-token-expire}")
     private long refreshTokenExpire;
 
     private static final long SMS_CODE_EXPIRE = 300; // 验证码有效期5分钟

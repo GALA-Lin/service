@@ -1,8 +1,0 @@
-server:
-  port: 12023
-
-spring:
-  application:
-    name: globox-coach-service
-  profiles:
-    active: dev

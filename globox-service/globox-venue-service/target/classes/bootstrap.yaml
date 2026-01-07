@@ -1,8 +1,0 @@
-server:
-  port: 12022
-
-spring:
-  application:
-    name: globox-venue-service
-  profiles:
-    active: dev

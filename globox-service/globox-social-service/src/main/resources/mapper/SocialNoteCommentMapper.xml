@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.social.mapper.SocialNoteCommentMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="BaseResultMap" type="com.unlimited.sports.globox.model.social.entity.SocialNoteComment">
+        <id column="comment_id" property="commentId"/>
+        <result column="note_id" property="noteId"/>
+        <result column="user_id" property="userId"/>
+        <result column="parent_id" property="parentId"/>
+        <result column="reply_to_user_id" property="replyToUserId"/>
+        <result column="content" property="content"/>
+        <result column="like_count" property="likeCount"/>
+        <result column="status" property="status" typeHandler="org.apache.ibatis.type.EnumTypeHandler"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 使用游标分页查询评论列表（仅返回 PUBLISHED 状态的评论，过滤父评论被删除的回复） -->
+    <select id="selectCommentListWithCursor" resultMap="BaseResultMap">
+        SELECT
+            c.comment_id,
+            c.note_id,
+            c.user_id,
+            c.parent_id,
+            c.reply_to_user_id,
+            c.content,
+            c.like_count,
+            c.status,
+            c.created_at,
+            c.updated_at
+        FROM
+            social_note_comment c
+        LEFT JOIN social_note_comment p ON c.parent_id = p.comment_id
+        WHERE
+            c.note_id = #{noteId}
+            AND c.status = 'PUBLISHED'
+            AND (c.parent_id IS NULL OR p.status = 'PUBLISHED')
+        <if test="cursorTime != null and cursorCommentId != null">
+            AND (
+                c.created_at &lt; #{cursorTime}
+                OR (c.created_at = #{cursorTime} AND c.comment_id &lt; #{cursorCommentId})
+            )
+        </if>
+        ORDER BY
+            c.created_at DESC,
+            c.comment_id DESC
+        <if test="limit != null">
+            LIMIT #{limit}
+        </if>
+    </select>
+
+    <!-- 统计已发布的评论数量 -->
+    <select id="countPublishedCommentsByNoteId" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM social_note_comment
+        WHERE note_id = #{noteId}
+        AND status = 'PUBLISHED'
+    </select>
+
+    <!-- 查询指定父评论的所有回复 -->
+    <select id="selectRepliesByParentId" resultMap="BaseResultMap">
+        SELECT
+            comment_id,
+            note_id,
+            user_id,
+            parent_id,
+            reply_to_user_id,
+            content,
+            like_count,
+            status,
+            created_at,
+            updated_at
+        FROM
+            social_note_comment
+        WHERE
+            parent_id = #{parentId}
+        ORDER BY
+            created_at ASC
+    </select>
+
+</mapper>
+
+
+

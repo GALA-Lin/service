@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.merchant.mapper.MerchantVenueBookingSlotRecordMapper">
+
+    <!-- LockedSlotVo ResultMap -->
+    <resultMap id="LockedSlotVoMap" type="com.unlimited.sports.globox.model.merchant.vo.LockedSlotVo">
+        <id column="record_id" property="recordId"/>
+        <result column="court_id" property="courtId"/>
+        <result column="court_name" property="courtName"/>
+        <result column="booking_date" property="bookingDate"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="locked_type" property="lockedType"/>
+        <result column="locked_type_name" property="lockedTypeName"/>
+        <result column="lock_reason" property="lockReason"/>
+        <result column="order_id" property="orderId"/>
+        <result column="order_no" property="orderNo"/>
+        <result column="operator_idd" property="operatorId"/>
+        <result column="user_nickname" property="userNickname"/>
+        <result column="locked_at" property="lockedAt"/>
+        <result column="status" property="status"/>
+        <result column="status_name" property="statusName"/>
+    </resultMap>
+
+    <!-- VenueBookingSlotVo ResultMap -->
+    <resultMap id="VenueBookingSlotVoMap" type="com.unlimited.sports.globox.model.merchant.vo.VenueBookingSlotVo">
+        <id column="booking_slot_id" property="bookingSlotId"/>
+        <result column="order_id" property="orderId"/>
+        <result column="court_id" property="courtId"/>
+        <result column="court_name" property="courtName"/>
+        <result column="booking_date" property="bookingDate"/>
+        <result column="start_time" property="startTime"/>
+        <result column="end_time" property="endTime"/>
+        <result column="unit_price" property="unitPrice"/>
+        <result column="status" property="status"/>
+        <result column="status_name" property="statusName"/>
+        <result column="cancelable" property="cancelable"/>
+        <result column="locked_type" property="lockedType"/>
+        <result column="lock_reason" property="lockReason"/>
+        <result column="operator_idd" property="operatorId"/>
+    </resultMap>
+
+    <!-- 根据模板ID和日期查询记录 -->
+    <select id="selectByTemplateAndDate" resultType="com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotRecord">
+        SELECT * FROM venue_booking_slot_record
+        WHERE slot_template_id = #{templateId}
+          AND booking_date = #{date}
+            LIMIT 1
+    </select>
+
+    <!-- 根据模板ID列表和日期批量查询 -->
+    <select id="selectByTemplateIdsAndDate" resultType="com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotRecord">
+        SELECT * FROM venue_booking_slot_record
+        WHERE slot_template_id IN
+        <foreach collection="templateIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        AND booking_date = #{date}
+    </select>
+
+    <!-- 批量插入记录 -->
+    <insert id="batchInsert" useGeneratedKeys="true" keyProperty="bookingSlotRecordId">
+        <if test="records != null and records.size() > 0">
+            INSERT INTO venue_booking_slot_record
+            (slot_template_id, booking_date, status, order_id, operator_id, operator_source)
+            VALUES
+            <foreach collection="records" item="item" separator=",">
+                (
+                #{item.slotTemplateId},
+                #{item.bookingDate},
+                #{item.status},
+                #{item.orderId},
+                #{item.operatorId},
+                #{item.operatorSource}
+                )
+            </foreach>
+        </if>
+    </insert>
+
+    <!-- 统计某日期某场地的记录数 -->
+    <select id="countByCourtAndDate" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM venue_booking_slot_record r
+                 INNER JOIN venue_booking_slot_template t
+                            ON r.slot_template_id = t.booking_slot_template_id
+        WHERE t.court_id = #{courtId}
+          AND r.booking_date = #{date}
+    </select>
+
+    <!-- 删除未来某个日期范围的可用记录 -->
+    <delete id="deleteAvailableByTemplateAndDateRange">
+        DELETE FROM venue_booking_slot_record
+        WHERE slot_template_id = #{templateId}
+          AND booking_date BETWEEN #{startDate} AND #{endDate}
+          AND status = 1
+    </delete>
+
+    <!-- 更新记录状态 -->
+    <update id="updateStatusById">
+        UPDATE venue_booking_slot_record
+        SET status = #{status},
+            order_id = #{orderId},
+            operator_id = #{operatorId}
+        WHERE booking_slot_record_id = #{recordId}
+    </update>
+
+    <!-- 查询锁定的时段（按场地） -->
+    <select id="selectLockedSlotsByCourtAndDateRange" resultMap="LockedSlotVoMap">
+        SELECT
+            r.booking_slot_record_id AS record_id,
+            t.court_id,
+            c.name AS court_name,
+            r.booking_date,
+            t.start_time,
+            t.end_time,
+            r.locked_type,
+            CASE r.locked_type
+                WHEN 1 THEN '用户订单'
+                WHEN 2 THEN '商家锁场'
+                ELSE '未知'
+                END AS locked_type_name,
+            r.lock_reason,
+            r.order_id,
+            o.order_no,
+            r.operator_id AS user_id,
+            u.nickname AS user_nickname,
+            r.updated_at AS locked_at,
+            r.status,
+            CASE r.status
+                WHEN 1 THEN '可预订'
+                WHEN 2 THEN '占用中'
+                WHEN 3 THEN '不可预订'
+                ELSE '未知'
+                END AS status_name
+        FROM venue_booking_slot_record r
+                 INNER JOIN venue_booking_slot_template t
+                            ON r.slot_template_id = t.booking_slot_template_id
+                 INNER JOIN courts c
+                            ON t.court_id = c.court_id
+                 LEFT JOIN venue_orders o
+                           ON r.order_id = o.order_id
+                 LEFT JOIN user_profiles u
+                           ON r.operator_id = u.id
+        WHERE t.court_id = #{courtId}
+          AND r.booking_date BETWEEN #{startDate} AND #{endDate}
+          AND r.status IN (2, 3)
+          AND r.locked_type IS NOT NULL
+        ORDER BY r.booking_date ASC, t.start_time ASC
+    </select>
+
+    <!-- 查询锁定的时段（按场馆） -->
+    <select id="selectLockedSlotsByVenueAndDateRange" resultMap="LockedSlotVoMap">
+        SELECT
+            r.booking_slot_record_id AS record_id,
+            t.court_id,
+            c.name AS court_name,
+            r.booking_date,
+            t.start_time,
+            t.end_time,
+            r.locked_type,
+            CASE r.locked_type
+                WHEN 1 THEN '用户订单'
+                WHEN 2 THEN '商家锁场'
+                ELSE '未知'
+                END AS locked_type_name,
+            r.lock_reason,
+            r.order_id,
+            o.order_no,
+            r.user_id,
+            u.nickname AS user_nickname,
+            r.updated_at AS locked_at,
+            r.status,
+            CASE r.status
+                WHEN 1 THEN '可预订'
+                WHEN 2 THEN '占用中'
+                WHEN 3 THEN '不可预订'
+                ELSE '未知'
+                END AS status_name
+        FROM venue_booking_slot_record r
+                 INNER JOIN venue_booking_slot_template t
+                            ON r.slot_template_id = t.booking_slot_template_id
+                 INNER JOIN courts c
+                            ON t.court_id = c.court_id
+                 INNER JOIN venues v
+                            ON c.venue_id = v.venue_id
+                 LEFT JOIN venue_orders o
+                           ON r.order_id = o.order_id
+                 LEFT JOIN user_profiles u
+                           ON r.user_id = u.id
+        WHERE v.venue_id = #{venueId}
+          AND r.booking_date BETWEEN #{startDate} AND #{endDate}
+          AND r.status IN (2, 3)
+          AND r.locked_type IS NOT NULL
+        ORDER BY t.court_id ASC, r.booking_date ASC, t.start_time ASC
+    </select>
+
+    <!-- 根据订单ID查询时段 -->
+    <select id="selectSlotsByOrderId" resultMap="VenueBookingSlotVoMap">
+        SELECT
+            r.booking_slot_record_id AS booking_slot_id,
+            r.order_id,
+            t.court_id,
+            c.name AS court_name,
+            r.booking_date,
+            t.start_time,
+            t.end_time,
+            0 AS unit_price,
+            r.status,
+            CASE r.status
+                WHEN 1 THEN '可预订'
+                WHEN 2 THEN '占用中'
+                WHEN 3 THEN '不可预订'
+                ELSE '未知'
+                END AS status_name,
+            (r.status = 2 AND r.locked_type = 1) AS cancelable,
+            r.locked_type,
+            r.lock_reason,
+            r.operator_id AS user_id
+        FROM venue_booking_slot_record r
+                 INNER JOIN venue_booking_slot_template t
+                            ON r.slot_template_id = t.booking_slot_template_id
+                 INNER JOIN courts c
+                            ON t.court_id = c.court_id
+        WHERE r.order_id = #{orderId}
+        ORDER BY r.booking_date, t.start_time
+    </select>
+
+    <!-- 根据场地和日期查询所有记录 -->
+    <select id="selectByCourtAndDate" resultMap="VenueBookingSlotVoMap">
+        SELECT
+            r.booking_slot_record_id AS booking_slot_id,
+            r.order_id,
+            t.court_id,
+            c.name AS court_name,
+            r.booking_date,
+            t.start_time,
+            t.end_time,
+            0 AS unit_price,
+            r.status,
+            CASE r.status
+                WHEN 1 THEN '可预订'
+                WHEN 2 THEN '占用中'
+                WHEN 3 THEN '不可预订'
+                ELSE '未知'
+                END AS status_name,
+            FALSE AS cancelable,
+            r.locked_type,
+            r.lock_reason,
+            r.operator_id AS user_id
+        FROM venue_booking_slot_record r
+                 INNER JOIN venue_booking_slot_template t
+                            ON r.slot_template_id = t.booking_slot_template_id
+                 INNER JOIN courts c
+                            ON t.court_id = c.court_id
+        WHERE t.court_id = #{courtId}
+          AND r.booking_date = #{date}
+        ORDER BY t.start_time
+    </select>
+
+    <!-- 批量更新状态 -->
+    <update id="batchUpdateStatus">
+        UPDATE venue_booking_slot_record
+        SET status = #{status},
+        order_id = #{orderId},
+        operator_id = #{operatorId}
+        WHERE booking_slot_record_id IN
+        <foreach collection="recordIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </update>
+
+    <!-- 检查时段冲突 -->
+    <select id="checkSlotConflict" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM venue_booking_slot_record r
+        INNER JOIN venue_booking_slot_template t
+        ON r.slot_template_id = t.booking_slot_template_id
+        WHERE t.court_id = #{courtId}
+        AND r.booking_date = #{date}
+        AND r.status IN (2, 3)
+        AND r.slot_template_id IN
+        <foreach collection="templateIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        <if test="excludeRecordId != null">
+            AND r.booking_slot_record_id != #{excludeRecordId}
+        </if>
+    </select>
+
+    <!-- 查询用户预订记录 -->
+    <select id="selectByUserId" resultMap="VenueBookingSlotVoMap">
+        SELECT
+        r.booking_slot_record_id AS booking_slot_id,
+        r.order_id,
+        t.court_id,
+        c.name AS court_name,
+        r.booking_date,
+        t.start_time,
+        t.end_time,
+        0 AS unit_price,
+        r.status,
+        CASE r.status
+        WHEN 1 THEN '可预订'
+        WHEN 2 THEN '占用中'
+        WHEN 3 THEN '不可预订'
+        ELSE '未知'
+        END AS status_name,
+        (r.status = 2 AND r.locked_type = 1) AS cancelable,
+        r.locked_type,
+        r.lock_reason,
+        r.operator_id
+        FROM venue_booking_slot_record r
+        INNER JOIN venue_booking_slot_template t
+        ON r.slot_template_id = t.booking_slot_template_id
+        INNER JOIN courts c
+        ON t.court_id = c.court_id
+        WHERE r.operator_id = #{operatorId}
+        AND r.booking_date BETWEEN #{startDate} AND #{endDate}
+        <if test="status != null">
+            AND r.status = #{status}
+        </if>
+        ORDER BY r.booking_date DESC, t.start_time DESC
+    </select>
+
+    <!-- 统计各状态数量 -->
+    <select id="countByCourtAndDateGroupByStatus"
+            resultType="com.unlimited.sports.globox.merchant.mapper.MerchantVenueBookingSlotRecordMapper$StatusCountVo">
+        SELECT
+            r.status,
+            COUNT(*) as count
+        FROM venue_booking_slot_record r
+            INNER JOIN venue_booking_slot_template t
+        ON r.slot_template_id = t.booking_slot_template_id
+        WHERE t.court_id = #{courtId}
+          AND r.booking_date = #{date}
+        GROUP BY r.status
+    </select>
+
+</mapper>

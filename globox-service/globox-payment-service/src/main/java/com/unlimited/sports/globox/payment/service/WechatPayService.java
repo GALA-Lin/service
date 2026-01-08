@@ -1,0 +1,39 @@
+package com.unlimited.sports.globox.payment.service;
+
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.model.payment.entity.Payments;
+import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
+import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
+import com.unlimited.sports.globox.model.payment.vo.WechatPayNotifyVo;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.math.BigDecimal;
+
+/**
+ * 微信支付 服务类
+ */
+public interface WechatPayService {
+
+    /**
+     * 提交支付请求到微信支付平台。
+     *
+     * @param payments 包含支付信息的对象，如订单编号、openID 等
+     * @return 返回微信支付平台返回的预支付交易会话标识，用于后续调起支付
+     */
+    SubmitResultVo submit(Payments payments);
+
+    WechatPayNotifyVo handleCallback(HttpServletRequest request, HttpServletResponse response);
+
+    /**
+     * 查询指定订单号的微信支付状态。
+     *
+     * @param outTradeNo 商家订单号，用于查询该订单的支付状态
+     * @return GetPaymentStatusVo 包含支付状态信息的对象。如果支付成功、关闭或完成，则分别设置相应的支付状态；如果遇到未知支付状态，则抛出异常。
+     * @throws GloboxApplicationException 当请求微信支付失败或者支付状态未知时抛出此异常。
+     */
+    GetPaymentStatusResultVo getPaymentStatus(String outTradeNo);
+
+
+    boolean refund(Payments payments, BigDecimal refundAmount, String refundReason);
+}

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.unlimited.sports.globox</groupId>
+        <artifactId>globox-backend</artifactId>
+        <version>1.0</version>
+    </parent>
+
+    <artifactId>globox-service</artifactId>
+    <packaging>pom</packaging>
+    <modules>
+        <module>globox-demo-service</module>
+        <module>globox-producer-demo-service</module>
+        <module>globox-merchant-service</module>
+        <module>globox-venue-service</module>
+        <module>globox-user-service</module>
+        <module>globox-payment-service</module>
+        <module>globox-social-service</module>
+        <module>globox-order-service</module>
+        <module>globox-notification-service</module>
+        <module>globox-coach-service</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+            <version>${boot.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-log4j2</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-bootstrap</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-model</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-common-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-redis-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+    </dependencies>
+
+</project>

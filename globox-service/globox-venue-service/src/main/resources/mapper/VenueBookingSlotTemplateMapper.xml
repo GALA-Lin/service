@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper">
+
+    <!-- 查询指定场地在指定时间范围内的槽位模板 -->
+    <select id="selectByCourtIdAndTimeRange" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate">
+        SELECT
+            booking_slot_template_id AS bookingSlotTemplateId,
+            court_id AS courtId,
+            start_time AS startTime,
+            end_time AS endTime,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_booking_slot_template
+        WHERE court_id = #{courtId}
+          <!-- 槽位开始时间 >= 营业开始时间 且 槽位结束时间 <= 营业结束时间 -->
+          AND start_time &gt;= #{openTime}
+          AND end_time &lt;= #{closeTime}
+        ORDER BY start_time ASC
+    </select>
+
+    <!-- 查询指定场地的所有槽位模板 -->
+    <select id="selectByCourtId" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate">
+        SELECT
+            booking_slot_template_id AS bookingSlotTemplateId,
+            court_id AS courtId,
+            start_time AS startTime,
+            end_time AS endTime,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_booking_slot_template
+        WHERE court_id = #{courtId}
+        ORDER BY start_time ASC
+    </select>
+
+    <!-- 查询指定场地列表的槽位模板 -->
+    <select id="selectByCourtIds" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate">
+        SELECT
+            booking_slot_template_id AS bookingSlotTemplateId,
+            court_id AS courtId,
+            start_time AS startTime,
+            end_time AS endTime,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_booking_slot_template
+        WHERE court_id IN
+        <foreach collection="courtIds" item="courtId" open="(" separator="," close=")">
+            #{courtId}
+        </foreach>
+        ORDER BY court_id ASC, start_time ASC
+    </select>
+
+    <!-- 批量查询指定场地列表在指定时间范围内的槽位模板 -->
+    <select id="selectByCourtIdsAndTimeRange" resultType="com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate">
+        SELECT
+            booking_slot_template_id AS bookingSlotTemplateId,
+            court_id AS courtId,
+            start_time AS startTime,
+            end_time AS endTime,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM venue_booking_slot_template
+        WHERE court_id IN
+        <foreach collection="courtIds" item="courtId" open="(" separator="," close=")">
+            #{courtId}
+        </foreach>
+          <!-- 槽位开始时间 >= 营业开始时间 且 槽位结束时间 <= 营业结束时间 -->
+          AND start_time &gt;= #{openTime}
+          AND end_time &lt;= #{closeTime}
+        ORDER BY court_id ASC, start_time ASC
+    </select>
+
+</mapper>

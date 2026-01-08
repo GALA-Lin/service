@@ -1,0 +1,387 @@
+package com.unlimited.sports.globox.venue.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
+import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
+import com.unlimited.sports.globox.merchant.mapper.VenueBusinessHoursMapper;
+import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
+import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
+import com.unlimited.sports.globox.model.merchant.entity.Court;
+import com.unlimited.sports.globox.model.merchant.entity.Venue;
+import com.unlimited.sports.globox.model.merchant.entity.VenueBusinessHours;
+import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
+import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueReview;
+import com.unlimited.sports.globox.model.venue.enums.CourtType;
+import com.unlimited.sports.globox.model.venue.enums.ReviewType;
+import com.unlimited.sports.globox.venue.constants.ReviewConstants;
+import com.unlimited.sports.globox.venue.mapper.venues.VenueReviewMapper;
+import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
+import com.unlimited.sports.globox.venue.service.IVenueService;
+import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
+import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
+import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
+import com.unlimited.sports.globox.model.venue.enums.CourtCountFilter;
+import com.unlimited.sports.globox.model.venue.enums.DistanceFilter;
+import com.unlimited.sports.globox.model.venue.enums.FacilityType;
+import com.unlimited.sports.globox.model.venue.enums.GroundType;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+public class VenueServiceImpl implements IVenueService {
+
+    @Autowired
+    private VenueMapper venueMapper;
+
+    @Autowired
+    private CourtMapper courtMapper;
+
+    @Autowired
+    private VenueBusinessHoursMapper venueBusinessHoursMapper;
+
+    @Autowired
+    private VenueReviewMapper venueReviewMapper;
+
+
+    @Autowired
+    private VenueFacilityRelationMapper venueFacilityRelationMapper;
+
+    @Value("${default_image.venue_review_user_avatar}")
+    private String defaultVenueReviewUserAvatar;
+
+    @DubboReference(group = "rpc")
+    private UserDubboService userDubboService;
+
+    @Autowired
+    private IVenueBusinessHoursService venueBusinessHoursService;
+    @Override
+    public VenueDetailVo getVenueDetail(Long venueId) {
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null) {
+            throw new GloboxApplicationException("场馆不存在");
+        }
+
+        List<String> imageUrls = (venue.getImageUrls() != null && !venue.getImageUrls().isEmpty())
+                ? Arrays.asList(venue.getImageUrls().split(";"))
+                : Collections.emptyList();
+
+
+        // 从关系表获取设施详情
+        List<String> facilities = venueFacilityRelationMapper.selectList(
+                new LambdaQueryWrapper<VenueFacilityRelation>()
+                        .eq(VenueFacilityRelation::getVenueId, venueId)).stream().map(VenueFacilityRelation::getFacilityName).toList();
+
+
+        List<Court> courts = courtMapper.selectList(
+                new LambdaQueryWrapper<Court>().eq(Court::getVenueId, venueId)
+        );
+
+        List<Integer> courtTypes = courts.stream()
+                .map(Court::getCourtType)
+                .distinct()
+                .toList();
+
+        // 获取常规营业时间
+        VenueBusinessHours businessHours = venueBusinessHoursService.getRegularBusinessHours(venueId);
+        String defaultOpenTime = businessHours != null && businessHours.getOpenTime() != null
+                ? businessHours.getOpenTime().toString()
+                : "00:00";
+        String defaultCloseTime = businessHours != null && businessHours.getCloseTime() != null ?
+                businessHours.getCloseTime().toString()
+                : "00:00";
+        List<String> courtTypesDesc = courtTypes.stream()
+                .map(type -> CourtType.fromValue(type).getDescription())
+                .toList();
+        return VenueDetailVo.builder()
+                .venueId(venue.getVenueId())
+                .name(venue.getName())
+                .imageUrls(imageUrls)
+                .avgRating(venue.getAvgRating())
+                .ratingCount(venue.getRatingCount())
+                .courtCount(courts.size())
+                .courtTypes(courtTypes)
+                .courtTypesDesc(courtTypesDesc)
+                .address(venue.getAddress())
+                .phone(venue.getPhone())
+                .description(venue.getDescription())
+                .facilities(facilities)
+                .defaultOpenTime(defaultOpenTime)
+                .defaultCloseTime(defaultCloseTime)
+                .minPrice(venue.getMinPrice())
+                .build();
+    }
+
+    @Override
+    public PaginationResult<VenueReviewVo> getVenueReviews(GetVenueReviewListDto dto) {
+        // 查询一级评论（parent_review_id为null且review_type为USER_COMMENT的评论）
+        Page<VenueReview> page = new Page<>(dto.getPage(), dto.getPageSize());
+        Page<VenueReview> reviewPage = venueReviewMapper.selectPage(page,
+                new LambdaQueryWrapper<VenueReview>()
+                        .eq(VenueReview::getVenueId, dto.getVenueId())
+                        .isNull(VenueReview::getParentReviewId)
+                        .eq(VenueReview::getReviewType, ReviewType.USER_COMMENT.getValue())
+                        .orderByDesc(VenueReview::getCreatedAt)
+        );
+
+        if (reviewPage.getRecords().isEmpty()) {
+            return PaginationResult.build(Collections.emptyList(), 0L, dto.getPage(), dto.getPageSize());
+        }
+
+        // 获取所有一级评论的ID
+        List<Long> reviewIds = reviewPage.getRecords().stream()
+                .map(VenueReview::getReviewId)
+                .toList();
+
+
+        /**
+         * 目前不支持商家回复,后续可添加
+         */
+        // 查询每个一级评论的回复数量
+        Map<Long, Integer> replyCountMap = getReplyCountMap(reviewIds);
+
+        // 获取所有需要查询用户信息的用户ID（过滤掉匿名用户）
+        List<Long> allUserIds = reviewPage.getRecords().stream()
+                .filter(review -> review.getIsAnonymous() == null || !review.getIsAnonymous())
+                .map(VenueReview::getUserId)
+                .toList();
+
+        BatchUserInfoRequest batchUserInfoRequest = new BatchUserInfoRequest();
+        batchUserInfoRequest.setUserIds(allUserIds);
+        // 只有当存在非匿名用户时，才发送 RPC 请求获取用户信息
+        Map<Long, UserInfoVo> userInfoMap;
+        if (!allUserIds.isEmpty()) {
+            BatchUserInfoResponse batchUserInfoResponse = userDubboService.batchGetUserInfo(batchUserInfoRequest);
+            if(batchUserInfoResponse == null) {
+                throw new GloboxApplicationException("[getVenueReviews] : 获取用户信息失败");
+            }
+            List<UserInfoVo> userInfoVOS = batchUserInfoResponse.getUsers();
+            if (userInfoVOS != null && !userInfoVOS.isEmpty()) {
+                userInfoMap = userInfoVOS.stream()
+                        .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo));
+            } else {
+                userInfoMap = new HashMap<>();
+            }
+        } else {
+            userInfoMap = new HashMap<>();
+        }
+
+        // 构建返回结果
+        List<VenueReviewVo> reviewVos = reviewPage.getRecords().stream()
+                .map(review -> {
+                    VenueReviewVo vo = transformToVo(review,userInfoMap);
+                    vo.setReplyCount(replyCountMap.getOrDefault(review.getReviewId(), 0));
+                    return vo;
+                })
+                .collect(Collectors.toList());
+
+        return PaginationResult.build(reviewVos, reviewPage.getTotal(), dto.getPage(), dto.getPageSize());
+    }
+
+
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void postReview(PostVenueReviewDto dto) {
+        // 验证场馆是否存在
+        Venue venue = venueMapper.selectById(dto.getVenueId());
+        if (venue == null) {
+            throw new GloboxApplicationException("场馆不存在");
+        }
+
+
+        // todo 暂时没有回复功能,如果有,直接放开下面的代码 时间2025-12-23
+//        // 如果是回复，验证父评论是否存在
+//        if (dto.getParentReviewId() != null) {
+//            VenueReview parentReview = venueReviewMapper.selectById(dto.getParentReviewId());
+//            if (parentReview == null) {
+//                throw new GloboxApplicationException("父评论不存在");
+//            }
+//        }
+
+        // 处理图片URL列表
+        String imageUrls = (dto.getImageUrls() != null && !dto.getImageUrls().isEmpty())
+                ? String.join(";", dto.getImageUrls())
+                : null;
+
+        // 构建评论实体
+        VenueReview review = VenueReview.builder()
+                .venueId(dto.getVenueId())
+                .userId(dto.getUserId())
+                .parentReviewId(dto.getParentReviewId())
+                .reviewType(dto.getParentReviewId() == null ? ReviewType.USER_COMMENT.getValue() : ReviewType.MERCHANT_REPLY.getValue())
+                .rating(dto.getRating())
+                .content(dto.getContent())
+                .isAnonymous(dto.getIsAnonymous() != null ? dto.getIsAnonymous() : false)
+                .imageUrls(imageUrls)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        // 插入评论
+        venueReviewMapper.insert(review);
+
+        // 更新场馆的评分和评论数（仅一级评论才更新）
+        if (dto.getParentReviewId() == null) {
+            updateVenueRating(dto.getVenueId());
+        }
+    }
+
+
+    // todo 通过定时任务更新?
+    private void updateVenueRating(Long venueId) {
+        // 查询所有一级评论
+        List<VenueReview> reviews = venueReviewMapper.selectList(
+                new LambdaQueryWrapper<VenueReview>()
+                        .eq(VenueReview::getVenueId, venueId)
+                        .isNull(VenueReview::getParentReviewId)
+                        .eq(VenueReview::getReviewType, 1)
+        );
+
+        if (!CollectionUtils.isEmpty(reviews)) {
+            // 计算平均评分
+            BigDecimal avgRating = reviews.stream()
+                    .map(VenueReview::getRating)
+                    .filter(Objects::nonNull)
+                    .map(BigDecimal::valueOf)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .divide(BigDecimal.valueOf(reviews.size()), 2, RoundingMode.HALF_UP);
+
+            // 更新场馆评分
+            Venue venue = venueMapper.selectById(venueId);
+            if (venue != null) {
+                venue.setAvgRating(avgRating);
+                venue.setRatingCount(reviews.size());
+                venueMapper.updateById(venue);
+            }
+        }
+    }
+
+    private VenueReviewVo transformToVo(VenueReview review, Map<Long, UserInfoVo> userInfoMap ) {
+        // 解析图片URL列表
+        List<String> imageUrls = (review.getImageUrls() != null && !review.getImageUrls().isEmpty())
+                ? Arrays.asList(review.getImageUrls().split(";"))
+                : Collections.emptyList();
+
+        // 处理匿名用户
+        String userName = null;
+        String userAvatar = null;
+        Long returnUserId = review.getUserId();
+
+        if (review.getIsAnonymous() != null && review.getIsAnonymous()) {
+            // 匿名用户
+            userName = ReviewConstants.ANONYMOUS_USER_NAME;
+            userAvatar = defaultVenueReviewUserAvatar;
+            returnUserId = -1L; // 匿名用户返回 -1L
+        } else {
+            // 非匿名用户，从 userInfoMap 获取用户信息
+            UserInfoVo userInfoVO = userInfoMap.get(review.getUserId());
+            userName = (userInfoVO != null && StringUtils.isNotBlank(userInfoVO.getNickName()))
+                    ? userInfoVO.getNickName()
+                    : ReviewConstants.UNKNOWN_USER;
+            userAvatar = (userInfoVO != null && StringUtils.isNotBlank(userInfoVO.getAvatarUrl()))
+                    ? userInfoVO.getAvatarUrl()
+                    : defaultVenueReviewUserAvatar;
+        }
+
+        return VenueReviewVo.builder()
+                .reviewId(review.getReviewId())
+                .userId(returnUserId)
+                .userName(userName)
+                .userAvatar(userAvatar)
+                .rating(review.getRating())
+                .content(review.getContent())
+                .imageUrls(imageUrls)
+                .createdAt(review.getCreatedAt())
+                .build();
+    }
+
+    private Map<Long, Integer> getReplyCountMap(List<Long> reviewIds) {
+        if (reviewIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        // 查询每个评论的回复数量
+        List<VenueReview> allReplies = venueReviewMapper.selectList(
+                new LambdaQueryWrapper<VenueReview>()
+                        .in(VenueReview::getParentReviewId, reviewIds)
+                        .eq(VenueReview::getReviewType, 2)
+        );
+
+        // 按父评论ID分组统计数量
+        return allReplies.stream()
+                .collect(Collectors.groupingBy(
+                        VenueReview::getParentReviewId,
+                        Collectors.collectingAndThen(Collectors.counting(), Long::intValue)
+                ));
+    }
+
+    @Override
+    public VenueDictVo getSearchFilterDictionary() {
+        List<VenueDictVo.DictItem> courtTypes = Arrays.stream(CourtType.values())
+                .map(type -> VenueDictVo.DictItem.builder()
+                        .value(type.getValue())
+                        .description(type.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> groundTypes = Arrays.stream(GroundType.values())
+                .map(type -> VenueDictVo.DictItem.builder()
+                        .value(type.getValue())
+                        .description(type.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> courtCountFilters = Arrays.stream(CourtCountFilter.values())
+                .map(filter -> VenueDictVo.DictItem.builder()
+                        .value(filter.getValue())
+                        .description(filter.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> distances = Arrays.stream(DistanceFilter.values())
+                .map(filter -> VenueDictVo.DictItem.builder()
+                        .value(filter.getValue())
+                        .description(filter.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        List<VenueDictVo.DictItem> facilities = Arrays.stream(FacilityType.values())
+                .map(facility -> VenueDictVo.DictItem.builder()
+                        .value(facility.getValue())
+                        .description(facility.getDescription())
+                        .build())
+                .collect(Collectors.toList());
+
+        return VenueDictVo.builder()
+                .courtTypes(courtTypes)
+                .groundTypes(groundTypes)
+                .courtCountFilters(courtCountFilters)
+                .distances(distances)
+                .facilities(facilities)
+                .build();
+    }
+
+}

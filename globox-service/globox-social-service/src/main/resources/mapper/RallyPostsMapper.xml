@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.social.mapper.RallyPostsMapper">
+    <resultMap id="BaseResultMap" type="com.unlimited.sports.globox.model.social.entity.RallyPosts">
+        <id column="rally_post_id" jdbcType="BIGINT" property="rallyPostId" />
+        <id column="initiator_id" jdbcType="BIGINT" property="initiatorId" />
+        <id column="rally_title" jdbcType="VARCHAR" property="rallyTitle" />
+        <id column="rally_region" jdbcType="VARCHAR" property="rallyRegion" />
+        <id column="rally_venue_name" jdbcType="VARCHAR" property="rallyVenueName" />
+        <id column="rally_court_name" jdbcType="VARCHAR" property="rallyCourtName" />
+        <id column="rally_event_date" jdbcType="DATE" property="rallyEventDate" />
+        <id column="rally_time_type" jdbcType="TINYINT" property="rallyTimeType" />
+        <id column="rally_end_time" jdbcType="TIME" property="rallyEndTime" />
+        <id column="rally_start_time" jdbcType="TIME" property="rallyStartTime" />
+        <id column="rally_cost" jdbcType="DECIMAL" property="rallyCost" />
+        <id column="rally_cost_bearer" jdbcType="TINYINT" property="rallyCostBearer" />
+        <id column="rally_activity_type" jdbcType="TINYINT" property="rallyActivityType" />
+        <id column="rally_gender_limit" jdbcType="TINYINT" property="rallyGenderLimit" />
+        <id column="rally_ntrp_min" jdbcType="DECIMAL" property="rallyNtrpMin" />
+        <id column="rally_ntrp_max" jdbcType="DECIMAL" property="rallyNtrpMax" />
+        <id column="rally_total_people" jdbcType="BIGINT" property="rallyTotalPeople" />
+        <id column="rally_remaining_people" jdbcType="BIGINT" property="rallyRemainingPeople" />
+        <id column="rally_notes" jdbcType="VARCHAR" property="rallyNotes" />
+        <id column="rally_status" jdbcType="TINYINT" property="rallyStatus" />
+        <id column="rally_created_at" jdbcType="TIMESTAMP" property="rallyCreatedAt" />
+        <id column="rally_updated_at" jdbcType="TIMESTAMP" property="rallyUpdatedAt" />
+    </resultMap>
+
+    <select id="getRallyPostsList" resultMap="BaseResultMap">
+        SELECT
+        rally_post_id,
+        initiator_id,
+        rally_title,
+        rally_region,
+        rally_venue_name,
+        rally_court_name,
+        rally_event_date,
+        rally_time_type,
+        rally_start_time,
+        rally_end_time,
+        rally_cost,
+        rally_cost_bearer,
+        rally_activity_type,
+        rally_gender_limit,
+        rally_ntrp_min,
+        rally_ntrp_max,
+        rally_total_people,
+        rally_remaining_people,
+        rally_notes,
+        rally_status,
+        rally_created_at,
+        rally_updated_at
+        FROM rally_posts
+        WHERE 1=1
+        <if test="area != null ">
+            AND rally_region IN
+            <foreach collection="area" item="area" open="(" separator="," close=")">
+                #{area}
+            </foreach>
+        </if>
+        <if test="timeRange != null">
+            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
+            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
+            INTERVAL
+            CASE #{timeRange}
+            WHEN 1 THEN 12
+            WHEN 2 THEN 24
+            WHEN 3 THEN 48
+            WHEN 4 THEN 120
+            ELSE 24
+            END
+            HOUR)
+        </if>
+        <if test="genderLimit != null">
+            AND rally_gender_limit = #{genderLimit}
+        </if>
+        <if test="ntrpMin != null">
+            AND rally_ntrp_min >= #{ntrpMin}
+        </if>
+        <if test="ntrpMax != null">
+            AND rally_ntrp_max &lt;= #{ntrpMax}
+        </if>
+        <if test="activityType != null">
+            AND rally_activity_type = #{activityType}
+        </if>
+        ORDER BY rally_event_date
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    <select id="countRallyPostsList" resultType="java.lang.Long">
+        SELECT COUNT(*)
+        FROM rally_posts
+        WHERE 1=1
+        <if test="area != null">
+            AND rally_region IN
+            <foreach collection="area" item="area" open="(" separator="," close=")">
+                #{area}
+            </foreach>
+        </if>
+        <if test="timeRange != null">
+            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
+            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
+            INTERVAL
+            CASE #{timeRange}
+            WHEN 1 THEN 12
+            WHEN 2 THEN 24
+            WHEN 3 THEN 48
+            WHEN 4 THEN 120
+            ELSE 24
+            END
+            HOUR)
+        </if>
+        <if test="genderLimit != null">
+            AND rally_gender_limit = #{genderLimit}
+        </if>
+        <if test="ntrpMin != null">
+            AND rally_ntrp_min >= #{ntrpMin}
+        </if>
+        <if test="ntrpMax != null">
+            AND rally_ntrp_max &lt;= #{ntrpMax}
+        </if>
+        <if test="activityType != null">
+            AND rally_activity_type = #{activityType}
+        </if>
+    </select>
+</mapper>

@@ -23,12 +23,6 @@ public class MerchantRefundRuleQueryRequestDto implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 商家ID（必填）
-     */
-    @NotNull(message = "商家ID不能为空")
-    private Long merchantId;
-
-    /**
      * 场馆ID（必填）
      * 用于优先查询场馆专属规则
      */

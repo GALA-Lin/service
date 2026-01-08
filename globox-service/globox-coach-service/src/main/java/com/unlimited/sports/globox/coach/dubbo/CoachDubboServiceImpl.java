@@ -5,7 +5,6 @@ import com.unlimited.sports.globox.coach.mapper.*;
 import com.unlimited.sports.globox.coach.service.ICoachSlotService;
 import com.unlimited.sports.globox.common.lock.RedisDistributedLock;
 import com.unlimited.sports.globox.common.result.RpcResult;
-import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
 import com.unlimited.sports.globox.dubbo.coach.dto.*;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
@@ -14,6 +13,7 @@ import com.unlimited.sports.globox.model.coach.entity.CoachProfile;
 import com.unlimited.sports.globox.model.coach.entity.CoachSlotRecord;
 import com.unlimited.sports.globox.model.coach.entity.CoachSlotTemplate;
 import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
+import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.apache.dubbo.config.annotation.DubboService;
@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.unlimited.sports.globox.common.result.CoachErrorCodeEnum.*;
+
 
 /**
  * 教练RPC服务实现 - 为订单服务提供价格查询功能

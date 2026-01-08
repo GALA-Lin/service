@@ -1,12 +1,9 @@
 package com.unlimited.sports.globox.dubbo.merchant.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
-import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
@@ -15,9 +12,8 @@ import java.time.LocalDateTime;
  */
 @Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
-public class MerchantRefundRuleJudgeRequestDto implements Serializable {
+public class MerchantRefundRuleJudgeRequestDto {
+
 
     @NotNull(message = "场馆ID不能为空")
     private Long venueId;

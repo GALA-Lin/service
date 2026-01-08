@@ -29,6 +29,15 @@ public interface VenueMapper extends BaseMapper<Venue> {
     Integer countByMerchantId(@Param("merchantId") Long merchantId);
 
     /**
+     * 通过 venueId 查询 merchantId
+     * @param venueId 场馆ID
+     * @return 商户ID
+     */
+    @Select("SELECT merchant_id FROM venues WHERE venue_id = #{venueId}")
+    Long selectMerchantIdByVenueId(@Param("venueId") Long venueId);
+
+
+    /**
      * 搜索场馆（V2版本 - 数据库层面过滤和排序）
      * 支持多条件筛选：关键词、价格、场地数量、距离等
      */

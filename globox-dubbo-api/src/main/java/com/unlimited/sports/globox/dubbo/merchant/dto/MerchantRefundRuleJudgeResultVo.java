@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
@@ -16,7 +15,7 @@ import java.math.BigDecimal;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class MerchantRefundRuleJudgeResultVo implements Serializable {
+public class MerchantRefundRuleJudgeResultVo {
 
     /**
      * 是否可以退款

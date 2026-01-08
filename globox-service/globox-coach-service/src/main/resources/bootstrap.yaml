@@ -5,4 +5,4 @@ spring:
   application:
     name: globox-coach-service
   profiles:
-    active: beta
+    active: dev

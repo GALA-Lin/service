@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.merchant.dubbo;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
+import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueRefundRuleDetailMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueRefundRuleMapper;
 import com.unlimited.sports.globox.model.merchant.entity.VenueRefundRule;
@@ -31,6 +32,7 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
 
     private final VenueRefundRuleMapper refundRuleMapper;
     private final VenueRefundRuleDetailMapper refundRuleDetailMapper;
+    private final VenueMapper venueMapper;
 
     /**
      * 根据商家ID和场馆ID获取退款规则
@@ -39,17 +41,17 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
      * 2. 商家默认规则（venue_id为NULL且is_default=1）
      * 3. 如果都不存在，返回null
      *
-     * @param request 包含merchantId和venueId的请求对象
+     * @param request 包含venueId的请求对象
      * @return 退款规则详情，不存在则返回null
      */
     @Override
     public MerchantRefundRuleResultDto getRefundRule(MerchantRefundRuleQueryRequestDto request) {
         log.info("查询退款规则 - merchantId: {}, venueId: {}",
-                request.getMerchantId(), request.getVenueId());
+                getMerchantId(request.getVenueId()), request.getVenueId());
 
         // 1. 优先查询场馆专属默认规则
         VenueRefundRule rule = refundRuleMapper.selectDefaultRule(
-                request.getMerchantId(),
+                getMerchantId(request.getVenueId()),
                 request.getVenueId()
         );
 
@@ -57,7 +59,7 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
         if (rule == null) {
             log.debug("未找到场馆专属规则，查询商家默认规则");
             rule = refundRuleMapper.selectDefaultRule(
-                    request.getMerchantId(),
+                    getMerchantId(request.getVenueId()),
                     null
             );
         }
@@ -65,7 +67,7 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
         // 3. 如果都没有，返回null
         if (rule == null) {
             log.warn("未找到退款规则 - merchantId: {}, venueId: {}",
-                    request.getMerchantId(), request.getVenueId());
+                    getMerchantId(request.getVenueId()), request.getVenueId());
             return null;
         }
 
@@ -103,8 +105,8 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
      */
     @Override
     public MerchantRefundRuleJudgeResultVo judgeApplicableRefundRule(MerchantRefundRuleJudgeRequestDto request) {
-        log.info("判断是否适用退款规则, venueId: {}, 活动开始时间: {}, 退款申请时间: {}",
-                 request.getVenueId(), request.getEventStartTime(), request.getRefundApplyTime());
+        log.info("判断是否适用退款规则 - merchantId: {}, venueId: {}, 活动开始时间: {}, 退款申请时间: {}",
+                getMerchantId(request.getVenueId()), request.getVenueId(), request.getEventStartTime(), request.getRefundApplyTime());
 
         // 1. 核心时间合法性校验
         LocalDateTime eventStartTime = request.getEventStartTime();
@@ -128,7 +130,6 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
 
         // 2. 查询有效的退款规则
         MerchantRefundRuleQueryRequestDto queryRequest = MerchantRefundRuleQueryRequestDto.builder()
-//                .merchantId(request.getMerchantId())
                 .venueId(request.getVenueId())
                 .build();
         MerchantRefundRuleResultDto refundRule = getRefundRule(queryRequest);
@@ -258,4 +259,12 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
             return String.format("%d-%d小时", minHours, maxHours);
         }
     }
+    /**
+     * 通过 venueId 查询 merchantId
+     */
+    Long getMerchantId(Long venueId){
+        return venueMapper.selectMerchantIdByVenueId(venueId);
+    }
+
+
 }

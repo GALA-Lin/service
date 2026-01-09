@@ -5,11 +5,11 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueBusinessHoursMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
@@ -20,15 +20,21 @@ import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueReview;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.model.venue.enums.CourtType;
 import com.unlimited.sports.globox.model.venue.enums.ReviewType;
 import com.unlimited.sports.globox.venue.constants.ReviewConstants;
 import com.unlimited.sports.globox.venue.mapper.venues.VenueReviewMapper;
+import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
+import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
+import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
+import com.unlimited.sports.globox.model.venue.vo.ActivityParticipantVo;
 import com.unlimited.sports.globox.model.venue.enums.CourtCountFilter;
 import com.unlimited.sports.globox.model.venue.enums.DistanceFilter;
 import com.unlimited.sports.globox.model.venue.enums.FacilityType;
@@ -44,7 +50,6 @@ import org.springframework.util.CollectionUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -60,17 +65,20 @@ public class VenueServiceImpl implements IVenueService {
     private CourtMapper courtMapper;
 
     @Autowired
-    private VenueBusinessHoursMapper venueBusinessHoursMapper;
-
-    @Autowired
     private VenueReviewMapper venueReviewMapper;
 
+    @Autowired
+    private VenueActivityMapper venueActivityMapper;
+
+    @Autowired
+    private VenueActivityParticipantMapper venueActivityParticipantMapper;
 
     @Autowired
     private VenueFacilityRelationMapper venueFacilityRelationMapper;
 
-    @Value("${default_image.venue_review_user_avatar}")
-    private String defaultVenueReviewUserAvatar;
+    @Value("${default_image.venue_avatar}")
+    private String defaultVenueUserAvatar;
+
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -293,7 +301,7 @@ public class VenueServiceImpl implements IVenueService {
         if (review.getIsAnonymous() != null && review.getIsAnonymous()) {
             // 匿名用户
             userName = ReviewConstants.ANONYMOUS_USER_NAME;
-            userAvatar = defaultVenueReviewUserAvatar;
+            userAvatar = defaultVenueUserAvatar;
             returnUserId = -1L; // 匿名用户返回 -1L
         } else {
             // 非匿名用户，从 userInfoMap 获取用户信息
@@ -303,7 +311,7 @@ public class VenueServiceImpl implements IVenueService {
                     : ReviewConstants.UNKNOWN_USER;
             userAvatar = (userInfoVO != null && StringUtils.isNotBlank(userInfoVO.getAvatarUrl()))
                     ? userInfoVO.getAvatarUrl()
-                    : defaultVenueReviewUserAvatar;
+                    : defaultVenueUserAvatar;
         }
 
         return VenueReviewVo.builder()
@@ -382,6 +390,108 @@ public class VenueServiceImpl implements IVenueService {
                 .distances(distances)
                 .facilities(facilities)
                 .build();
+    }
+
+    @Override
+    public VenueActivityDetailVo getActivityDetail(Long activityId) {
+
+        // 查询活动信息
+        VenueActivity activity = venueActivityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new GloboxApplicationException(VenueCode.ACTIVITY_NOT_EXIST);
+        }
+
+        // 查询场地信息
+        Court court = courtMapper.selectById(activity.getCourtId());
+        if (court == null) {
+            throw new GloboxApplicationException(VenueCode.COURT_NOT_EXIST);
+        }
+
+        // 查询场馆信息
+        Venue venue = venueMapper.selectById(activity.getVenueId());
+        if (venue == null) {
+            throw new GloboxApplicationException(VenueCode.VENUE_NOT_EXIST);
+        }
+
+        // 查询活动参与者
+        List<VenueActivityParticipant> participants = venueActivityParticipantMapper.selectList(
+                new LambdaQueryWrapper<VenueActivityParticipant>()
+                        .eq(VenueActivityParticipant::getActivityId, activityId)
+        );
+
+        // 获取所有参与者的用户ID
+        List<Long> userIds = participants.stream()
+                .map(VenueActivityParticipant::getUserId)
+                .toList();
+
+        // 批量获取用户信息
+        final Map<Long, UserInfoVo> userInfoMap = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            BatchUserInfoRequest batchUserInfoRequest = new BatchUserInfoRequest();
+            batchUserInfoRequest.setUserIds(userIds);
+            BatchUserInfoResponse batchUserInfoResponse = userDubboService.batchGetUserInfo(batchUserInfoRequest);
+            if (batchUserInfoResponse != null && batchUserInfoResponse.getUsers() != null) {
+                userInfoMap.putAll(batchUserInfoResponse.getUsers().stream()
+                        .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo)));
+            }
+        }
+
+        // 批量获取每个用户的参与活动次数
+        final Map<Long, Integer> participationCountMap = getParticipationCountMap(userIds);
+
+        // 构建参与者VO列表
+        List<ActivityParticipantVo> participantVos = participants.stream()
+                .map(participant -> {
+                    UserInfoVo userInfo = userInfoMap.get(participant.getUserId());
+                    int participationCount = participationCountMap.getOrDefault(participant.getUserId(), 0);
+
+                    return ActivityParticipantVo.builder()
+                            .userId(participant.getUserId())
+                            .avatarUrl((userInfo != null && userInfo.getAvatarUrl() != null) ? userInfo.getAvatarUrl() : defaultVenueUserAvatar)
+                            .nickName(userInfo != null ? userInfo.getNickName() : "")
+                            .userNtrpLevel((userInfo != null && userInfo.getUserNtrpLevel() != null) ? userInfo.getUserNtrpLevel() : 0.0)
+                            .participationCount(participationCount)
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        // 构建并返回活动详情
+        return VenueActivityDetailVo.builder()
+                .activityId(activity.getActivityId())
+                .activityName(activity.getActivityName())
+                .activityDate(activity.getActivityDate())
+                .startTime(activity.getStartTime())
+                .endTime(activity.getEndTime())
+                .courtName(court.getName())
+                .venueName(venue.getName())
+                .minNtrpLevel(activity.getMinNtrpLevel())
+                .unitPrice(activity.getUnitPrice())
+                .currentParticipants(activity.getCurrentParticipants())
+                .maxParticipants(activity.getMaxParticipants())
+                .participants(participantVos)
+                .build();
+    }
+
+    /**
+     * 批量获取用户的参与活动次数
+     */
+    private Map<Long, Integer> getParticipationCountMap(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        // 直接使用 SQL 查询统计结果
+        List<Map<String, Object>> countResults = venueActivityParticipantMapper.selectUserParticipationCount(userIds);
+
+        // 将查询结果转换为 Map
+        Map<Long, Integer> participationCountMap = new HashMap<>();
+        for (Map<String, Object> result : countResults) {
+            Long userId = ((Number) result.get("userId")).longValue();
+            Integer count = ((Number) result.get("count")).intValue();
+            participationCountMap.put(userId, count);
+        }
+
+        return participationCountMap;
     }
 
 }

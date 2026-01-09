@@ -1,10 +1,8 @@
 package com.unlimited.sports.globox.payment.service.impl;
 
-import com.alibaba.nacos.shaded.io.grpc.internal.JsonUtil;
 import com.baomidou.mybatisplus.core.toolkit.ObjectUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
-import com.unlimited.sports.globox.common.enums.payment.PaymentClientTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
@@ -97,7 +95,6 @@ public class PaymentsServiceImpl implements PaymentsService {
     public SubmitResultVo submit(SubmitRequestDto dto) {
         Long orderNo = dto.getOrderNo();
         PaymentTypeEnum paymentType = PaymentTypeEnum.from(dto.getPaymentTypeCode());
-        PaymentClientTypeEnum clientType = PaymentClientTypeEnum.from(dto.getClientTypeCode());
         // 1) 请求订单 rpc 接口，确认订单信息
         RpcResult<PaymentGetOrderResultDto> rpcResult = orderForPaymentDubboService.paymentGetOrders(orderNo);
         Assert.rpcResultOk(rpcResult);
@@ -109,10 +106,25 @@ public class PaymentsServiceImpl implements PaymentsService {
         if (ObjectUtils.isNotEmpty(paymentsList)) {
             // 3) 如果存在之前的支付信息时，首先判断是否存在已支付的信息
             for (Payments payments : paymentsList) {
-                Assert.isTrue(payments.getPaymentStatus().equals(PaymentStatusEnum.UNPAID),
-                        PaymentsCode.ORDER_PAID);
+                Assert.isTrue(payments.getPaymentStatus().equals(PaymentStatusEnum.UNPAID)
+                                || payments.getPaymentStatus().equals(PaymentStatusEnum.CLOSED)
+                        , PaymentsCode.ORDER_PAID);
             }
-            // TODO 取消之前所有的未支付订单，预防重复支付
+            // 取消之前所有的未支付订单，预防重复支付
+            for (Payments payments : paymentsList) {
+                if (payments.getPaymentStatus().equals(PaymentStatusEnum.UNPAID)) {
+                    // 申请取消支付
+                    if (PaymentTypeEnum.WECHAT_PAY.equals(payments.getPaymentType())) {
+                        // 微信取消支付
+                        wechatPayService.cancel(payments);
+                    } else if (PaymentTypeEnum.ALIPAY.equals(payments.getPaymentType())) {
+                        // 支付宝取消支付
+                        alipayService.cancel(payments);
+                    }
+                    payments.setPaymentStatus(PaymentStatusEnum.CLOSED);
+                    thisService.updatePayment(payments);
+                }
+            }
         }
 
         // 4) 生成新的支付订单
@@ -122,7 +134,7 @@ public class PaymentsServiceImpl implements PaymentsService {
         BeanUtils.copyProperties(resultDto, payments);
         payments.setOutTradeNo(outTradeNo);
         payments.setPaymentType(paymentType);
-        payments.setClientType(clientType);
+        payments.setClientType(dto.getClientType());
         payments.setOpenId(dto.getOpenId());
         payments.setActivity(resultDto.isActivity());
         payments.setPaymentStatus(PaymentStatusEnum.UNPAID);
@@ -218,15 +230,16 @@ public class PaymentsServiceImpl implements PaymentsService {
         }
 
         payments.setOutRequestNo(message.getOutRequestNo());
-        BigDecimal refundAmount = payments.getRefundAmount();
-        BigDecimal currentRefundAmount = refundAmount.add(message.getRefundAmount());
+
+        BigDecimal refunded = payments.getRefundAmount() == null ? BigDecimal.ZERO : payments.getRefundAmount();
+        BigDecimal currentRefundAmount = refunded.add(message.getRefundAmount());
         payments.setRefundAmount(currentRefundAmount);
-        // 判断当前是部分退款还是全部退款
-        if (payments.getTotalAmount().subtract(payments.getRefundAmount())
-                .compareTo(currentRefundAmount) == 0) {
-            payments.setPaymentStatus(PaymentStatusEnum.CLOSED);
-        } else if (payments.getTotalAmount().subtract(payments.getRefundAmount())
-                .compareTo(currentRefundAmount) > 0) {
+
+        BigDecimal remain = payments.getTotalAmount().subtract(currentRefundAmount);
+
+        if (remain.compareTo(BigDecimal.ZERO) == 0) {
+            payments.setPaymentStatus(PaymentStatusEnum.CLOSED); // 或 REFUNDED，看你枚举语义
+        } else if (remain.compareTo(BigDecimal.ZERO) > 0) {
             payments.setPaymentStatus(PaymentStatusEnum.PARTIALLY_REFUNDED);
         } else {
             log.error("申请退款的金额大于订单可退金额，payments:{}", jsonUtils.objectToJson(payments));

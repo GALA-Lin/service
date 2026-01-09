@@ -102,7 +102,10 @@ public class AuthGlobalFilter implements GlobalFilter {
         String openid = Optional.ofNullable(JwtUtil.getClaim(token, secret, "openid", Object.class))
                 .map(Object::toString)
                 .orElse(null);
-
+        String staffId = JwtUtil.getClaim(token,secret,"employee_id",String.class);
+        if(ClientType.MERCHANT.equals(clientType) && !StringUtils.hasText(staffId)) {
+            return unauthorized(exchange,"Token missing merchant info");
+        }
         if (!StringUtils.hasText(subject) || !StringUtils.hasText(role)) {
             return unauthorized(exchange, "Token missing subject or role");
         }
@@ -110,11 +113,11 @@ public class AuthGlobalFilter implements GlobalFilter {
             return unauthorized(exchange, "Token clientType mismatch");
         }
 
+
         // 5. 根据客户端类型注入对应的 headers
         ServerHttpRequest mutatedRequest = request.mutate()
-                .headers(headers -> injectHeaders(headers, clientType, subject, role, openid))
+                .headers(headers -> injectHeaders(headers, clientType, subject, role, openid,staffId))
                 .build();
-
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }
 
@@ -127,15 +130,16 @@ public class AuthGlobalFilter implements GlobalFilter {
     /**
      * 根据客户端类型注入对应的 headers（清除所有身份相关headers，防止伪造）
      */
-    private void injectHeaders(HttpHeaders headers, ClientType clientType, String subject, String role, String openid) {
+    private void injectHeaders(HttpHeaders headers, ClientType clientType, String subject, String role, String openid,String staffId) {
         headers.remove(RequestHeaderConstants.HEADER_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
-        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID);
-
+        headers.remove(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        headers.remove(RequestHeaderConstants.HEADER_EMPLOYEE_ID);
         switch (clientType) {
             case APP, JSAPI, THIRD_PARTY_JSAPI -> {
                 headers.set(RequestHeaderConstants.HEADER_USER_ID, subject);
@@ -145,10 +149,14 @@ public class AuthGlobalFilter implements GlobalFilter {
                 }
             }
             case MERCHANT -> {
-                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ID, subject);
+                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID, subject);
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_ROLE, role);
+                headers.set(RequestHeaderConstants.HEADER_EMPLOYEE_ID,staffId);
             }
         }
+
+        // 添加端标识
+        headers.set(RequestHeaderConstants.HEADER_CLIENT_TYPE, clientType.getValue());
     }
 
 
@@ -170,7 +178,7 @@ public class AuthGlobalFilter implements GlobalFilter {
         // 清除所有身份相关 headers，防止伪造
         headers.remove(RequestHeaderConstants.HEADER_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
-        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ROLE);
@@ -182,7 +190,7 @@ public class AuthGlobalFilter implements GlobalFilter {
                 headers.set(RequestHeaderConstants.HEADER_USER_ROLE, role);
             }
             case MERCHANT -> {
-                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ID, subject);
+                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID, subject);
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_ROLE, role);
             }
             case THIRD_PARTY_JSAPI -> {

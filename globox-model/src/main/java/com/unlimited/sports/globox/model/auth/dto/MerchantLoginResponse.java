@@ -26,10 +26,10 @@ public class MerchantLoginResponse {
     private String refreshToken;
 
     /**
-     * 商家ID
+     * 账号id
      */
     @NonNull
-    private Long merchantId;
+    private Long accountId;
 
     /**
      * 商家账号

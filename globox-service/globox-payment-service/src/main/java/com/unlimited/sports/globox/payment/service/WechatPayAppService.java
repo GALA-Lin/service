@@ -24,4 +24,11 @@ public interface WechatPayAppService {
      * @return 返回包含支付状态信息的Transaction对象
      */
     Transaction getPaymentStatus(Payments payments);
+
+    /**
+     * 取消指定的支付(未支付)。
+     *
+     * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
+     */
+    void cancel(Payments payments);
 }

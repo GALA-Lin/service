@@ -27,7 +27,7 @@ public class CourtVo {
     /**
      * 场地名称
      */
-    private String name;
+    private String courtName;
 
     /**
      * 场地地面类型

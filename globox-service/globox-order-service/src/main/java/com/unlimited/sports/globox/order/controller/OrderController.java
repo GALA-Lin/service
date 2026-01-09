@@ -66,7 +66,7 @@ public class OrderController {
      */
     @PostMapping("venues/coach")
     @Operation(summary = "创建教练订单", description = "用户创建教练订单")
-    public R<CreateOrderResultVo> createVenueActivityOrder(
+    public R<CreateOrderResultVo> createCoachOrder(
             @Valid
             @RequestBody
             @Parameter(description = "创建活动订单请求参数", required = true)
@@ -96,13 +96,8 @@ public class OrderController {
     @GetMapping("{orderNo}")
     @Operation(summary = "获取订单详情", description = "根据订单号获取订单详情（可传入用户地理位置用于距离计算）")
     public R<GetOrderDetailsVo> getOrderDetails(
-            @PathVariable
-            @Parameter(description = "订单号", required = true, example = "202512180001")
-            Long orderNo,
-            @ModelAttribute
-            @Valid
-            @Parameter(description = "用户地理位置信息")
-            GetOrderDetailsDto dto) {
+            @PathVariable @Parameter(description = "订单号", required = true, example = "202512180001") Long orderNo,
+            @ModelAttribute @Valid @Parameter(description = "用户地理位置信息") GetOrderDetailsDto dto) {
 
         dto.setOrderNo(orderNo);
         GetOrderDetailsVo resultVo = orderService.getDetails(dto);
@@ -170,9 +165,10 @@ public class OrderController {
 
     /**
      * 用户取消退款申请
+     * 暂不开放
      */
-    @PostMapping("/refund/cancel")
-    @Operation(summary = "取消退款申请", description = "用户在退款未处理完成前主动取消退款申请")
+//    @PostMapping("/refund/cancel")
+//    @Operation(summary = "取消退款申请", description = "用户在退款未处理完成前主动取消退款申请")
     public R<CancelRefundApplyResultVo> cancelRefundApply(
             @Valid
             @RequestBody

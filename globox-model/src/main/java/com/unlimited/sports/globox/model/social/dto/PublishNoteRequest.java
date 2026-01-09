@@ -17,6 +17,10 @@ import java.util.List;
 @Schema(description = "发布笔记请求")
 public class PublishNoteRequest {
 
+    @NotNull(message = "笔记ID不能为空")
+    @Schema(description = "笔记ID（草稿ID，必填）", example = "123", required = true)
+    private Long noteId;
+
     @Schema(description = "标题", example = "今天打球收获分享")
     private String title;
 

@@ -401,110 +401,37 @@ public class CoachDubboServiceImpl implements CoachDubboService {
 
     @Override
     public RpcResult<CoachSnapshotResultDto> getCoachSnapshot(CoachSnapshotRequestDto dto) {
-        log.info("获取教练快照 - userId: {}, coachUserId: {}, slotIds: {}",
-                dto.getUserId(), dto.getCoachUserId(), dto.getSlotIds());
+        log.info("获取教练基本信息快照 - coachUserId: {}", dto.getCoachUserId());
 
-        // 查询教练信息
+        // 1. 查询教练档案信息 (从数据库获取专业背景等)
         CoachProfile coachProfile = coachProfileMapper.selectOne(
                 new LambdaQueryWrapper<CoachProfile>()
                         .eq(CoachProfile::getCoachUserId, dto.getCoachUserId())
         );
         if (coachProfile == null) {
-            RpcResult.error(COACH_INFO_NOT_EXIST);
+            return RpcResult.error(COACH_INFO_NOT_EXIST);
         }
 
-        // 查询用户基本信息
+        // 2. 查询教练用户基础信息 (从用户中心/Dubbo获取头像、昵称等)
         UserInfoVo coachUserInfo = userDubboService.getUserInfo(dto.getCoachUserId());
         if (coachUserInfo == null) {
-            RpcResult.error(COACH_BASE_INFO_GET_FAILED);
+            return RpcResult.error(COACH_BASE_INFO_GET_FAILED);
         }
 
-        // 查询时段模板
-        List<CoachSlotTemplate> templates = slotTemplateMapper.selectBatchIds(dto.getSlotIds());
-        Map<Long, CoachSlotTemplate> templateMap = templates.stream()
-                .collect(Collectors.toMap(
-                        CoachSlotTemplate::getCoachSlotTemplateId,
-                        t -> t
-                ));
-
-        // 查询已创建的时段记录
-        Map<Long, CoachSlotRecord> recordMap = new HashMap<>();
-        for (Long templateId : dto.getSlotIds()) {
-            CoachSlotRecord record = slotRecordMapper.selectOne(
-                    new LambdaQueryWrapper<CoachSlotRecord>()
-                            .eq(CoachSlotRecord::getCoachSlotTemplateId, templateId)
-                            .eq(CoachSlotRecord::getBookingDate, dto.getBookingDate())
-            );
-            if (record != null) {
-                recordMap.put(templateId, record);
-            }
-        }
-
-        // 查询服务类型信息
-        CoachCourseType courseType = null;
-        if (dto.getServiceTypeId() != null) {
-            courseType = courseTypeMapper.selectById(dto.getServiceTypeId());
-        }
-
-        String serviceTypeDesc = "";
-        Integer serviceType = null;
-        BigDecimal servicePrice = BigDecimal.ZERO;
-
-        if (courseType != null) {
-            serviceType = courseType.getCoachServiceTypeEnum();
-            servicePrice = courseType.getCoachPrice();
-            try {
-                CoachServiceTypeEnum typeEnum = CoachServiceTypeEnum.fromValue(serviceType);
-                serviceTypeDesc = typeEnum.getDescription();
-            } catch (Exception e) {
-                log.warn("获取服务类型描述失败", e);
-            }
-        }
-
-        // 构建时段快照列表
-        List<CoachSlotSnapshotDto> slotSnapshots = new ArrayList<>();
-        for (Long templateId : dto.getSlotIds()) {
-            CoachSlotTemplate template = templateMap.get(templateId);
-            if (template == null) {
-                continue;
-            }
-
-            CoachSlotRecord record = recordMap.get(templateId);
-
-            CoachSlotSnapshotDto snapshot = CoachSlotSnapshotDto.builder()
-                    .slotRecordId(record != null ? record.getCoachSlotRecordId() : null)
-                    .slotTemplateId(template.getCoachSlotTemplateId())
-                    .bookingDate(dto.getBookingDate())
-                    .startTime(template.getStartTime())
-                    .endTime(template.getEndTime())
-                    .durationMinutes(template.getDurationMinutes())
-                    .price(servicePrice)
-                    .serviceType(serviceType)
-                    .serviceTypeDesc(serviceTypeDesc)
-                    .acceptableAreas(parseAcceptableAreas(template.getAcceptableAreas()))
-                    .venueRequirementDesc(template.getVenueRequirementDesc())
-                    .build();
-
-            slotSnapshots.add(snapshot);
-        }
-
-        // 按时间排序
-        slotSnapshots.sort(Comparator.comparing(CoachSlotSnapshotDto::getStartTime));
-
-        // 构建返回结果
+        // 3. 构建并返回结果 (不包含时段信息)
         CoachSnapshotResultDto resultDto = CoachSnapshotResultDto.builder()
                 .coachUserId(dto.getCoachUserId())
                 .coachName(coachUserInfo.getNickName())
                 .coachAvatar(coachUserInfo.getAvatarUrl())
-                .coachPhone(null) // 隐私保护
+                .coachPhone(null) // 隐私保护，通常不直接返回手机号
                 .serviceArea(coachProfile.getCoachServiceArea())
                 .certificationLevels(coachProfile.getCoachCertificationLevel())
                 .teachingYears(coachProfile.getCoachTeachingYears())
                 .specialtyTags(coachProfile.getCoachSpecialtyTags())
                 .ratingScore(coachProfile.getCoachRatingScore())
                 .ratingCount(coachProfile.getCoachRatingCount())
-                .slotSnapshots(slotSnapshots)
                 .build();
+
         return RpcResult.ok(resultDto);
     }
 

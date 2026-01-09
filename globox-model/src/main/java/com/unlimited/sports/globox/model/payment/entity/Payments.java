@@ -1,15 +1,13 @@
 package com.unlimited.sports.globox.model.payment.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
-import com.unlimited.sports.globox.common.enums.payment.PaymentClientTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.model.base.BaseEntity;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Date;
 
 import lombok.*;
 
@@ -47,7 +45,10 @@ public class Payments extends BaseEntity {
      */
     private PaymentTypeEnum paymentType;
 
-    private PaymentClientTypeEnum clientType;
+    /**
+     * 下单端
+     */
+    private ClientType clientType;
 
     private String openId;
 

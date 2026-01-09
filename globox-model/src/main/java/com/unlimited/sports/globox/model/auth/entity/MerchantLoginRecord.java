@@ -25,9 +25,9 @@ public class MerchantLoginRecord implements Serializable {
     private Long recordId;
 
     /**
-     * 商家ID
+     * 账号ID
      */
-    private Long merchantId;
+    private Long accountId;
 
     /**
      * 登录结果

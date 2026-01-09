@@ -72,52 +72,52 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
 
         // 检查账号状态
         if (merchantAccount.getStatus() == MerchantStatus.DISABLED) {
-            recordLoginLog(merchantAccount.getMerchantId(), LoginResult.FAIL);
-            log.warn("【商家登录】失败：账号已禁用，merchantId={}", merchantAccount.getMerchantId());
+            recordLoginLog(merchantAccount.getAccountId(), LoginResult.FAIL);
+            log.warn("【商家登录】失败：账号已禁用，accountId={}", merchantAccount.getAccountId());
             throw new GloboxApplicationException(UserAuthCode.MERCHANT_ACCOUNT_DISABLED);
         }
 
         //  验证密码
         boolean passwordMatch = PasswordUtils.matches(password, merchantAccount.getPasswordHash());
         if (!passwordMatch) {
-            recordLoginLog(merchantAccount.getMerchantId(), LoginResult.FAIL);
-            log.warn("【商家登录】失败：密码错误，merchantId={}", merchantAccount.getMerchantId());
+            recordLoginLog(merchantAccount.getAccountId(), LoginResult.FAIL);
+            log.warn("【商家登录】失败：密码错误，accountId={}", merchantAccount.getAccountId());
             throw new GloboxApplicationException(UserAuthCode.MERCHANT_PASSWORD_ERROR);
         }
 
         // 生成JWT双Token
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", merchantAccount.getRole().name());
-
+        claims.put("employee_id",merchantAccount.getEmployeeId()); // 插入职工id
         String accessToken = JwtUtil.generateToken(
-                String.valueOf(merchantAccount.getMerchantId()),
+                String.valueOf(merchantAccount.getAccountId()),
                 claims,
                 merchantJwtSecret,
                 merchantAccessTokenExpire
         );
 
         String refreshToken = JwtUtil.generateToken(
-                String.valueOf(merchantAccount.getMerchantId()),
+                String.valueOf(merchantAccount.getAccountId()),
                 claims,
                 merchantJwtSecret,
                 merchantRefreshTokenExpire
         );
 
         // 保存Refresh Token到Redis
-        redisService.saveRefreshToken(merchantAccount.getMerchantId(), refreshToken, merchantRefreshTokenExpire);
+        redisService.saveRefreshToken(merchantAccount.getAccountId(), refreshToken, merchantRefreshTokenExpire);
 
         // 记录登录成功日志
-        recordLoginLog(merchantAccount.getMerchantId(), LoginResult.SUCCESS);
+        recordLoginLog(merchantAccount.getAccountId(), LoginResult.SUCCESS);
 
         MerchantLoginResponse response = MerchantLoginResponse.builder()
                 .token(accessToken)
                 .refreshToken(refreshToken)
-                .merchantId(merchantAccount.getMerchantId())
+                .accountId(merchantAccount.getAccountId())
                 .account(merchantAccount.getAccount())
                 .roles(Collections.singletonList(merchantAccount.getRole().name()))
                 .build();
 
-        log.info("【商家登录】成功：merchantId={}, account={}", merchantAccount.getMerchantId(), account);
+        log.info("【商家登录】成功：accountId={}, account={}", merchantAccount.getAccountId(), account);
         return response;
     }
 
@@ -135,19 +135,19 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
             throw new GloboxApplicationException(UserAuthCode.REFRESH_TOKEN_INVALID);
         }
 
-        // 3. 解析 merchantId
-        String merchantIdStr = JwtUtil.getSubject(refreshToken, merchantJwtSecret);
-        Long merchantId = Long.parseLong(merchantIdStr);
+        // 3. 解析 accountId
+        String accountIdStr = JwtUtil.getSubject(refreshToken, merchantJwtSecret);
+        Long accountId = Long.parseLong(accountIdStr);
 
         // 4. 查询商家账号获取最新角色信息和账号状态
         LambdaQueryWrapper<MerchantAccount> query = new LambdaQueryWrapper<>();
-        query.eq(MerchantAccount::getMerchantId, merchantId);
+        query.eq(MerchantAccount::getAccountId, accountId);
         MerchantAccount merchantAccount = merchantAccountMapper.selectOne(query);
         Assert.isNotEmpty(merchantAccount, UserAuthCode.MERCHANT_ACCOUNT_NOT_EXIST);
 
         // 5. 检查账号状态（DISABLED 则拒绝刷新）
         if (merchantAccount.getStatus() == MerchantStatus.DISABLED) {
-            log.warn("【商家Token刷新】失败：账号已禁用，merchantId={}", merchantId);
+            log.warn("【商家Token刷新】失败：账号已禁用，accountId={}", accountId);
             throw new GloboxApplicationException(UserAuthCode.MERCHANT_ACCOUNT_DISABLED);
         }
 
@@ -159,42 +159,42 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
         claims.put("role", merchantAccount.getRole().name());
 
         String newAccessToken = JwtUtil.generateToken(
-                String.valueOf(merchantId),
+                String.valueOf(accountId),
                 claims,
                 merchantJwtSecret,
                 merchantAccessTokenExpire
         );
 
         String newRefreshToken = JwtUtil.generateToken(
-                String.valueOf(merchantId),
+                String.valueOf(accountId),
                 claims,
                 merchantJwtSecret,
                 merchantRefreshTokenExpire
         );
 
         // 8. 保存新 refresh token 到 Redis
-        redisService.saveRefreshToken(merchantId, newRefreshToken, merchantRefreshTokenExpire);
+        redisService.saveRefreshToken(accountId, newRefreshToken, merchantRefreshTokenExpire);
 
         // 9. 构建响应
         MerchantLoginResponse response = MerchantLoginResponse.builder()
                 .token(newAccessToken)
                 .refreshToken(newRefreshToken)
-                .merchantId(merchantId)
+                .accountId(accountId)
                 .account(merchantAccount.getAccount())
                 .roles(Collections.singletonList(merchantAccount.getRole().name()))
                 .build();
 
-        log.info("【商家Token刷新】成功：merchantId={}, account={}", merchantId, merchantAccount.getAccount());
+        log.info("【商家Token刷新】成功：accountId={}, account={}", accountId, merchantAccount.getAccount());
         return response;
     }
 
     /**
      * 记录登录日志
      */
-    private void recordLoginLog(Long merchantId, LoginResult result) {
+    private void recordLoginLog(Long accountId, LoginResult result) {
         try {
             MerchantLoginRecord record = new MerchantLoginRecord();
-            record.setMerchantId(merchantId);
+            record.setAccountId(accountId);
             record.setResult(result);
             record.setIp(HttpRequestUtils.getRealIp());
             merchantLoginRecordMapper.insert(record);

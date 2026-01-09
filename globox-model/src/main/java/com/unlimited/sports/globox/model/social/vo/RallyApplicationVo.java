@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -41,7 +40,7 @@ public class RallyApplicationVo {
     /**
      * 申请人网球水平（NTRP）
      */
-    private BigDecimal userNtrpLevel;
+    private Double userNtrpLevel;
     /**
      * 审核结果
      */

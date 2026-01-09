@@ -4,11 +4,14 @@ import com.alibaba.fastjson.JSONObject;
 import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.diagnosis.DiagnosisUtils;
+import com.alipay.api.domain.AlipayTradeCloseModel;
 import com.alipay.api.internal.util.AlipaySignature;
 import com.alipay.api.request.AlipayTradeAppPayRequest;
+import com.alipay.api.request.AlipayTradeCloseRequest;
 import com.alipay.api.request.AlipayTradeQueryRequest;
 import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeAppPayResponse;
+import com.alipay.api.response.AlipayTradeCloseResponse;
 import com.alipay.api.response.AlipayTradeQueryResponse;
 import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
@@ -300,6 +303,22 @@ public class AlipayServiceImpl implements AlipayService {
                 throw new GloboxApplicationException(PaymentsCode.PAYMENT_STATUS_UNKNOW);
             }
             return paymentStatusVo;
+        } catch (AlipayApiException e) {
+            log.error("请求支付宝失败：{}", e.getMessage(), e);
+            throw new GloboxApplicationException(PaymentsCode.PAYMENT_ALIPAY_FAILED);
+        }
+    }
+
+
+    @Override
+    public void cancel(Payments payments) {
+        AlipayTradeCloseRequest request = new AlipayTradeCloseRequest();
+        AlipayTradeCloseModel model = new AlipayTradeCloseModel();
+        // 设置订单支付时传入的商户订单号
+        model.setOutTradeNo(payments.getOutTradeNo());
+        request.setBizModel(model);
+        try {
+            alipayClient.execute(request);
         } catch (AlipayApiException e) {
             log.error("请求支付宝失败：{}", e.getMessage(), e);
             throw new GloboxApplicationException(PaymentsCode.PAYMENT_ALIPAY_FAILED);

@@ -26,13 +26,10 @@ public class SubmitRequestDto {
             requiredMode = Schema.RequiredMode.REQUIRED)
     private Integer paymentTypeCode;
 
-    private Integer clientTypeCode;
+    private ClientType clientType;
 
     /**
-     * 支付时必须
-     * 只有满足以下条件时该字段必须传入：
-     *  1. 微信支付
-     *  2. 小程序端
+     * 微信小程序 openid
      */
     private String openId;
 }

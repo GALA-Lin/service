@@ -17,6 +17,8 @@ import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
+import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
+import com.unlimited.sports.globox.dubbo.coach.dto.*;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
 import com.unlimited.sports.globox.dubbo.order.dto.SellerCancelOrderResultDto;
@@ -86,6 +88,9 @@ public class OrderServiceImpl implements OrderService {
 
     @DubboReference(group = "rpc")
     private MerchantDubboService merchantDubboService;
+
+    @DubboReference(group = "rpc")
+    private CoachDubboService coachDubboService;
 
     @Autowired
     private MQService mqService;
@@ -157,20 +162,228 @@ public class OrderServiceImpl implements OrderService {
      * @return 包含创建订单结果的信息对象，主要包含生成的订单号
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public CreateOrderResultVo createCoachOrder(CreateCoachOrderDto dto) {
+
+
         // 0) 基础校验
         Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
-        // TODO 校验并获取价格
+        // 校验并获取价格
+        CoachPricingRequestDto requestDto = new CoachPricingRequestDto();
+        BeanUtils.copyProperties(dto, requestDto);
+        requestDto.setUserId(userId);
+        requestDto.setCoachUserId(dto.getCoachId());
+
+        RpcResult<CoachPricingResultDto> rpcResult = coachDubboService.quoteCoach(requestDto);
+        Assert.rpcResultOk(rpcResult);
+        CoachPricingResultDto resultDto = rpcResult.getData();
 
 
-        return null;
-//        Long orderNo = idGenerator.nextId();
-//        // 2) 先创建 order_items（每个 item 的 subtotal 只含 unitPrice + extra）
-//        List<ItemCtx> itemCtxList = new ArrayList<>();
-//        BigDecimal baseAmount = BigDecimal.ZERO;
-//        LocalDateTime createdAt = LocalDateTime.now();
+        Long orderNo = idGenerator.nextId();
+
+        // 2) 先创建 order_items（每个 item 的 subtotal 只含 unitPrice + extra）
+        List<ItemCtx> itemCtxList = new ArrayList<>();
+        BigDecimal baseAmount = BigDecimal.ZERO;
+        LocalDateTime createdAt = LocalDateTime.now();
+
+        for (CoachSlotQuote slot : resultDto.getSlotQuotes()) {
+            // 2.1 计算该槽位的额外费用合计
+            BigDecimal slotExtraSum = slot.getRecordExtras().stream()
+                    // 每条额外费用的金额快照
+                    .map(ExtraQuote::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            OrderItems item = OrderItems.builder()
+                    .orderNo(orderNo)
+                    // VENUE/COURT
+                    .itemType(SellerTypeEnum.COACH)
+                    .resourceId(slot.getCoachId())
+                    .resourceName(slot.getCoachName())
+                    .recordId(slot.getRecordId())
+                    .bookingDate(slot.getBookingDate())
+                    .startTime(slot.getStartTime())
+                    .endTime(slot.getEndTime())
+                    .unitPrice(slot.getUnitPrice())
+                    .extraAmount(slotExtraSum)
+                    .subtotal(slot.getUnitPrice().add(slotExtraSum))
+                    // NONE
+                    .refundStatus(RefundStatusEnum.NONE)
+                    .build();
+
+            item.setCreatedAt(createdAt);
+
+            int insItem = orderItemsMapper.insert(item);
+            Assert.isTrue(insItem > 0, OrderCode.ORDER_CREATE_FAILED);
+
+            // 汇总 baseAmount：基础价 = Σ unit_price
+            baseAmount = baseAmount.add(slot.getUnitPrice());
+
+            itemCtxList.add(new ItemCtx(item.getId(), slot.getUnitPrice(), item.getSubtotal(), slot.getRecordExtras()));
+        }
+
+        /* 3）写入 extraTotal = 所有额外费用总和（含：
+           - 槽级 extra（来自 links）
+           - 订单级 extra（来自 order_extra_charges））
+         */
+        BigDecimal extraTotal = BigDecimal.ZERO;
+
+        for (ItemCtx ctx : itemCtxList) {
+            for (ExtraQuote extra : ctx.recordExtras()) {
+                OrderExtraCharges ch = OrderExtraCharges.builder()
+                        .orderNo(orderNo)
+                        .orderItemId(ctx.itemId)
+                        .chargeTypeId(extra.getChargeTypeId())
+                        .chargeName(extra.getChargeName())
+                        // 1=FIXED，2=PERCENTAGE
+                        .chargeMode(extra.getChargeMode())
+                        // 若是固定金额，填金额；若是百分比，填百分比值
+                        .fixedValue(extra.getFixedValue())
+                        // 最终金额快照
+                        .chargeAmount(extra.getAmount())
+                        .build();
+                ch.setCreatedAt(createdAt);
+
+                int insCh = orderExtraChargesMapper.insert(ch);
+                Assert.isTrue(insCh > 0, OrderCode.ORDER_CREATE_FAILED);
+
+                OrderExtraChargeLinks link = OrderExtraChargeLinks.builder()
+                        .orderNo(orderNo)
+                        .orderItemId(ctx.itemId())
+                        .extraChargeId(ch.getId())
+                        .chargeMode(extra.getChargeMode())
+                        // 直接等于自身金额
+                        .allocatedAmount(ch.getChargeAmount())
+                        .build();
+
+                link.setCreatedAt(createdAt);
+
+                int insLink = orderExtraChargeLinksMapper.insert(link);
+                Assert.isTrue(insLink > 0, OrderCode.ORDER_CREATE_FAILED);
+
+                extraTotal = extraTotal.add(link.getAllocatedAmount());
+            }
+        }
+
+        // 4) 写入 订单级别的 extra（暂不涉及分摊，不写入 links）
+        for (OrderLevelExtraQuote extra : resultDto.getOrderLevelExtras()) {
+
+            // 1=FIXED, 2=PERCENTAGE
+            ChargeModeEnum chargeMode = extra.getChargeMode();
+
+            OrderExtraCharges ch = OrderExtraCharges.builder()
+                    .orderNo(orderNo)
+                    .chargeTypeId(extra.getChargeTypeId())
+                    .chargeName(extra.getChargeName())
+                    .chargeMode(chargeMode)
+                    .fixedValue(extra.getFixedValue())
+                    .chargeAmount(extra.getAmount())
+                    .build();
+
+            ch.setCreatedAt(createdAt);
+
+            int insCh = orderExtraChargesMapper.insert(ch);
+            Assert.isTrue(insCh > 0, OrderCode.ORDER_CREATE_FAILED);
+
+            extraTotal = extraTotal.add(ch.getChargeAmount());
+        }
+
+        // 5) 创建 orders（金额只信：baseAmount + links 汇总 extraTotal）
+        BigDecimal discountAmount = BigDecimal.ZERO;
+
+        Orders order = Orders.builder()
+                .orderNo(orderNo)
+                .sourcePlatform(resultDto.getSourcePlatform())
+                .buyerId(userId)
+                .sellerName(resultDto.getCoachName())
+                .sellerType(SellerTypeEnum.COACH)
+                .sellerId(resultDto.getSellerId())
+                .orderStatus(OrderStatusEnum.PENDING)
+                .paymentStatus(OrdersPaymentStatusEnum.UNPAID)
+                .paymentType(PaymentTypeEnum.NONE)
+                .refundApplyId(null)
+                .baseAmount(baseAmount)
+                .extraAmount(extraTotal)
+                .subtotal(baseAmount.add(extraTotal))
+                .discountAmount(discountAmount)
+                .payAmount(baseAmount.add(extraTotal).subtract(discountAmount))
+                .paidAt(null)
+                .cancelledAt(null)
+                .completedAt(null)
+                .build();
+
+        order.setCreatedAt(createdAt);
+
+        int insOrder = ordersMapper.insert(order);
+        Assert.isTrue(insOrder > 0, OrderCode.ORDER_CREATE_FAILED);
+
+        // 6) 创建
+        OrderStatusLogs statusLogs = OrderStatusLogs.builder()
+                .orderNo(orderNo)
+                .orderId(order.getId())
+                // 订单级
+                .orderItemId(null)
+                .action(OrderActionEnum.CREATE)
+                .oldOrderStatus(null)
+                .newOrderStatus(OrderStatusEnum.PENDING)
+                .oldRefundStatus(null)
+                .newRefundStatus(null)
+                .oldItemRefundStatus(null)
+                .newItemRefundStatus(null)
+                .refundApplyId(null)
+                .itemRefundId(null)
+                .operatorId(null)
+                .operatorType(OperatorTypeEnum.USER)
+                .operatorName("USER_" + userId)
+                .remark("创建教练订单")
+                .build();
+        statusLogs.setCreatedAt(createdAt);
+
+        orderStatusLogsMapper.insert(statusLogs);
+
+        OrderAutoCancelMessage orderAutoCancelMessage = OrderAutoCancelMessage.builder()
+                .bookingDate(resultDto.getBookingDate())
+                .orderNo(order.getOrderNo())
+                .slotIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getCoachId).collect(Collectors.toList()))
+                .userId(userId)
+                .build();
+
+        // 注册事务回调
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+
+                    @Override
+                    public void afterCommit() {
+                        // 发送消息，定时关闭订单
+                        mqService.sendDelay(
+                                OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL,
+                                OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
+                                orderAutoCancelMessage,
+                                delay);
+                    }
+
+                    @Override
+                    public void afterCompletion(int status) {
+                        // 事务回滚，发取消锁场事件
+                        if (status == STATUS_ROLLED_BACK) {
+                            UnlockSlotMessage message = UnlockSlotMessage.builder()
+                                    .userId(userId)
+                                    .bookingDate(resultDto.getBookingDate())
+                                    .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
+                                    .build();
+                            message.setUserId(userId);
+                            mqService.send(
+                                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
+                                    OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
+                                    message);
+                        }
+                    }
+                });
+
+        CreateOrderResultVo vo = new CreateOrderResultVo();
+        vo.setOrderNo(orderNo);
+        return vo;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -383,7 +596,6 @@ public class OrderServiceImpl implements OrderService {
                                     .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
                                     .build();
                             message.setUserId(userId);
-                            log.error("发送取消锁场消息:{}", jsonUtils.objectToJson(message));
                             mqService.send(
                                     OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
                                     OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
@@ -574,6 +786,7 @@ public class OrderServiceImpl implements OrderService {
 
         // 5) 组装 venue/court 快照
         GetOrderDetailsVo.VenueSnapshotVo venueSnapshotVo = null;
+        GetOrderDetailsVo.CoachSnapshotVo coachSnapshotVo = null;
         Map<Long, GetOrderDetailsVo.CourtSnapshotVo> courtSnapshotMap = new HashMap<>();
 
         if (orders.getSellerType() == SellerTypeEnum.VENUE) {
@@ -612,6 +825,17 @@ public class OrderServiceImpl implements OrderService {
                     courtSnapshotMap.put(c.getId(), snapshotVo);
                 }
             }
+        }else if (orders.getSellerType() == SellerTypeEnum.COACH) {
+            Long coachId = orders.getSellerId();
+            CoachSnapshotRequestDto req = CoachSnapshotRequestDto.builder()
+                    .coachUserId(coachId)
+                            .build();
+            RpcResult<CoachSnapshotResultDto> coachSnapshotRpcResult = coachDubboService.getCoachSnapshot(req);
+            Assert.rpcResultOk(coachSnapshotRpcResult);
+            CoachSnapshotResultDto resultDto = coachSnapshotRpcResult.getData();
+
+            coachSnapshotVo = new GetOrderDetailsVo.CoachSnapshotVo();
+            BeanUtils.copyProperties(resultDto, coachSnapshotVo);
         }
 
         // 6) bookingDate：一般同一单同一天；这里取第一个
@@ -658,6 +882,7 @@ public class OrderServiceImpl implements OrderService {
                 .orderNo(orders.getOrderNo())
                 .orderType(orders.getSellerType())
                 .venueSnapshot(venueSnapshotVo)
+                .coachSnapshotVo(coachSnapshotVo)
                 .sellerName(orders.getSellerName())
                 .amount(orders.getPayAmount())
                 .bookingDate(bookingDate)
@@ -707,9 +932,12 @@ public class OrderServiceImpl implements OrderService {
         Assert.isTrue(order.getBuyerId().equals(userId), OrderCode.ORDER_NOT_EXIST);
 
         // 2. 状态校验
+        // TODO 删除
+        log.info("order status :{}", order.getOrderStatus());
         Assert.isTrue(order.getOrderStatus() == OrderStatusEnum.PENDING,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
 
+        log.info("order payment status :{}", order.getPaymentStatus());
         Assert.isTrue(order.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
 

@@ -178,7 +178,7 @@ public class AuthServiceImpl implements AuthService {
             redisService.incrementSmsError(phone);
             // 记录登录失败日志
             recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
-            Assert.isTrue(false, UserAuthCode.INVALID_CAPTCHA);
+            throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
         }
 
         // 5. 验证码正确，清除错误计数和验证码
@@ -298,8 +298,15 @@ public class AuthServiceImpl implements AuthService {
     public R<WechatLoginResponse> wechatLogin(WechatLoginRequest request) {
         String code = request.getCode();
 
-        // 1. 调用微信API换取openid/unionid
-        WechatUserInfo wechatUserInfo = wechatService.getOpenIdAndUnionId(code);
+        // 1. 获取客户端类型
+        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        if (!StringUtils.hasText(clientType)) {
+            log.error("【微信登录】缺少X-Client-Type请求头");
+            throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+        }
+
+        // 2. 调用微信API换取openid/unionid
+        WechatUserInfo wechatUserInfo = wechatService.getOpenIdAndUnionId(code, clientType);
         String openid = wechatUserInfo.getOpenid();
         String unionid = wechatUserInfo.getUnionid();
         // DEV ONLY: log openid for debugging, remove before release.
@@ -390,7 +397,7 @@ public class AuthServiceImpl implements AuthService {
                     .needBindPhone(false)
                     .userInfo(userInfo)
                     .nickname(userInfo.getNickname())
-                    .avatar(userInfo.getAvatarUrl())
+                    .avatarUrl(userInfo.getAvatarUrl())
                     .build();
 
             log.info("微信登录成功：userId={}, openid={}", authUser.getUserId(), openid);
@@ -442,7 +449,7 @@ public class AuthServiceImpl implements AuthService {
             redisService.incrementSmsError(phone);
             // 记录登录失败日志
             recordLoginLog(null, phone, AuthIdentity.IdentityType.WECHAT, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
-            Assert.isTrue(false, UserAuthCode.INVALID_CAPTCHA);
+            throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
         }
 
         // 6. 验证码正确，清除错误计数和验证码
@@ -590,8 +597,15 @@ public class AuthServiceImpl implements AuthService {
         String nickname = request.getNickname();
         String avatarUrl = request.getAvatarUrl();
 
-        // 1. 使用wxCode获取openid/unionid（避免重复使用wxCode）
-        WechatUserInfo wechatUserInfo = wechatService.getOpenIdAndUnionId(wxCode);
+        // 1. 获取客户端类型
+        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        if (!StringUtils.hasText(clientType)) {
+            log.error("【微信手机号登录】缺少X-Client-Type请求头");
+            throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+        }
+
+        // 2. 使用wxCode获取openid/unionid（避免重复使用wxCode）
+        WechatUserInfo wechatUserInfo = wechatService.getOpenIdAndUnionId(wxCode, clientType);
         String openid = wechatUserInfo.getOpenid();
         String unionid = wechatUserInfo.getUnionid();
         // TODO: DEV ONLY: 开发环境打印openid,正式上线请移除
@@ -599,16 +613,16 @@ public class AuthServiceImpl implements AuthService {
         // 优先使用unionid，如果没有则使用openid
         String identifier = unionid != null ? unionid : openid;
 
-        // 2. 使用phoneCode获取手机号（不再重复消耗wxCode）
-        String phone = wechatService.getPhoneNumber(wxCode, phoneCode);
+        // 3. 使用phoneCode获取手机号（不再重复消耗wxCode）
+        String phone = wechatService.getPhoneNumber(wxCode, phoneCode, clientType);
 
-        // 3. 验证手机号格式
+        // 4. 验证手机号格式
         Assert.isTrue(PhoneUtils.isValidPhone(phone), UserAuthCode.INVALID_PHONE);
 
-        // 4. 白名单校验
+        // 5. 白名单校验
         Assert.isTrue(whitelistService.isInWhitelist(phone), UserAuthCode.NOT_IN_WHITELIST);
 
-        // 5. 查询手机号是否已注册
+        // 6. 查询手机号是否已注册
         LambdaQueryWrapper<AuthIdentity> phoneIdentityQuery = new LambdaQueryWrapper<>();
         phoneIdentityQuery.eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
                 .eq(AuthIdentity::getIdentifier, phone);
@@ -694,32 +708,54 @@ public class AuthServiceImpl implements AuthService {
             log.info("第三方小程序新用户注册成功：userId={}, phone={}", userId, phone);
         }
 
-        // 6. 查询用户资料（用于返回用户信息）
+        // 7. 查询用户资料（用于返回用户信息）
         UserProfile userProfile = userProfileMapper.selectById(userId);
 
-        // 7. 生成第三方小程序专用JWT（不生成refreshToken，不写入Redis）
+        // 8. 根据clientType生成JWT Token
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", AuthUser.UserRole.USER);
-        claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
-        claims.put("openid", openid);
 
-        // 使用第三方小程序 JWT secret
-        if (!StringUtils.hasText(thirdPartyJwtSecret)) {
-            log.error("第三方小程序 JWT secret 未配置");
-            throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+        String accessToken;
+        String refreshToken = null;
+        boolean isThirdParty = ClientType.THIRD_PARTY_JSAPI.getValue().equalsIgnoreCase(clientType);
+
+        if (isThirdParty) {
+            // 第三方小程序：使用 third-party.jwt.* 配置
+            claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
+            claims.put("openid", openid);
+            if (!StringUtils.hasText(thirdPartyJwtSecret)) {
+                log.error("第三方小程序 JWT secret 未配置");
+                throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+            }
+            accessToken = JwtUtil.generateToken(
+                    String.valueOf(userId),
+                    claims,
+                    thirdPartyJwtSecret,
+                    thirdPartyAccessTokenExpire
+            );
+            // 第三方小程序不生成 refreshToken
+        } else {
+            // App端：使用 user.jwt.* 配置
+            accessToken = JwtUtil.generateToken(
+                    String.valueOf(userId),
+                    claims,
+                    jwtSecret,
+                    accessTokenExpire
+            );
+            refreshToken = JwtUtil.generateToken(
+                    String.valueOf(userId),
+                    claims,
+                    jwtSecret,
+                    refreshTokenExpire
+            );
+            // 保存Refresh Token到Redis
+            redisService.saveRefreshToken(userId, refreshToken, refreshTokenExpire);
         }
 
-        String accessToken = JwtUtil.generateToken(
-                String.valueOf(userId),
-                claims,
-                thirdPartyJwtSecret,
-                thirdPartyAccessTokenExpire
-        );
-
-        // 8. 记录登录日志
+        // 9. 记录登录日志
         recordLoginLog(userId, phone, AuthIdentity.IdentityType.WECHAT, true, null);
 
-        // 9. 构建响应
+        // 10. 构建响应
         ThirdPartyLoginResponse.UserInfo userInfo = ThirdPartyLoginResponse.UserInfo.builder()
                 .id(userId)
                 .phone(phone)
@@ -729,6 +765,7 @@ public class AuthServiceImpl implements AuthService {
 
         ThirdPartyLoginResponse response = ThirdPartyLoginResponse.builder()
                 .token(accessToken)
+                .refreshToken(refreshToken)
                 .userInfo(userInfo)
                 .isNewUser(isNewUser)
                 .build();
@@ -810,7 +847,7 @@ public class AuthServiceImpl implements AuthService {
             recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false,
                     UserAuthCode.USER_NOT_EXIST.getMessage());
             redisService.incrementPasswordError(phone);
-            Assert.isTrue(false, UserAuthCode.LOGIN_FAILED);
+            throw new GloboxApplicationException(UserAuthCode.LOGIN_FAILED);
         }
 
         // 5. 检查是否已设置密码
@@ -819,7 +856,7 @@ public class AuthServiceImpl implements AuthService {
             recordLoginLog(identity.getUserId(), phone, AuthIdentity.IdentityType.PHONE, false,
                     UserAuthCode.PASSWORD_NOT_SET.getMessage());
             redisService.incrementPasswordError(phone);
-            Assert.isTrue(false, UserAuthCode.LOGIN_FAILED);
+            throw new GloboxApplicationException(UserAuthCode.LOGIN_FAILED);
         }
 
         // 6. BCrypt验证密码
@@ -830,7 +867,7 @@ public class AuthServiceImpl implements AuthService {
             recordLoginLog(identity.getUserId(), phone, AuthIdentity.IdentityType.PHONE, false,
                     UserAuthCode.PASSWORD_WRONG.getMessage());
             redisService.incrementPasswordError(phone);
-            Assert.isTrue(false, UserAuthCode.LOGIN_FAILED);
+            throw new GloboxApplicationException(UserAuthCode.LOGIN_FAILED);
         }
 
         // 7. 密码正确，清除错误计数
@@ -906,7 +943,7 @@ public class AuthServiceImpl implements AuthService {
             // 记录登录失败日志
             recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false,
                     UserAuthCode.INVALID_CAPTCHA.getMessage());
-            Assert.isTrue(false, UserAuthCode.INVALID_CAPTCHA);
+            throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
         }
 
         // 验证码正确，清除错误计数和验证码
@@ -976,7 +1013,7 @@ public class AuthServiceImpl implements AuthService {
             // 旧密码错误，记录失败日志
             recordLoginLog(userId, identity.getIdentifier(), AuthIdentity.IdentityType.PHONE, false,
                     UserAuthCode.PASSWORD_WRONG.getMessage());
-            Assert.isTrue(false, UserAuthCode.PASSWORD_WRONG);
+            throw new GloboxApplicationException(UserAuthCode.PASSWORD_WRONG);
         }
 
         // 7. 校验新密码强度

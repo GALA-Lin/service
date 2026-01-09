@@ -12,8 +12,36 @@ import java.util.List;
  * 创建订单dto
  */
 @Data
-@Schema(name = "CreateVenueOrderDto", description = "创建场地订单请求参数")
+@Schema(name = "CreateCoachOrderDto", description = "创建场地订单请求参数")
 public class CreateCoachOrderDto {
+
+    @NotNull(message = "教练 ID 不能为空")
+    @Schema(description = "教练 ID",
+            example = "1120",
+            requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long coachId;
+
+    @NotNull(message = "服务类型 ID 不能为空")
+    @Schema(description = "服务类型 ID",
+            example = "1120",
+            requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long serviceTypeId;
+
+    @Schema(description = "联系人姓名",
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    private String contactName;
+
+    @Schema(description = "联系电话",
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    private String contactPhone;
+
+    @Schema(description = "学员人数",
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    private Integer studentCount;
+
+    @Schema(description = "特殊需求说明",
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    private String specialRequirements;
 
     /**
      * 预订日期

@@ -7,6 +7,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.venue.dto.*;
 import com.unlimited.sports.globox.venue.service.IVenueSearchService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
+import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueItemVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
@@ -71,6 +72,18 @@ public class VenueController {
     @GetMapping("/{venueId}")
     public R<VenueDetailVo> getVenueDetail(@PathVariable Long venueId) {
         VenueDetailVo result = venueService.getVenueDetail(venueId);
+        return R.ok(result);
+    }
+
+    /**
+     * 获取活动详情
+     *
+     * @param activityId 活动ID
+     * @return 活动详情信息，包含基本信息和参与者列表
+     */
+    @GetMapping("/activities/{activityId}")
+    public R<VenueActivityDetailVo> getActivityDetail(@PathVariable Long activityId) {
+        VenueActivityDetailVo result = venueService.getActivityDetail(activityId);
         return R.ok(result);
     }
 

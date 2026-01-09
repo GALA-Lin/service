@@ -103,7 +103,7 @@ public interface VenueMapper extends BaseMapper<Venue> {
      * @param merchantId 商家ID
      * @return 场馆列表
      */
-    @Select("SELECT * FROM venues WHERE merchant_id = #{merchantId} AND status = 1 ORDER BY created_at DESC")
+    @Select("SELECT * FROM venues WHERE merchant_id = #{merchantId} ORDER BY created_at DESC")
     List<Venue> selectVenuesByMerchantId(@Param("merchantId") Long merchantId);
 
 }

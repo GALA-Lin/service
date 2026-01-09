@@ -48,7 +48,7 @@ public class WechatLoginResponse {
     @Schema(description = "微信昵称（可选，未绑定时返回）", example = "微信用户")
     private String nickname;
 
-    @Schema(description = "微信头像（可选，未绑定时返回）", example = "https://...")
-    private String avatar;
+    @Schema(description = "微信头像URL（可选，未绑定时返回）", example = "https://...")
+    private String avatarUrl;
 }
 

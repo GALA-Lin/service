@@ -110,7 +110,7 @@ public class VenueActivity {
      * 范围：1.0 - 7.0，允许半值（1.5, 2.5等）
      * NULL表示无要求
      */
-    private BigDecimal minNtrpLevel;
+    private Double minNtrpLevel;
 
     /**
      * 活动配置（JSON格式，存储不同活动类型的特殊配置）

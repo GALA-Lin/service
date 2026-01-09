@@ -49,4 +49,6 @@ public interface AlipayService {
      * @throws GloboxApplicationException 当请求支付宝失败或者支付状态未知时抛出此异常。
      */
     GetPaymentStatusResultVo getPaymentStatus(String outTradeNo);
+
+    void cancel(Payments payments);
 }

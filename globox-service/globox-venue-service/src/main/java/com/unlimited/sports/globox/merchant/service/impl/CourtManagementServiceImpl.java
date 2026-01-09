@@ -11,11 +11,15 @@ import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
 import com.unlimited.sports.globox.model.merchant.vo.CourtVo;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueBasicInfo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueDetailVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -151,6 +155,100 @@ public class CourtManagementServiceImpl implements CourtManagementService {
         return convertToVO(court);
     }
 
+    /**
+     * @param merchantId
+     * @return
+     */
+    @Override
+    public List<MerchantVenueBasicInfo> getVenuesByMerchantId(Long merchantId) {
+        log.info("查询商家场馆详细信息 - merchantId: {}", merchantId);
+
+        // 查询商家所有场馆
+        List<Venue> venues = venueMapper.selectVenuesByMerchantId(merchantId);
+
+        if (venues == null || venues.isEmpty()) {
+            log.warn("商家没有场馆 - merchantId: {}", merchantId);
+            return Collections.emptyList();
+        }
+
+        // 转换为 VO
+        return venues.stream()
+                .map(this::convertToVenueBasicVo)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<MerchantVenueDetailVo> getVenuesWithCourts(Long merchantId) {
+        log.info("[场馆场地嵌套查询] merchantId: {}", merchantId);
+
+        // 1. 获取该商家下所有场馆
+        List<Venue> venues = venueMapper.selectVenuesByMerchantId(merchantId);
+        if (venues == null || venues.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 2. 转换场馆基本信息并建立映射
+        return venues.stream().map(venue -> {
+            // 转换场馆基本信息 (复用原有逻辑)
+            MerchantVenueBasicInfo basicInfo = convertToVenueBasicVo(venue);
+
+            // 3. 查询该场馆下的所有场地并转换为 VO (复用原有逻辑 convertToVO)
+            List<Court> courtEntities = courtMapper.selectByVenueId(venue.getVenueId());
+            List<CourtVo> courtVos = courtEntities.stream()
+                    .map(this::convertToVO)
+                    .collect(Collectors.toList());
+
+            // 4. 组装成嵌套对象
+            return MerchantVenueDetailVo.builder()
+                    .venueId(basicInfo.getVenueId())
+                    .venueName(basicInfo.getName())
+                    .address(basicInfo.getAddress())
+                    .region(basicInfo.getRegion())
+                    .imageUrls(basicInfo.getImageUrls())
+                    .status(basicInfo.getStatus())
+                    .statusDesc(basicInfo.getStatusDesc())
+                    .courts(courtVos)
+                    .build();
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * 转换场馆实体为 VO
+     */
+    private MerchantVenueBasicInfo convertToVenueBasicVo(Venue venue) {
+        // 解析图片URL
+        List<String> imageUrlList = parseImageUrls(venue.getImageUrls());
+
+        // 获取状态描述
+        String statusDesc = venue.getStatus() == 1 ? "正常营业" : "暂停营业";
+
+        return MerchantVenueBasicInfo.builder()
+                .venueId(venue.getVenueId())
+                .name(venue.getName())
+                .address(venue.getAddress())
+                .region(venue.getRegion())
+                .imageUrls(imageUrlList)
+                .status(venue.getStatus())
+                .statusDesc(statusDesc)
+                .build();
+    }
+
+    /**
+     * 解析图片URL字符串为列表
+     * @param imageUrls 以分号分隔的URL字符串
+     * @return URL列表
+     */
+    private List<String> parseImageUrls(String imageUrls) {
+        if (imageUrls == null || imageUrls.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return Arrays.stream(imageUrls.split(";"))
+                .map(String::trim)
+                .filter(url -> !url.isEmpty())
+                .collect(Collectors.toList());
+    }
+
     // TODO 与其他服务抽离VO转化 ETA 2026/01/15
 
     private CourtVo convertToVO(Court court) {
@@ -160,11 +258,12 @@ public class CourtManagementServiceImpl implements CourtManagementService {
         return CourtVo.builder()
                 .courtId(court.getCourtId())
                 .venueId(court.getVenueId())
-                .name(court.getName())
+                .courtName(court.getName())
                 .groundType(court.getGroundType())
                 .groundTypeName(Optional.ofNullable(groundType).map(GroundTypeEnum::getName).orElse("未知"))
                 .courtType(court.getCourtType())
                 .courtTypeName(Optional.ofNullable(courtType).map(CourtTypeEnum::getName).orElse("未知"))
+                .status(court.getStatus())
                 .statusName(court.getStatus() == 1 ? "开放" : "不开放")
                 .createdAt(court.getCreatedAt())
                 .build();

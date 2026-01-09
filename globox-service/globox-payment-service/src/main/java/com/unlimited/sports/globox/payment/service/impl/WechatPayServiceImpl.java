@@ -1,15 +1,13 @@
 package com.unlimited.sports.globox.payment.service.impl;
 
-import com.alipay.api.internal.util.StreamUtil;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
+import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
-import com.unlimited.sports.globox.common.enums.payment.PaymentClientTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
 import com.unlimited.sports.globox.common.result.PaymentsCode;
 import com.unlimited.sports.globox.common.service.MQService;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.common.utils.LocalDateUtils;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
@@ -31,7 +29,6 @@ import com.wechat.pay.java.service.refund.RefundService;
 import com.wechat.pay.java.service.refund.model.*;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
-import org.joda.time.DateTimeUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -93,17 +90,15 @@ public class WechatPayServiceImpl implements WechatPayService {
      */
     @Override
     public SubmitResultVo submit(Payments payments) {
-        if (PaymentClientTypeEnum.APP.equals(payments.getClientType())) {
+        if (ClientType.APP.equals(payments.getClientType())) {
             return wechatPayAppService.submit(payments);
-        } else if (PaymentClientTypeEnum.JSAPI.equals(payments.getClientType())) {
+        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
             return wechatPayJsapiService.submit(payments);
         } else {
             throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_CLIENT_TYPE);
         }
     }
 
-    // TODO 移除 SneakyThrows
-    @SneakyThrows
     @Override
     public WechatPayNotifyVo handleCallback(HttpServletRequest request, HttpServletResponse response) {
         LocalDateTime callbackAt = LocalDateTime.now();
@@ -232,9 +227,9 @@ public class WechatPayServiceImpl implements WechatPayService {
     public GetPaymentStatusResultVo getPaymentStatus(String outTradeNo) {
         Payments payments = paymentsService.getPaymentByOutTradeNo(outTradeNo);
         Transaction transaction;
-        if (PaymentClientTypeEnum.APP.equals(payments.getClientType())) {
+        if (ClientType.APP.equals(payments.getClientType())) {
             transaction = wechatPayAppService.getPaymentStatus(payments);
-        } else if (PaymentClientTypeEnum.JSAPI.equals(payments.getClientType())) {
+        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
             transaction = wechatPayJsapiService.getPaymentStatus(payments);
         } else {
             throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_CLIENT_TYPE);
@@ -265,6 +260,7 @@ public class WechatPayServiceImpl implements WechatPayService {
         AmountReq amount = new AmountReq();
         amount.setTotal(AmountUtils.toLong(payments.getTotalAmount()));
         amount.setRefund(AmountUtils.toLong(refundAmount));
+        amount.setCurrency("CNY");
         request.setAmount(amount);
         request.setNotifyUrl(wechatPayProperties.getNotifyPaymentUrl());
         request.setOutTradeNo(payments.getOutTradeNo());
@@ -295,5 +291,21 @@ public class WechatPayServiceImpl implements WechatPayService {
             log.error("微信退款失败，未知的状态：{}, refund :{}", refund.getStatus(), jsonUtils.objectToJson(refund));
             throw new GloboxApplicationException("微信退款失败 refund: 【%s】".formatted(jsonUtils.objectToJson(refund)));
         }
+    }
+
+
+    /**
+     * 取消指定的支付(未支付)。
+     *
+     * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
+     */
+    @Override
+    public void cancel(Payments payments) {
+        if (ClientType.APP.equals(payments.getClientType())) {
+            wechatPayAppService.cancel(payments);
+        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+            wechatPayJsapiService.cancel(payments);
+        }
+
     }
 }

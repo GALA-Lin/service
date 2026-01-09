@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.merchant.service;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
 import com.unlimited.sports.globox.model.merchant.vo.CourtVo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueBasicInfo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueDetailVo;
 
 import java.util.List;
 
@@ -38,4 +40,8 @@ public interface CourtManagementService {
      * 启用/禁用场地
      */
     CourtVo toggleCourtStatus(Long merchantId, Long courtId, Integer status);
+
+    List<MerchantVenueBasicInfo> getVenuesByMerchantId(Long merchantId);
+
+    List<MerchantVenueDetailVo> getVenuesWithCourts(Long merchantId);
 }

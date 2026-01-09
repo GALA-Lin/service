@@ -40,6 +40,10 @@ public enum SocialCode implements ResultCode {
     COMMENT_CURSOR_INVALID(3026, "评论游标格式错误"),
     COMMENT_PAGE_SIZE_EXCEEDED(3027, "每页数量不能超过50"),
 
+    // 草稿相关 3028-3029
+    NOTE_DRAFT_MEDIA_REQUIRED(3028, "草稿必须有媒体"),
+    NOTE_ID_REQUIRED(3029, "笔记ID不能为空"),
+
     ;
 
     private final Integer code;

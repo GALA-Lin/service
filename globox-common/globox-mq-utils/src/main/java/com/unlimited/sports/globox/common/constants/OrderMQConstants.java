@@ -42,6 +42,32 @@ public class OrderMQConstants {
 
 
     /**
+     * 订单创建失败或取消 → 通知教练模块解锁槽位（Unlock Coach Slot）
+     * 主交换机 & 主路由 & 主队列
+     */
+    public static final String EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT =
+            "exchange.topic.order.unlock-coach-slot";
+    public static final String ROUTING_ORDER_UNLOCK_COACH_SLOT =
+            "routing.order.unlock-coach-slot";
+    public static final String QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH =
+            "queue.order.unlock-coach-slot.coach";
+
+    public static final String QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH_RETRY =
+            "queue.order.unlock-coach-slot.coach.retry";
+    public static final String EXCHANGE_ORDER_UNLOCK_COACH_SLOT_RETRY_DLX =
+            "exchange.topic.order.unlock-coach-slot.retry.dlx";
+    public static final String ROUTING_ORDER_UNLOCK_COACH_SLOT_RETRY =
+            "routing.order.unlock-coach-slot.retry";
+
+    public static final String EXCHANGE_ORDER_UNLOCK_COACH_SLOT_FINAL_DLX =
+            "exchange.topic.order.unlock-coach-slot.final.dlx";
+    public static final String ROUTING_ORDER_UNLOCK_COACH_SLOT_FINAL =
+            "routing.order.unlock-coach-slot.final";
+    public static final String QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH_DLQ =
+            "queue.order.unlock-coach-slot.coach.dlq";
+
+
+    /**
      * 订单创建成功事件
      * 无重试
      */

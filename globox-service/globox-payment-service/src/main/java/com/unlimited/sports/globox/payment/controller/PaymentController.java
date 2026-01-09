@@ -3,9 +3,7 @@ package com.unlimited.sports.globox.payment.controller;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
-import com.unlimited.sports.globox.common.enums.payment.PaymentClientTypeEnum;
 import com.unlimited.sports.globox.common.result.R;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.model.payment.dto.GetPaymentStatusRequestDto;
 import com.unlimited.sports.globox.model.payment.dto.SubmitRequestDto;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
@@ -37,28 +35,14 @@ public class PaymentController {
     @PostMapping("/submit/{orderNo}")
     public R<SubmitResultVo> submit(
             @PathVariable("orderNo") Long orderNo,
+            @RequestHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE) String clientTypeStr,
+            @RequestHeader(RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID) String openId,
             @ModelAttribute @Valid SubmitRequestDto dto) {
         dto.setOrderNo(orderNo);
-        dto.setOpenId("oXvhk1-pWn8jLS7qtkkO63EmGxG8");
+        ClientType clientType = ClientType.fromValue(clientTypeStr);
+        dto.setClientType(clientType);
+        dto.setOpenId(openId);
         SubmitResultVo submitResultVo = paymentsService.submit(dto);
-        return R.ok(submitResultVo);
-    }
-
-
-    /**
-     * 下单
-     * 已弃用
-     */
-    @Deprecated
-    @PostMapping("alipay/submit/{orderNo}")
-    public R<SubmitResultVo> submit(
-            @PathVariable("orderNo") Long orderNo) {
-        SubmitRequestDto requestDto = SubmitRequestDto.builder()
-                .orderNo(orderNo)
-                .paymentTypeCode(PaymentTypeEnum.ALIPAY.getCode())
-                .clientTypeCode(PaymentClientTypeEnum.APP.getCode())
-                .build();
-        SubmitResultVo submitResultVo = paymentsService.submit(requestDto);
         return R.ok(submitResultVo);
     }
 

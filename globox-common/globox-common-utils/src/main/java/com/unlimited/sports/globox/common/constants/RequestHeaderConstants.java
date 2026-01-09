@@ -29,8 +29,12 @@ public final class RequestHeaderConstants {
     /**
      * 商家ID请求头
      */
-    public static final String HEADER_MERCHANT_ID = "X-Merchant-Id";
+    public static final String HEADER_MERCHANT_ACCOUNT_ID = "X-Merchant-Account-Id";
 
+    /**
+     * 职工id请求头
+     */
+    public static final String HEADER_EMPLOYEE_ID = "X-Employee-Id";
     /**
      * 商家角色请求头
      */

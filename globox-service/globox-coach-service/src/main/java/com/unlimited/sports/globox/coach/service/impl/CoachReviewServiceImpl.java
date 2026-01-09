@@ -407,7 +407,7 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
         String userName;
         String userAvatar;
         Long returnUserId = review.getUserId();
-        BigDecimal userNtrpLevel = null;
+        Double userNtrpLevel = null;
         String ntrpLevelDesc = null;
 
         String defaultCoachReviewUserAvatar = DEFAULT_CoachReviewUserAvatar;

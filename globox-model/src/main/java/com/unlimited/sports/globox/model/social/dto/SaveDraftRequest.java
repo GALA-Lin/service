@@ -14,6 +14,9 @@ import java.util.List;
 @Schema(description = "保存草稿请求")
 public class SaveDraftRequest {
 
+    @Schema(description = "笔记ID（更新草稿时必填，新建草稿时不传）", example = "123")
+    private Long noteId;
+
     @Schema(description = "标题", example = "今天打球收获分享")
     private String title;
 

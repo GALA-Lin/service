@@ -1,26 +1,24 @@
 package com.unlimited.sports.globox.merchant.controller;
 
 
-import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
 import com.unlimited.sports.globox.merchant.service.CourtManagementService;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
-import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.vo.CourtVo;
-import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
-import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueBasicInfo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueDetailVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import com.unlimited.sports.globox.merchant.util.*;
 
 import java.util.List;
 
-import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
-import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIRED;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
  * @author Linsen Hu
@@ -34,22 +32,25 @@ import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIR
 public class CourtManagementController {
 
     private final CourtManagementService courtManagementService;
-    private final VenueStaffMapper venueStaffMapper;
+    private final MerchantAuthUtil merchantAuthUtil;
     private final VenueMapper venueMapper;
+
 
     /**
      * 创建场地
      */
     @PostMapping("/courts/create")
     public R<CourtVo> createCourt(
-            @RequestHeader(value = HEADER_USER_ID , required = false) Long userId,
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
             @RequestBody @Validated CourtCreateDto createDTO) {
-        if (userId == null) {
-            log.error("请求头中缺少User-Id,未登录");
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
-        Long merchantId = getMerchantIdByUserId(userId);
-        CourtVo court = courtManagementService.createCourt(merchantId, createDTO);
+        // 认证并获取上下文
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        // 验证场馆访问权限（员工只能在自己场馆创建场地）
+        merchantAuthUtil.validateVenueAccess(context, createDTO.getVenueId());
+
+        CourtVo court = courtManagementService.createCourt(context.getMerchantId(), createDTO);
         return R.ok(court);
     }
 
@@ -58,14 +59,13 @@ public class CourtManagementController {
      */
     @PutMapping("/courts/update")
     public R<CourtVo> updateCourt(
-            @RequestHeader(value = HEADER_USER_ID , required = false) Long userId,
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
             @RequestBody @Validated CourtUpdateDto updateDTO) {
-        if (userId == null) {
-            log.error("请求头中缺少User-Id,未登录");
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
-        Long merchantId = getMerchantIdByUserId(userId);
-        CourtVo court = courtManagementService.updateCourt(merchantId, updateDTO);
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        CourtVo court = courtManagementService.updateCourt(context.getMerchantId(), updateDTO);
         return R.ok(court);
     }
 
@@ -74,15 +74,13 @@ public class CourtManagementController {
      */
     @DeleteMapping("/courts/{courtId}")
     public R<Long> deleteCourt(
-            @RequestHeader(value = HEADER_USER_ID , required = false) Long userId,
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
             @PathVariable Long courtId) {
-        if (userId == null) {
-            log.error("请求头中缺少User-Id,未登录");
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
-        Long merchantId = getMerchantIdByUserId(userId);
-        // todo update status 逻辑删除  DATA: 2025/12/26
-        courtManagementService.deleteCourt(merchantId, courtId);
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        courtManagementService.deleteCourt(context.getMerchantId(), courtId);
         return R.ok(courtId);
     }
 
@@ -91,14 +89,17 @@ public class CourtManagementController {
      */
     @GetMapping("/courts/list")
     public R<List<CourtVo>> listCourts(
-            @RequestHeader(value = HEADER_USER_ID , required = false) Long userId,
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
             @RequestParam Long venueId) {
-        if (userId == null) {
-            log.error("请求头中缺少User-Id,未登录");
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
-        Long merchantId = getMerchantIdByUserId(userId);
-        List<CourtVo> result = courtManagementService.listCourtsByVenue(merchantId, venueId);
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        // 验证场馆访问权限（员工只能查询自己的场馆）
+        merchantAuthUtil.validateVenueAccess(context, venueId);
+        log.info("[场地查询]参数：merchantId: {}, venueId: {}", context.getMerchantId(), venueId);
+
+        List<CourtVo> result = courtManagementService.listCourtsByVenue(context.getMerchantId(), venueId);
+        log.info("[场地查询]成功");
         return R.ok(result);
     }
 
@@ -107,35 +108,15 @@ public class CourtManagementController {
      */
     @PostMapping("/courts/{courtId}/toggle-status")
     public R<CourtVo> toggleStatus(
-            @RequestHeader(value = HEADER_USER_ID , required = false) Long userId,
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
             @PathVariable Long courtId,
             @RequestParam Integer status) {
-        if (userId == null) {
-            log.error("请求头中缺少User-Id,未登录");
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
-        Long merchantId = getMerchantIdByUserId(userId);
-        CourtVo court = courtManagementService.toggleCourtStatus(merchantId, courtId, status);
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        CourtVo court = courtManagementService.toggleCourtStatus(context.getMerchantId(), courtId, status);
         return R.ok(court);
-    }
-
-    /**
-     * 根据用户ID从商家职工关联表查询merchant_id
-     * @param userId 用户ID
-     * @return 商家ID
-     * @throws GloboxApplicationException 如果用户不是商家员工
-     */
-    private Long getMerchantIdByUserId(Long userId) {
-        // 查询该用户在商家职工关联表中的记录（只查询在职状态）
-        VenueStaff venueStaff = venueStaffMapper.selectActiveStaffByUserId(userId);
-
-        if (venueStaff == null) {
-            log.error("用户ID: {} 不是任何商家的员工", userId);
-            throw new GloboxApplicationException("您不是商家员工，无权访问此资源");
-        }
-
-        log.debug("用户ID: {} 对应的商家ID: {}", userId, venueStaff.getMerchantId());
-        return venueStaff.getMerchantId();
     }
 
     /**
@@ -143,13 +124,50 @@ public class CourtManagementController {
      */
     @GetMapping("/venue/venue-ids")
     public R<List<Long>> getVenueIds(
-            @RequestHeader(value = HEADER_USER_ID, required = false) Long userId) {
-        if (userId == null) {
-            log.error("请求头中缺少User-Id,未登录");
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
-        Long merchantId = getMerchantIdByUserId(userId);
-        List<Long> venueIds = venueMapper.selectVenueIdsByMerchantId(merchantId);
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        List<Long> venueIds;
+        log.info("merchantId: {}", context.getMerchantId());
+        venueIds = venueMapper.selectVenueIdsByMerchantId(context.getMerchantId());
+        log.info("merchantId: {}, venueIds: {}", context.getMerchantId() , venueIds);
         return R.ok(venueIds);
     }
+
+    /**
+     * 查询商家旗下所有场馆详细信息
+     */
+    @GetMapping("/venue/venues-info")
+    public R<List<MerchantVenueBasicInfo>> getVenuesInfo(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        log.info("[场馆信息查询] merchantId: {}", context.getMerchantId());
+
+        List<MerchantVenueBasicInfo> venues = courtManagementService.getVenuesByMerchantId(context.getMerchantId());
+
+        log.info("[场馆信息查询] 成功，共查询到 {} 个场馆", venues.size());
+        return R.ok(venues);
+    }
+
+    /**
+     * 查询商家旗下所有场馆及所属场地 (嵌套结构)
+     */
+    @GetMapping("/venue/venues-with-courts")
+    public R<List<MerchantVenueDetailVo>> getVenuesWithCourts(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        log.info("[嵌套信息查询] merchantId: {}", context.getMerchantId());
+        List<MerchantVenueDetailVo> result = courtManagementService.getVenuesWithCourts(context.getMerchantId());
+
+        return R.ok(result);
+    }
+
 }

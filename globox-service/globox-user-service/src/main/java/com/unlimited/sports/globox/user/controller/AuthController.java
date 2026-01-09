@@ -67,7 +67,7 @@ public class AuthController {
     }
 
     @PostMapping("/wechat/login")
-    @Operation(summary = "微信授权登录", description = "微信授权登录，已绑定账号直接登录，未绑定返回临时凭证。小程序端必须携带 X-Client-Type: third-party-jsapi，否则不会生成包含 openid 的 token。")
+    @Operation(summary = "微信授权登录", description = "微信授权登录，已绑定账号直接登录，未绑定返回临时凭证。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "2033", description = "微信授权失败"),
@@ -91,7 +91,7 @@ public class AuthController {
     }
 
     @PostMapping("/wechat/phoneLogin")
-    @Operation(summary = "第三方小程序微信手机号登录", description = "第三方小程序端微信手机号登录，通过wxCode和phoneCode一次性完成登录和手机号绑定，无需验证码。小程序端必须携带 X-Client-Type: third-party-jsapi，否则不会生成包含 openid 的 token。")
+    @Operation(summary = "第三方小程序/App端微信手机号登录", description = "第三方小程序/App端微信手机号登录，通过wxCode和phoneCode一次性完成登录和手机号绑定，无需验证码。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),

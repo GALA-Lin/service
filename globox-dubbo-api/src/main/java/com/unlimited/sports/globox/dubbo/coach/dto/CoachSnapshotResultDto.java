@@ -70,9 +70,4 @@ public class CoachSnapshotResultDto implements Serializable {
      */
     private Integer ratingCount;
 
-    /**
-     * 时段快照列表
-     */
-    @NotNull
-    private List<CoachSlotSnapshotDto> slotSnapshots;
 }

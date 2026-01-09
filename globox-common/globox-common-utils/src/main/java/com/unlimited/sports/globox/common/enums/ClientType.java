@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.common.enums;
 
+import com.baomidou.mybatisplus.annotation.EnumValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -15,24 +16,29 @@ public enum ClientType {
     /**
      * 用户原生App
      */
-    APP("app"),
+    APP(1, "app"),
 
     /**
-     * 用户小程序/H5
+     * 用户小程序
      */
-    JSAPI("jsapi"),
+    JSAPI(2, "jsapi"),
 
     /**
      * 商家小程序
      */
-    MERCHANT("merchant"),
+    MERCHANT(3, "merchant"),
 
     /**
      * 第三方小程序
      */
-    THIRD_PARTY_JSAPI("third-party-jsapi");
+    THIRD_PARTY_JSAPI(4, "third-party-jsapi");
+
+    @EnumValue
+    private final Integer code;
 
     private final String value;
+
+
 
     /**
      * 根据字符串值获取枚举

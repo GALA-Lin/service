@@ -4,7 +4,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NonNull;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -39,7 +38,7 @@ public class CoachReviewVo {
     /**
      * 用户NTRP水平（1.0-7.0）
      */
-    private BigDecimal userNtrpLevel;
+    private Double userNtrpLevel;
 
     /**
      * 用户NTRP水平描述

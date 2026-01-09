@@ -5,6 +5,8 @@ import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserRacketRequest;
 import com.unlimited.sports.globox.model.auth.entity.RacketDict;
@@ -13,6 +15,7 @@ import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.entity.UserRacket;
 import com.unlimited.sports.globox.model.auth.entity.UserStyleTag;
 import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
+import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.RacketDictNodeVo;
@@ -204,6 +207,29 @@ public class UserProfileServiceImpl implements UserProfileService {
     public R<String> updateUserProfile(Long userId, UpdateUserProfileRequest request) {
         if (userId == null) {
             return R.error(UserAuthCode.USER_NOT_EXIST);
+        }
+        if (request == null) {
+            throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+        }
+        boolean hasAnyField = StringUtils.hasText(request.getAvatarUrl())
+                || StringUtils.hasText(request.getPortraitUrl())
+                || StringUtils.hasText(request.getNickName())
+                || StringUtils.hasText(request.getSignature())
+                || StringUtils.hasText(request.getGender())
+                || request.getSportsYears() != null
+                || request.getNtrp() != null
+                || StringUtils.hasText(request.getPreferredHand())
+                || StringUtils.hasText(request.getHomeDistrict())
+                || request.getPower() != null
+                || request.getSpeed() != null
+                || request.getServe() != null
+                || request.getVolley() != null
+                || request.getStamina() != null
+                || request.getMental() != null
+                || request.getRackets() != null
+                || request.getTagIds() != null;
+        if (!hasAnyField) {
+            throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
         }
 
         // 1. 查询用户资料
@@ -604,5 +630,37 @@ public class UserProfileServiceImpl implements UserProfileService {
             log.error("头像上传异常", e);
             return R.<FileUploadVo>error(UserAuthCode.UPLOAD_FILE_FAILED).message("头像上传失败");
         }
+    }
+
+    @Override
+    public R<StarCardPortraitVo> getStarCardPortrait(Long userId) {
+        UserProfile profile = getUserProfileById(userId);
+        Assert.isNotEmpty(profile, UserAuthCode.USER_NOT_EXIST);
+
+        StarCardPortraitVo vo = StarCardPortraitVo.builder()
+                .portraitUrl(profile.getPortraitUrl())
+                .build();
+
+        return R.ok(vo);
+    }
+
+    @Override
+    public R<String> updateStarCardPortrait(Long userId, UpdateStarCardPortraitRequest request) {
+        UserProfile profile = getUserProfileById(userId);
+        Assert.isNotEmpty(profile, UserAuthCode.USER_NOT_EXIST);
+
+        String portraitUrl = request.getPortraitUrl();
+
+        // 如果为空字符串或 null，设置为 null（删除）
+        if (portraitUrl == null || portraitUrl.trim().isEmpty()) {
+            profile.setPortraitUrl(null);
+        } else {
+            profile.setPortraitUrl(portraitUrl);
+        }
+
+        userProfileMapper.updateById(profile);
+
+        log.info("更新球星卡肖像成功：userId={}, portraitUrl={}", userId, portraitUrl);
+        return R.ok("球星卡肖像更新成功");
     }
 }

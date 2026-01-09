@@ -19,5 +19,4 @@ public class SubmitResultVo implements Serializable {
     private String orderStr;
 
     private String outTradeNo;
-
 }

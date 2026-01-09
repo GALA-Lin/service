@@ -19,6 +19,9 @@ public class ThirdPartyLoginResponse {
     @Schema(description = "JWT Token", example = "eyJhbGciOiJIUzI1NiJ9...")
     private String token;
 
+    @Schema(description = "Refresh Token（App端返回，第三方小程序不返回）", example = "eyJhbGciOiJIUzI1NiJ9...")
+    private String refreshToken;
+
     @Schema(description = "用户信息")
     private UserInfo userInfo;
 

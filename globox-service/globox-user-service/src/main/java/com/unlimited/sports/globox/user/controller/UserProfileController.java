@@ -2,8 +2,10 @@ package com.unlimited.sports.globox.user.controller;
 
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
+import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.StyleTagVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
@@ -105,6 +107,37 @@ public class UserProfileController {
             @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         return userProfileService.getStarCard(userId);
+    }
+
+    @GetMapping("/star-card/portrait")
+    @Operation(summary = "获取球星卡肖像", description = "获取当前用户的球星卡肖像URL")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<StarCardPortraitVo> getStarCardPortrait(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+        return userProfileService.getStarCardPortrait(userId);
+    }
+
+    @PutMapping("/star-card/portrait")
+    @Operation(summary = "更新球星卡肖像",
+            description = "更新当前用户的球星卡肖像URL。传入 null 或空字符串表示删除肖像")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "更新成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<String> updateStarCardPortrait(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "球星卡肖像更新请求", required = true)
+            @Validated @RequestBody UpdateStarCardPortraitRequest request) {
+        return userProfileService.updateStarCardPortrait(userId, request);
     }
 
     @GetMapping("/style-tags")

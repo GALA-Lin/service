@@ -95,4 +95,18 @@ public class WechatPayJsapiServiceImpl implements WechatPayJsapiService {
             throw new GloboxApplicationException(PaymentsCode.PAYMENT_INFO_NOT_EXIST.getCode(), e.getErrorMessage());
         }
     }
+
+
+    /**
+     * 取消指定的支付(未支付)。
+     *
+     * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
+     */
+    @Override
+    public void cancel(Payments payments) {
+        CloseOrderRequest closeRequest = new CloseOrderRequest();
+        closeRequest.setMchid(wechatPayProperties.getMchid());
+        closeRequest.setOutTradeNo(payments.getOutTradeNo());
+        jsapiService.closeOrder(closeRequest);
+    }
 }

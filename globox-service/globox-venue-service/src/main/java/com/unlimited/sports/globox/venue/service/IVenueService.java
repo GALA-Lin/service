@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.venue.service;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
+import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
@@ -44,5 +45,13 @@ public interface IVenueService {
      * @return 包含场地类型、地面类型、场地片数、距离、设施等字典数据
      */
     VenueDictVo getSearchFilterDictionary();
+
+    /**
+     * 获取活动详情
+     *
+     * @param activityId 活动ID
+     * @return 活动详情，包含基本信息和参与者列表
+     */
+    VenueActivityDetailVo getActivityDetail(Long activityId);
 
 }

@@ -88,7 +88,7 @@ public class BookingSlotVo {
     /**
      * 参与者最低NTRP水平要求（范围1.0-7.0）
      */
-    private BigDecimal minNtrpLevel;
+    private Double minNtrpLevel;
 
     /**
      * 活动当前参与人数

@@ -35,5 +35,22 @@ public interface WechatPayService {
     GetPaymentStatusResultVo getPaymentStatus(String outTradeNo);
 
 
+    /**
+     * 处理用户的退款请求。
+     *
+     * @param payments     支付信息对象，包含订单编号、对外业务编号等
+     * @param refundAmount 本次请求的退款金额
+     * @param refundReason 退款原因说明
+     * @return 如果退款请求处理成功，则返回true；否则返回false
+     */
     boolean refund(Payments payments, BigDecimal refundAmount, String refundReason);
+
+
+    /**
+     * 取消指定的支付(未支付)。
+     *
+     * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
+     * @return 如果取消请求处理成功，则返回true；否则返回false
+     */
+    void cancel(Payments payments);
 }

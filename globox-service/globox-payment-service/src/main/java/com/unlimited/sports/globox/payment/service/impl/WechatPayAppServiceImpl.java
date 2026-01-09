@@ -10,10 +10,7 @@ import com.unlimited.sports.globox.payment.service.PaymentsService;
 import com.unlimited.sports.globox.payment.service.WechatPayAppService;
 import com.wechat.pay.java.core.exception.ServiceException;
 import com.wechat.pay.java.service.payments.app.AppServiceExtension;
-import com.wechat.pay.java.service.payments.app.model.Amount;
-import com.wechat.pay.java.service.payments.app.model.PrepayRequest;
-import com.wechat.pay.java.service.payments.app.model.PrepayWithRequestPaymentResponse;
-import com.wechat.pay.java.service.payments.app.model.QueryOrderByOutTradeNoRequest;
+import com.wechat.pay.java.service.payments.app.model.*;
 import com.wechat.pay.java.service.payments.model.Transaction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -93,5 +90,19 @@ public class WechatPayAppServiceImpl implements WechatPayAppService {
             log.error("reponse body={}\n", e.getResponseBody());
             throw new GloboxApplicationException(PaymentsCode.PAYMENT_INFO_NOT_EXIST.getCode(), e.getErrorMessage());
         }
+    }
+
+
+    /**
+     * 取消指定的支付(未支付)。
+     *
+     * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
+     */
+    @Override
+    public void cancel(Payments payments) {
+        CloseOrderRequest closeRequest = new CloseOrderRequest();
+        closeRequest.setMchid(wechatPayProperties.getMchid());
+        closeRequest.setOutTradeNo(payments.getOutTradeNo());
+        appService.closeOrder(closeRequest);
     }
 }

@@ -31,6 +31,13 @@ public class OrderMQInitConfig {
     private int unlockRetryInterval;
 
     /**
+     * 重试间隔（毫秒）
+     * 并发冲突：建议短延迟（毫秒~秒）
+     */
+    @Value("${mq.consumer.retry.unlock-coach-slot.retry-interval:1000}")
+    private int unlockCoachSlotRetryInterval;
+
+    /**
      * 商家确认订单消息 重试间隔
      * 默认 1000 ms
      */
@@ -193,6 +200,83 @@ public class OrderMQInitConfig {
         return BindingBuilder.bind(orderUnlockSlotDlq())
                 .to(orderUnlockSlotFinalDlxExchange())
                 .with(OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT_FINAL);
+    }
+
+
+
+
+    /**
+     * 通知教练模块解锁槽位（Unlock Coach Slot）
+     */
+    @Bean
+    public TopicExchange orderUnlockCoachSlotExchange() {
+        return new TopicExchange(OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
+                true,
+                false);
+    }
+
+    @Bean
+    public TopicExchange orderUnlockCoachSlotRetryDlxExchange() {
+        return new TopicExchange(OrderMQConstants.EXCHANGE_ORDER_UNLOCK_COACH_SLOT_RETRY_DLX,
+                true,
+                false);
+    }
+
+    @Bean
+    public TopicExchange orderUnlockCoachSlotFinalDlxExchange() {
+        return new TopicExchange(OrderMQConstants.EXCHANGE_ORDER_UNLOCK_COACH_SLOT_FINAL_DLX,
+                true,
+                false);
+    }
+
+    @Bean
+    public Queue orderUnlockCoachSlotQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_ORDER_UNLOCK_COACH_SLOT_RETRY_DLX )
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Queue orderUnlockCoachSlotRetryQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH_RETRY)
+                .withArgument("x-message-ttl", unlockCoachSlotRetryInterval)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT)
+                .build();
+    }
+
+    @Bean
+    public Queue orderUnlockCoachSlotDlq() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Binding bindOrderUnlockCoachSlotQueue() {
+        return BindingBuilder
+                .bind(orderUnlockCoachSlotQueue())
+                .to(orderUnlockCoachSlotExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT);
+    }
+
+    @Bean
+    public Binding bindOrderUnlockCoachSlotRetryQueue() {
+        return BindingBuilder
+                .bind(orderUnlockCoachSlotRetryQueue())
+                .to(orderUnlockCoachSlotRetryDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_RETRY);
+    }
+
+    @Bean
+    public Binding bindOrderUnlockCoachSlotDlq() {
+        return BindingBuilder
+                .bind(orderUnlockCoachSlotDlq())
+                .to(orderUnlockCoachSlotFinalDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_FINAL);
     }
 
 

@@ -38,7 +38,8 @@ public class GetOrderDetailsVo {
     @Schema(description = "场馆信息快照")
     private VenueSnapshotVo venueSnapshot;
 
-    // TODO ETA 2026/01/03 教练信息快照
+    @Schema(description = "教练信息快照")
+    private CoachSnapshotVo coachSnapshotVo;
 
     @NotNull
     @Schema(description = "卖方名称（场馆名 / 教练名）", example = "星耀网球中心")
@@ -96,8 +97,6 @@ public class GetOrderDetailsVo {
 
         @Schema(description = "场地信息快照")
         private CourtSnapshotVo courtSnapshot;
-
-        // TODO ETA 2026/01/03 教练信息快照
 
         @NotNull
         @Schema(description = "订单项基础金额", example = "150.00")
@@ -248,5 +247,64 @@ public class GetOrderDetailsVo {
         @NotNull
         @Schema(description = "场地类型", example = "2")
         private Integer courtType;
+    }
+
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Schema(description = "教练信息快照")
+    public static class CoachSnapshotVo {
+        /**
+         * 教练用户ID
+         */
+        @NotNull
+        private Long coachUserId;
+
+        /**
+         * 教练姓名
+         */
+        private String coachName;
+
+        /**
+         * 教练头像
+         */
+        private String coachAvatar;
+
+        /**
+         * 教练联系电话
+         */
+        private String coachPhone;
+
+        /**
+         * 常驻服务区域
+         */
+        private String serviceArea;
+
+        /**
+         * 证书等级列表
+         */
+        private List<String> certificationLevels;
+
+        /**
+         * 教学年限
+         */
+        private Integer teachingYears;
+
+        /**
+         * 专长标签
+         */
+        private List<String> specialtyTags;
+
+        /**
+         * 综合评分
+         */
+        private BigDecimal ratingScore;
+
+        /**
+         * 评价数
+         */
+        private Integer ratingCount;
     }
 }

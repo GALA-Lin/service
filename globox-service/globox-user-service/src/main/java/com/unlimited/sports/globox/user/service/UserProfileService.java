@@ -1,8 +1,10 @@
 package com.unlimited.sports.globox.user.service;
 
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
+import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.StyleTagVo;
@@ -82,4 +84,21 @@ public interface UserProfileService {
      * @return 文件上传结果（包含URL、文件名、文件大小）
      */
     R<FileUploadVo> uploadAvatar(MultipartFile file);
+
+    /**
+     * 获取球星卡肖像
+     *
+     * @param userId 用户ID
+     * @return 球星卡肖像视图
+     */
+    R<StarCardPortraitVo> getStarCardPortrait(Long userId);
+
+    /**
+     * 更新球星卡肖像（支持删除：传 null 或空字符串）
+     *
+     * @param userId  用户ID
+     * @param request 更新请求
+     * @return 更新结果
+     */
+    R<String> updateStarCardPortrait(Long userId, UpdateStarCardPortraitRequest request);
 }

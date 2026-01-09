@@ -96,7 +96,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
     /**
      * 申请订单退款。
-     * TODO ETA 2026/01/03 MQ 通知商家有新的退款申请
      *
      * @param dto 退款请求参数
      * @return 包含退款申请结果的统一响应对象
@@ -176,8 +175,12 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             RpcResult<MerchantRefundRuleJudgeResultVo> refundRuleResult =
                     merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
             Assert.rpcResultOk(refundRuleResult);
-           MerchantRefundRuleJudgeResultVo resultVo =refundRuleResult.getData();
+            MerchantRefundRuleJudgeResultVo resultVo = refundRuleResult.getData();
             if (!resultVo.isCanRefund()) {
+                // 修改为退款被拒绝
+                order.setOrderStatus(OrderStatusEnum.REFUND_REJECTED);
+                ordersMapper.updateById(order);
+
                 return ApplyRefundResultVo.builder()
                         .orderNo(orderNo)
                         .isRefundable(false)
@@ -187,7 +190,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         .reason(resultVo.getReason())
                         .build();
             } else {
-                refundPercentage =  resultVo.getRefundPercentage();
+                refundPercentage = resultVo.getRefundPercentage();
                 autoRefund = true;
             }
         } else {
@@ -200,7 +203,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             RefundStatusEnum st = item.getRefundStatus();
             assertItemRefundable(st);
         }
-
 
         // 4. 创建退款申请单
         OrderRefundApply refundApply = OrderRefundApply.builder()
@@ -267,7 +269,12 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 if (autoRefund) {
                     businessExecutorService.submit(() -> {
                         // 自动退款时，调用退款方法
-                        orderRefundActionService.refundAction(orderNo, refundApplyId, true, null, order.getSellerType(), refundPercentage);
+                        orderRefundActionService.refundAction(orderNo,
+                                refundApplyId,
+                                true,
+                                null,
+                                order.getSellerType(),
+                                refundPercentage);
                     });
                 }
             }
@@ -712,7 +719,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .cancelledAt(now)
                 .build();
     }
-
 
 
     private void assertItemRefundable(RefundStatusEnum st) {

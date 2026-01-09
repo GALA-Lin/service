@@ -20,10 +20,10 @@ public class MerchantAccount implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 商家ID
+     * 账号ID
      */
-    @TableId(value = "merchant_id", type = IdType.AUTO)
-    private Long merchantId;
+    @TableId(value = "account_id", type = IdType.AUTO)
+    private Long accountId;
 
     /**
      * 账号
@@ -44,6 +44,12 @@ public class MerchantAccount implements Serializable {
      * 角色
      */
     private MerchantRole role;
+
+
+    /**
+     * 职工id 对应商家的id或者其下职工的id
+     */
+    private String employeeId;
 
     /**
      * 创建时间

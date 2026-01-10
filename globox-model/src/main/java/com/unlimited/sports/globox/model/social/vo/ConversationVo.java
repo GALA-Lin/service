@@ -24,18 +24,6 @@ public class ConversationVo {
      * 接收方用户ID
      */
     private Long receiveUserId;
-
-    /**
-     * 会话名称(发送方展示)
-     */
-
-    private String conversationNameSender;
-
-    /**
-     * 会话头像(发送方展示)
-     */
-
-    private String conversationAvatarSender;
     /**
      * 会话名称(接收方展示)
      */

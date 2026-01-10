@@ -493,6 +493,91 @@ public class CoachSlotServiceImpl implements ICoachSlotService {
     }
 
     /**
+     * 批量解锁时段(通过recordIds)
+     * 用于订单取消/超时等场景的批量释放
+     *
+     * @param recordIds 时段记录ID列表
+     * @param userId 操作用户ID
+     * @return 成功解锁的数量
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public int batchUnlockSlots(List<Long> recordIds, Long userId) {
+        log.info("批量解锁时段(通过recordIds) - userId: {}, recordIds数量: {}",
+                userId, recordIds.size());
+
+        if (recordIds == null || recordIds.isEmpty()) {
+            log.warn("recordIds为空，无需解锁");
+            return 0;
+        }
+
+        int unlockedCount = 0;
+        List<String> failedRecords = new ArrayList<>();
+
+        for (Long recordId : recordIds) {
+            try {
+                CoachSlotRecord record = slotRecordMapper.selectById(recordId);
+
+                if (record == null) {
+                    log.warn("时段记录不存在 - recordId: {}", recordId);
+                    failedRecords.add(recordId + "(不存在)");
+                    continue;
+                }
+
+                // 验证是否是当前用户锁定的
+                if (!userId.equals(record.getLockedByUserId())) {
+                    log.warn("只能解锁自己锁定的时段 - recordId: {}, lockedBy: {}, currentUser: {}",
+                            recordId, record.getLockedByUserId(), userId);
+                    failedRecords.add(recordId + "(权限不足)");
+                    continue;
+                }
+
+                // 检查时段状态
+                if (record.getStatus() != 2) { // 2=LOCKED
+                    log.warn("时段不是锁定状态，无需解锁 - recordId: {}, status: {}",
+                            recordId, record.getStatus());
+                    failedRecords.add(recordId + "(状态异常:" + record.getStatus() + ")");
+                    continue;
+                }
+
+                // 如果是用户下单锁定(lockedType=1)，直接删除记录恢复可用
+                if (record.getLockedType() == 1) {
+                    slotRecordMapper.deleteById(recordId);
+                    log.info("删除锁定记录，恢复可用 - recordId: {}", recordId);
+                } else {
+                    // 其他类型锁定，更新状态为可用
+                    record.setStatus(1); // AVAILABLE
+                    record.setLockedByUserId(null);
+                    record.setLockedUntil(null);
+                    record.setLockReason(null);
+                    record.setLockedType(null);
+                    slotRecordMapper.updateById(record);
+                    log.info("更新锁定状态为可用 - recordId: {}", recordId);
+                }
+
+                unlockedCount++;
+
+            } catch (Exception e) {
+                log.error("解锁单个时段失败 - recordId: {}", recordId, e);
+                failedRecords.add(recordId + "(异常:" + e.getMessage() + ")");
+            }
+        }
+
+        // 记录批量操作日志
+        if (unlockedCount > 0) {
+            log.info("批量解锁完成 - userId: {}, 成功: {}/{}, 失败记录: {}",
+                    userId, unlockedCount, recordIds.size(),
+                    failedRecords.isEmpty() ? "无" : String.join(", ", failedRecords));
+        }
+
+        if (!failedRecords.isEmpty()) {
+            log.warn("部分时段解锁失败 - userId: {}, 失败详情: {}", userId, failedRecords);
+        }
+
+        return unlockedCount;
+    }
+
+    /**
      * 批量锁定时段(教练端操作,按需生成记录)
      */
     @Override

@@ -21,8 +21,6 @@ import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
 import com.unlimited.sports.globox.dubbo.coach.dto.*;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
-import com.unlimited.sports.globox.dubbo.order.dto.SellerCancelOrderResultDto;
-import com.unlimited.sports.globox.dubbo.order.dto.SellerConfirmResultDto;
 import com.unlimited.sports.globox.model.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.*;
@@ -345,7 +343,8 @@ public class OrderServiceImpl implements OrderService {
         OrderAutoCancelMessage orderAutoCancelMessage = OrderAutoCancelMessage.builder()
                 .bookingDate(resultDto.getBookingDate())
                 .orderNo(order.getOrderNo())
-                .slotIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getCoachId).collect(Collectors.toList()))
+                .recordIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getCoachId).collect(Collectors.toList()))
+                .sellerType(SellerTypeEnum.COACH)
                 .userId(userId)
                 .build();
 
@@ -369,6 +368,7 @@ public class OrderServiceImpl implements OrderService {
                         if (status == STATUS_ROLLED_BACK) {
                             UnlockSlotMessage message = UnlockSlotMessage.builder()
                                     .userId(userId)
+                                    .operatorType(OperatorTypeEnum.SYSTEM)
                                     .bookingDate(resultDto.getBookingDate())
                                     .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
                                     .build();
@@ -561,7 +561,8 @@ public class OrderServiceImpl implements OrderService {
         OrderAutoCancelMessage orderAutoCancelMessage = OrderAutoCancelMessage.builder()
                 .bookingDate(result.getBookingDate())
                 .orderNo(order.getOrderNo())
-                .slotIds(result.getRecordQuote().stream().map(RecordQuote::getRecordId).collect(Collectors.toList()))
+                .sellerType(SellerTypeEnum.VENUE)
+                .recordIds(result.getRecordQuote().stream().map(RecordQuote::getRecordId).collect(Collectors.toList()))
                 .userId(userId)
                 .build();
 
@@ -592,6 +593,7 @@ public class OrderServiceImpl implements OrderService {
                             UnlockSlotMessage message = new UnlockSlotMessage();
                             UnlockSlotMessage.builder()
                                     .userId(userId)
+                                    .operatorType(OperatorTypeEnum.SYSTEM)
                                     .bookingDate(result.getBookingDate())
                                     .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
                                     .build();
@@ -693,6 +695,7 @@ public class OrderServiceImpl implements OrderService {
                             .amount(order.getPayAmount())
                             .currentOrderStatus(order.getOrderStatus())
                             .createdAt(order.getCreatedAt())
+                            .itemCount(items.size())
                             .slotBookingTimes(slotTimes)
                             .build();
 
@@ -984,6 +987,7 @@ public class OrderServiceImpl implements OrderService {
         // 6. 事务提交后发送解锁消息
         UnlockSlotMessage unlockMessage = UnlockSlotMessage.builder()
                 .userId(userId)
+                .operatorType(OperatorTypeEnum.USER)
                 .recordIds(recordIds)
                 .bookingDate(bookingDate)
                 .build();

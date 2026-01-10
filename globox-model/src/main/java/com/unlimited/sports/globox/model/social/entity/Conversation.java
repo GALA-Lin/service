@@ -23,7 +23,7 @@ public class Conversation implements Serializable {
     /**
      * 会话ID
      */
-    @TableId(value = "conversation_id", type = IdType.INPUT)
+    @TableId(value = "conversation_id", type = IdType.AUTO)
     private Long conversationId;
 
     /**

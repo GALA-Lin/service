@@ -32,7 +32,7 @@ public enum OrderCode implements ResultCode {
 
     ORDER_REFUND_ITEM_COUNT_ERROR(1721, "订单退款项有误"),
     ORDER_REFUND_AMOUNT_INVALID(1722, "订单退款金额无效"),
-    PARAM_ERROR(1723, "参数错误");
+    PARAM_ERROR(1723, "参数错误"), ORDER_SELLER_TYPE_NOT_EXIST(1724, "订单类型不存在");
     private final Integer code;
     private final String message;
 }

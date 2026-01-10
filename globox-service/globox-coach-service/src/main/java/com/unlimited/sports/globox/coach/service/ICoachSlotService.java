@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.coach.service;
 
 import com.unlimited.sports.globox.model.coach.dto.*;
 import com.unlimited.sports.globox.model.coach.vo.*;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -66,6 +67,9 @@ public interface ICoachSlotService {
      * 解锁时段(取消订单,删除记录恢复可用)
      */
     void unlockSlot(Long slotRecordId, Long userId);
+
+    @Transactional(rollbackFor = Exception.class)
+    int batchUnlockSlots(List<Long> recordIds, Long userId);
 
     /**
      * 批量锁定时段(教练端操作,按需生成记录)

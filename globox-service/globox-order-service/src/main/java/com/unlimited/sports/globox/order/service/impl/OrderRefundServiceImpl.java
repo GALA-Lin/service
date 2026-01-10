@@ -5,17 +5,12 @@ import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
-import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
-import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
-import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
-import com.unlimited.sports.globox.common.utils.JsonUtils;
-import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeRequestDto;
 import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeResultVo;
@@ -273,6 +268,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                                 refundApplyId,
                                 true,
                                 null,
+                                OperatorTypeEnum.USER,
                                 order.getSellerType(),
                                 refundPercentage);
                     });

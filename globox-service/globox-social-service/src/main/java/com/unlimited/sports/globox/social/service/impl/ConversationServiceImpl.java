@@ -1,8 +1,8 @@
 package com.unlimited.sports.globox.social.service.impl;
 
+
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.unlimited.sports.globox.common.result.PaginationResult;
-import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.entity.*;
@@ -33,13 +33,12 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     private ConversationMapper conversationMapper;
 
     @Autowired
-    private IdGenerator idGenerator;
-
-    @Autowired
     private  MessageMapper messageMapper;
 
     @DubboReference(group="rpc")
     UserDubboService userDubboService;
+
+
 
     @Override
     public PaginationResult<ConversationVo> getConversationVoList(Long userId, Integer page, Integer pageSize) {
@@ -59,10 +58,8 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                         vo.setConversationId(String.valueOf(conversation.getConversationId()));
                         vo.setConversationType(conversation.getConversationType());
                         vo.setReceiveUserId(choice(userId,conversation));
-                        vo.setConversationNameSender(conversation.getConversationNameSender());
-                        vo.setConversationAvatarSender(conversation.getConversationAvatarSender());
-                        vo.setConversationNameReceiver(conversation.getConversationNameReceiver());
-                        vo.setConversationAvatarReceiver(conversation.getConversationAvatarReceiver());
+                        vo.setConversationNameReceiver(getUserInfoVo(userId, conversation).getNickName());
+                        vo.setConversationAvatarReceiver(getUserInfoVo(userId, conversation).getAvatarUrl());
                         vo.setUnreadCountSender(conversation.getUnreadCountSender());
                         vo.setUnreadCountReceiver(conversation.getUnreadCountReceiver());
                         vo.setIsBlocked(conversation.getIsBlocked());
@@ -117,7 +114,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     @Transactional(rollbackFor = Exception.class)
     public Conversation getOrCreateConversation(Long userId, Long friendId) {
         try {
-            if (userId == friendId){
+            if (userId.equals(friendId)){
                 log.error("用户不能与自己进行会话");
                 return null;
             }
@@ -133,7 +130,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             log.info("会话不存在，开始创建新会话: userId={}, friendId={}", userId, friendId);
 
             // 使用雪花算法生成会话ID
-            long conversationId = idGenerator.nextId();
+
 
             UserInfoVo friendInfo = userDubboService.getUserInfo(friendId);
             log.info("获取用户信息成功: {}", friendInfo);
@@ -141,8 +138,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             log.info("获取用户信息成功: {}", userInfo);
             // 使用Builder模式创建新会话
             Conversation conversation = Conversation.builder()
-                    .conversationId(conversationId)
-                    .conversationType(ConversationTypeEnum.PRIVATE) // 私信
+                    .conversationType(ConversationTypeEnum.PRIVATE)
                     .senderUserId(Math.min(userId, friendId))
                     .receiveUserId(Math.max(userId, friendId))
                     .conversationNameSender(friendInfo.getNickName())
@@ -159,7 +155,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                     .createdAt(LocalDateTime.now())
                     .updatedAt(LocalDateTime.now())
                     .build();
-            conversationMapper.insertConversation(conversation);
+            conversationMapper.insert(conversation);
             log.info("创建会话成功: {}", conversation.getConversationId());
             return conversation;
 
@@ -279,7 +275,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             
             // 1. 获取用户的所有会话列表
             List<Conversation> conversations = conversationMapper.selectByUserId(userId);
-            
+
             if (conversations == null || conversations.isEmpty()) {
                 log.info("用户{}没有会话，无需清除未读计数", userId);
                 return true;
@@ -561,5 +557,10 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             return conversation.getSenderUserId();
         }
     }
-
+    private UserInfoVo getUserInfoVo(Long userId, Conversation conversation) {
+        if (userId.equals(conversation.getSenderUserId())){
+            return userDubboService.getUserInfo(conversation.getReceiveUserId());
+        }
+        return userDubboService.getUserInfo(conversation.getSenderUserId());
+    }
 }

@@ -184,5 +184,4 @@ public class RefundRuleController {
         refundRuleService.toggleRuleStatus(context.getMerchantId(), ruleId, enabled);
         return R.ok();
     }
-
 }

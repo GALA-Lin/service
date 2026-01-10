@@ -76,6 +76,16 @@ public enum FileTypeEnum {
             "场馆详情图片",
             new String[]{".jpg", ".jpeg", ".png", ".webp"},
             10 * 1024 * 1024L  // 10MB
+    ),
+
+    /**
+     * 球星卡肖像（抠图后的透明背景图）
+     */
+    STAR_CARD_PORTRAIT(
+            "star-card-portrait",
+            "球星卡肖像",
+            new String[]{".jpg", ".jpeg", ".png", ".webp"},
+            10 * 1024 * 1024L  // 10MB
     );
 
     /**

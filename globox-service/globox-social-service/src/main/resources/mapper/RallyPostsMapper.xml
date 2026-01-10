@@ -26,8 +26,7 @@
         <id column="rally_updated_at" jdbcType="TIMESTAMP" property="rallyUpdatedAt" />
     </resultMap>
 
-    <select id="getRallyPostsList" resultMap="BaseResultMap">
-        SELECT
+    <sql id="Base_Column_List">
         rally_post_id,
         initiator_id,
         rally_title,
@@ -50,76 +49,84 @@
         rally_status,
         rally_created_at,
         rally_updated_at
+    </sql>
+    <select id="getRallyPostsList" resultMap="BaseResultMap">
+        SELECT
+        <include refid="Base_Column_List" />
         FROM rally_posts
-        WHERE 1=1
-        <if test="area != null ">
-            AND rally_region IN
-            <foreach collection="area" item="area" open="(" separator="," close=")">
-                #{area}
-            </foreach>
-        </if>
-        <if test="timeRange != null">
-            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
-            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
-            INTERVAL
-            CASE #{timeRange}
-            WHEN 1 THEN 12
-            WHEN 2 THEN 24
-            WHEN 3 THEN 48
-            WHEN 4 THEN 120
-            ELSE 24
-            END
-            HOUR)
-        </if>
-        <if test="genderLimit != null">
-            AND rally_gender_limit = #{genderLimit}
-        </if>
-        <if test="ntrpMin != null">
-            AND rally_ntrp_min >= #{ntrpMin}
-        </if>
-        <if test="ntrpMax != null">
-            AND rally_ntrp_max &lt;= #{ntrpMax}
-        </if>
-        <if test="activityType != null">
-            AND rally_activity_type = #{activityType}
-        </if>
-        ORDER BY rally_event_date
+        <where>
+            <if test="area != null and area.size() > 0">
+                AND rally_region IN
+                <foreach collection="area" item="area" open="(" separator="," close=")">
+                    #{area}
+                </foreach>
+            </if>
+            <if test="timeRange != null">
+                AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
+                AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
+                INTERVAL
+                CASE #{timeRange}
+                WHEN 1 THEN 12
+                WHEN 2 THEN 24
+                WHEN 3 THEN 48
+                WHEN 4 THEN 120
+                ELSE 24
+                END
+                HOUR)
+            </if>
+            <if test="genderLimit != null">
+                AND rally_gender_limit = #{genderLimit}
+            </if>
+            <if test="ntrpMin != null and ntrpMax != null">
+                AND (
+                (rally_ntrp_min &lt;= #{ntrpMax} AND rally_ntrp_max >= #{ntrpMin})
+                OR
+                (rally_ntrp_min &lt;= #{ntrpMax} AND rally_ntrp_max = 0.0)
+                )
+            </if>
+            <if test="activityType != null">
+                AND rally_activity_type = #{activityType}
+            </if>
+        </where>
+        ORDER BY rally_created_at DESC
         LIMIT #{offset}, #{pageSize}
     </select>
     <select id="countRallyPostsList" resultType="java.lang.Long">
         SELECT COUNT(*)
         FROM rally_posts
-        WHERE 1=1
-        <if test="area != null">
-            AND rally_region IN
-            <foreach collection="area" item="area" open="(" separator="," close=")">
-                #{area}
-            </foreach>
-        </if>
-        <if test="timeRange != null">
-            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
-            AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
-            INTERVAL
-            CASE #{timeRange}
-            WHEN 1 THEN 12
-            WHEN 2 THEN 24
-            WHEN 3 THEN 48
-            WHEN 4 THEN 120
-            ELSE 24
-            END
-            HOUR)
-        </if>
-        <if test="genderLimit != null">
-            AND rally_gender_limit = #{genderLimit}
-        </if>
-        <if test="ntrpMin != null">
-            AND rally_ntrp_min >= #{ntrpMin}
-        </if>
-        <if test="ntrpMax != null">
-            AND rally_ntrp_max &lt;= #{ntrpMax}
-        </if>
-        <if test="activityType != null">
-            AND rally_activity_type = #{activityType}
-        </if>
+        <where>
+            <if test="area != null and area.size() > 0">
+                AND rally_region IN
+                <foreach collection="area" item="area" open="(" separator="," close=")">
+                    #{area}
+                </foreach>
+            </if>
+            <if test="timeRange != null">
+                AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
+                AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
+                INTERVAL
+                CASE #{timeRange}
+                WHEN 1 THEN 12
+                WHEN 2 THEN 24
+                WHEN 3 THEN 48
+                WHEN 4 THEN 120
+                ELSE 24
+                END
+                HOUR)
+            </if>
+            <if test="genderLimit != null">
+                AND rally_gender_limit = #{genderLimit}
+            </if>
+            <if test="ntrpMin != null and ntrpMax != null">
+                AND (
+                (rally_ntrp_min &lt;= #{ntrpMax} AND rally_ntrp_max >= #{ntrpMin})
+                OR
+                (rally_ntrp_min &lt;= #{ntrpMax} AND rally_ntrp_max = 0.0)
+                )
+            </if>
+            <if test="activityType != null">
+                AND rally_activity_type = #{activityType}
+            </if>
+        </where>
     </select>
 </mapper>

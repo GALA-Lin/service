@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.order.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
@@ -27,7 +28,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 /**
@@ -78,6 +78,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
             Long refundApplyId,
             boolean isAutoRefund,
             Long operatorId,
+            OperatorTypeEnum operatorType,
             SellerTypeEnum sellerType,
             BigDecimal refundPercentage) {
 
@@ -296,9 +297,9 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .oldItemRefundStatus(RefundStatusEnum.WAIT_APPROVING)
                         .newItemRefundStatus(RefundStatusEnum.APPROVED)
                         .refundApplyId(refundApplyId)
-                        .operatorType(isAutoRefund ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
-                        .operatorId(isAutoRefund ? null : operatorId)
-                        .operatorName(sellerType.getDescription() + "_" + operatorId)
+                        .operatorType(operatorType)
+                        .operatorId(operatorId)
+                        .operatorName(operatorType.getOperatorTypeName() + "_" + operatorId)
                         .remark(isAutoRefund ? "服务提供方自动审批退款" : "服务提供方同意退款")
                         .build();
                 orderStatusLogsMapper.insert(itemLog);
@@ -344,9 +345,9 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 .newOrderStatus(OrderStatusEnum.REFUNDING)
                 .refundApplyId(refundApplyId)
                 .refundApplyId(refundApplyId)
-                .operatorType(isAutoRefund ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
-                .operatorId(isAutoRefund ? null : operatorId)
-                .operatorName(sellerType.getDescription() + "_" + operatorId)
+                .operatorType(operatorType)
+                .operatorId(operatorId)
+                .operatorName(operatorType.getOperatorTypeName() + "_" + operatorId)
                 .remark(isAutoRefund ? "服务提供方自动审批退款" : "服务提供方同意退款")
                 .build();
         orderStatusLogsMapper.insert(orderLog);
@@ -372,21 +373,26 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT,
                         refundMessage);
 
+                UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
+                        .userId(order.getBuyerId())
+                        .operatorType(operatorType)
+                        .recordIds(recordIds)
+                        .bookingDate(bookingDate)
+                        .build();
+
                 // 取消锁场
                 if (sellerType.equals(SellerTypeEnum.VENUE)) {
-
-                    UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
-                            .userId(order.getBuyerId())
-                            .recordIds(recordIds)
-                            .bookingDate(bookingDate)
-                            .build();
-
                     mqService.send(
                             OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
                             OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                             unlockMsg);
                 } else if (sellerType.equals(SellerTypeEnum.COACH)) {
-                    // TODO 教练取消
+                    mqService.send(
+                            OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
+                            OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
+                            unlockMsg);
+                } else {
+                    throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
                 }
             }
         });

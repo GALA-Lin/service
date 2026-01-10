@@ -24,7 +24,7 @@ public interface RallyService {
      * @param rallyQueryDto
      * @return
      */
-    PaginationResult<RallyPostsVo> getRallyPostsList(RallyQueryDto rallyQueryDto, Integer page, Integer pageSize);
+    RallyQueryVo getRallyPostsList(RallyQueryDto rallyQueryDto);
 
     /**
      * 获取约球详情
@@ -109,8 +109,6 @@ public interface RallyService {
      * @param inspectorId
      * @return
      */
-    List<RallyApplicationVo> inspectList(Long postId, Long inspectorId);
-
-    RallyQueryVo getRallyQueryList();
+    PaginationResult<RallyApplicationVo> inspectList(Long postId, Integer page, Integer pageSize,  Long inspectorId);
 
 }

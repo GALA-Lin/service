@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * user 模块 - 启动类
@@ -12,6 +13,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * @author dk
  * @since 2025/12/19 11:15
  */
+@EnableAsync
 @EnableDiscoveryClient
 @SpringBootApplication(scanBasePackages = "com.unlimited.sports.globox")
 @EnableConfigurationProperties(WechatProperties.class)

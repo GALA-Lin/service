@@ -8,7 +8,6 @@ import java.util.List;
 
 public interface FilterRegionMapper extends BaseMapper<FilterRegion> {
 
-    @Select("select * from filter_region")
-    List<FilterRegion> selectAll();
+
 
 }

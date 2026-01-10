@@ -29,6 +29,7 @@ import com.unlimited.sports.globox.user.mapper.UserProfileMapper;
 import com.unlimited.sports.globox.user.mapper.UserRacketMapper;
 import com.unlimited.sports.globox.user.mapper.UserStyleTagMapper;
 import com.unlimited.sports.globox.user.service.FileUploadService;
+import com.unlimited.sports.globox.user.service.PortraitMattingService;
 import com.unlimited.sports.globox.user.service.UserProfileService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -75,6 +76,9 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @Autowired
     private FileUploadService fileUploadService;
+
+    @Autowired
+    private PortraitMattingService portraitMattingService;
 
     @Override
     public UserProfile getUserProfileById(Long userId) {
@@ -662,5 +666,39 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         log.info("更新球星卡肖像成功：userId={}, portraitUrl={}", userId, portraitUrl);
         return R.ok("球星卡肖像更新成功");
+    }
+
+    @Override
+    public R<String> uploadStarCardPortrait(Long userId, MultipartFile file) {
+        try {
+            // 验证用户存在
+            UserProfile profile = getUserProfileById(userId);
+            if (profile == null) {
+                return R.error(UserAuthCode.USER_NOT_EXIST);
+            }
+
+            // 在主线程中读取文件内容（避免 MultipartFile 跨线程传递问题）
+            if (file == null || file.isEmpty()) {
+                return R.<String>error(UserAuthCode.MISSING_UPLOAD_FILE).message("缺少上传文件");
+            }
+
+            byte[] fileContent = file.getBytes();
+            String originalFilename = file.getOriginalFilename();
+
+            // 异步处理抠图和数据更新（传递 byte[] 和文件名而不是 MultipartFile）
+            portraitMattingService.processAsync(userId, fileContent, originalFilename);
+
+            // 立即返回审核中状态
+            log.info("球星卡肖像上传请求已接收: userId={}, filename={}, size={}",
+                    userId, originalFilename, fileContent.length);
+            return R.ok("球星卡肖像已提交，审核中");
+
+        } catch (GloboxApplicationException e) {
+            log.error("球星卡肖像上传异常: userId={}, {}", userId, e.getMessage());
+            return R.error(e);
+        } catch (Exception e) {
+            log.error("球星卡肖像上传异常: userId={}", userId, e);
+            return R.<String>error(UserAuthCode.PORTRAIT_MATTING_FAILED).message("球星卡肖像提交失败");
+        }
     }
 }

@@ -120,4 +120,6 @@ public class RallyPostsVo {
      */
     private LocalDateTime createdAt;
 
+    private Integer rallyRemainingPeople;
+
 }

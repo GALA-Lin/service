@@ -71,7 +71,7 @@ public class NotificationSender {
         // 构建通知消息
         NotificationMessage notificationMessage = NotificationMessage.builder()
                 .messageId(messageId)
-                .messageType(event.getFullCode())
+                .messageType(event.name())
                 .timestamp(System.currentTimeMillis())
                 .sourceSystem(finalSourceSystem)
                 .traceId(UUID.randomUUID().toString())

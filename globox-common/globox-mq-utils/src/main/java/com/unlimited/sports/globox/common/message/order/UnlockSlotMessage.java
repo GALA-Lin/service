@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.common.message.order;
 
+import com.unlimited.sports.globox.common.enums.order.OperatorTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,4 +21,5 @@ public class UnlockSlotMessage implements Serializable {
     private Long userId;
     private List<Long> recordIds;
     private LocalDate bookingDate;
+    private OperatorTypeEnum operatorType;
 }

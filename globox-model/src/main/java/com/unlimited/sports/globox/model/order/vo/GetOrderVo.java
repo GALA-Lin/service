@@ -98,4 +98,11 @@ public class GetOrderVo {
     @NotNull
     @Schema(description = "预订时间段列表")
     private List<SlotBookingTime> slotBookingTimes;
+
+    /**
+     * 订单子项的数量
+     */
+    @NotNull
+    @Schema(description = "总共的 item 数量")
+    private Integer itemCount;
 }

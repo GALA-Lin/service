@@ -4,12 +4,11 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
-import com.unlimited.sports.globox.common.enums.order.OperatorTypeEnum;
-import com.unlimited.sports.globox.common.enums.order.OrderActionEnum;
-import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
-import com.unlimited.sports.globox.common.enums.order.OrdersPaymentStatusEnum;
+import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
+import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
 import com.unlimited.sports.globox.model.order.entity.Orders;
@@ -101,14 +100,26 @@ public class OrderAutoCancelMQConsumer {
 
         UnlockSlotMessage unlockMessage = UnlockSlotMessage.builder()
                 .userId(message.getUserId())
-                .recordIds(message.getSlotIds())
+                .operatorType(OperatorTypeEnum.SYSTEM)
+                .recordIds(message.getRecordIds())
                 .bookingDate(message.getBookingDate())
                 .build();
 
-        mqService.send(
-                OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
-                OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
-                unlockMessage);
+        if (message.getSellerType().equals(SellerTypeEnum.VENUE)) {
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
+                    OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
+                    unlockMessage);
+        } else if (message.getSellerType().equals(SellerTypeEnum.COACH)){
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
+                    OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
+                    message);
+        } else {
+            throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
+        }
+
+
 
         log.info("[订单自动关闭] 成功关闭 orderNo={}", orderNo);
     }

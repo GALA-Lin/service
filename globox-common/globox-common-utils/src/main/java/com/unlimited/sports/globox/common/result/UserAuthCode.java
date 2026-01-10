@@ -62,6 +62,9 @@ public enum UserAuthCode implements ResultCode {
     MEDIA_URL_REQUIRED(2054, "媒体地址不能为空"),
     VIDEO_COVER_REQUIRED(2055, "视频封面不能为空"),
 
+    // 球星卡肖像抠图相关 2056-2059
+    PORTRAIT_MATTING_FAILED(2056, "球星卡肖像处理失败，请稍后重试"),
+
     // 商家登录相关 2060-2069
     MERCHANT_ACCOUNT_NOT_EXIST(2060, "账号不存在，请检查账号是否正确或联系管理员"),
     MERCHANT_PASSWORD_ERROR(2061, "账号或密码错误，请重新输入"),

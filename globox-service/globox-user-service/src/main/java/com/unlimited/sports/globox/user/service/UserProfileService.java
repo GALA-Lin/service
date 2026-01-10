@@ -101,4 +101,19 @@ public interface UserProfileService {
      * @return 更新结果
      */
     R<String> updateStarCardPortrait(Long userId, UpdateStarCardPortraitRequest request);
+
+    /**
+     * 上传并处理球星卡肖像（自动抠图 - 异步处理）
+     *
+     * 流程：
+     * 1. 接收用户上传的图片
+     * 2. 立即返回"审核中"状态
+     * 3. 后台异步处理：上传到 COS 并调用数据万象 AI 人像抠图
+     * 4. 后台异步更新用户的 portraitUrl 字段
+     *
+     * @param userId 用户ID
+     * @param file   上传的图片文件
+     * @return 提示消息
+     */
+    R<String> uploadStarCardPortrait(Long userId, MultipartFile file);
 }

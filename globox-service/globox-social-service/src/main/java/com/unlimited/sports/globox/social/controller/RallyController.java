@@ -13,6 +13,7 @@ import com.unlimited.sports.globox.model.social.vo.RallyPostsVo;
 import com.unlimited.sports.globox.model.social.vo.RallyQueryVo;
 import com.unlimited.sports.globox.social.service.RallyService;
 import com.unlimited.sports.globox.social.service.impl.RallyServiceImpl;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -37,35 +38,13 @@ public class RallyController {
 
     /**
      * 获取约球列表
-     *
-     * @param area 约球区域
-     * @param timeRange 时间范围
-     * @param genderLimit 性别限制
-     * @param ntrpMin NTRP最低等级
-     * @param ntrpMax NTRP最高等级
-     * @param activityType 活动类型
      * @return 约球列表分页结果
      */
     @GetMapping("/list")
-    public R<PaginationResult<RallyPostsVo>> getRallyList(
-            @RequestParam(required = false) List<String> area,
-            @RequestParam(required = false) Integer timeRange,
-            @RequestParam(required = false) Integer genderLimit,
-            @RequestParam(required = false) Double ntrpMin,
-            @RequestParam(required = false) Double ntrpMax,
-            @RequestParam(required = false) Integer activityType,
-            @RequestParam(defaultValue = "1") Integer page,
-            @RequestParam(defaultValue = "10") Integer pageSize
+    public R<RallyQueryVo> getRallyList(@Valid RallyQueryDto rallyQueryDto
             ) {
-        RallyQueryDto rallyQueryDto = RallyQueryDto.builder()
-                .area(area)
-                .timeRange(timeRange)
-                .genderLimit(genderLimit)
-                .ntrpMin(ntrpMin)
-                .ntrpMax(ntrpMax)
-                .activityType(activityType)
-                .build();
-        PaginationResult<RallyPostsVo> rallyPostsVoPaginationResult = rallyService.getRallyPostsList(rallyQueryDto,page,pageSize);
+        log.info("获取筛选条件：-------------{}",rallyQueryDto);
+        RallyQueryVo rallyPostsVoPaginationResult = rallyService.getRallyPostsList(rallyQueryDto);
         return R.ok(rallyPostsVoPaginationResult);
     }
 
@@ -116,7 +95,7 @@ public class RallyController {
      * @return 取消结果
      */
     @PostMapping("/cancelRally")
-    public R cancelRally(@RequestParam PostIdDto postIdDto,
+    public R cancelRally(@RequestBody PostIdDto postIdDto,
                          @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long cancellerId){
         if (cancellerId == null){
             log.error("请求头中缺少{}",HEADER_USER_ID);
@@ -250,20 +229,14 @@ public class RallyController {
      * @return 审核列表
      */
     @GetMapping("/inspectList")
-    public R<List<RallyApplicationVo>> inspectList(@RequestParam Long postId,
+    public R<PaginationResult<RallyApplicationVo>> inspectList(@RequestParam Long postId,@RequestParam(defaultValue = "1") Integer page, @RequestParam(defaultValue = "20")
+            Integer pageSize,
             @RequestHeader(HEADER_USER_ID) Long inspectorId){
         if (inspectorId == null){
             log.error("请求头中缺少{}",HEADER_USER_ID);
             throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
         }
-        List<RallyApplicationVo> rallyApplications = rallyService.inspectList(postId,inspectorId);
+        PaginationResult<RallyApplicationVo> rallyApplications = rallyService.inspectList(postId,page,pageSize,inspectorId);
         return R.ok(rallyApplications);
     }
-
-    @GetMapping("/getRallyQueryList")
-    public R<RallyQueryVo> getRallyQueryList(){
-        RallyQueryVo rallyQueryVos = rallyService.getRallyQueryList();
-        return R.ok(rallyQueryVos);
-    }
-
 }

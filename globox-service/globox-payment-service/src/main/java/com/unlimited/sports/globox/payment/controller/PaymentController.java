@@ -9,6 +9,7 @@ import com.unlimited.sports.globox.model.payment.dto.SubmitRequestDto;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.unlimited.sports.globox.payment.service.PaymentsService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +19,7 @@ import javax.validation.Valid;
 /**
  * 支付模块 controller
  */
+@Slf4j
 @Validated
 @RestController
 @RequestMapping("payments")
@@ -25,6 +27,7 @@ public class PaymentController {
 
     @Autowired
     private PaymentsService paymentsService;
+
 
     /**
      * 下单
@@ -36,9 +39,10 @@ public class PaymentController {
     public R<SubmitResultVo> submit(
             @PathVariable("orderNo") Long orderNo,
             @RequestHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE) String clientTypeStr,
-            @RequestHeader(RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID) String openId,
+            @RequestHeader(value = RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID, required = false) String openId,
             @ModelAttribute @Valid SubmitRequestDto dto) {
         dto.setOrderNo(orderNo);
+
         ClientType clientType = ClientType.fromValue(clientTypeStr);
         dto.setClientType(clientType);
         dto.setOpenId(openId);

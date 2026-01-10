@@ -9,8 +9,9 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum OperatorTypeEnum {
     USER(1, "USER"),
-    MERCHANT(2, "MERCHANT"),
-    SYSTEM(3, "SYSTEM");
+    COACH(2, "COACH"),
+    MERCHANT(3, "MERCHANT"),
+    SYSTEM(10, "SYSTEM");
 
     @EnumValue
     @JsonValue

@@ -27,7 +27,7 @@ public class MessageEntity implements Serializable {
     /**
      * 消息ID
      */
-    @TableId(value = "message_id", type = IdType.INPUT)
+    @TableId(value = "message_id", type = IdType.AUTO)
     private Long messageId;
 
     /**

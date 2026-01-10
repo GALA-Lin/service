@@ -101,7 +101,7 @@ public class RallyPostsDetailsVo {
      * 约球状态
      */
     @NonNull
-    private Integer rallyStatus;
+    private int rallyStatus;
 
     /**
      * 费用
@@ -128,4 +128,10 @@ public class RallyPostsDetailsVo {
      * 是否是发起人
      */
     private boolean isOwner;
+
+
+    /**
+     * 参与人数
+     */
+    private int rallyParticipantCount;
 }

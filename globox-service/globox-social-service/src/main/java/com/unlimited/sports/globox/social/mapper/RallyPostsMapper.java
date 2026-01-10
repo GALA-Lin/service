@@ -51,7 +51,7 @@ public interface RallyPostsMapper extends BaseMapper<RallyPosts> {
      * @param userId   用户ID
      * @return 我的活动列表
      */
-    @Select("SELECT * FROM rally_posts WHERE initiator_id = #{userId} ORDER BY created_at DESC LIMIT #{offset}, #{pageSize}")
+    @Select("SELECT * FROM rally_posts WHERE initiator_id = #{userId} ORDER BY rally_created_at DESC LIMIT #{offset}, #{pageSize}")
     List<RallyPosts> myActivities(@Param("offset") Integer offset,
                                     @Param("pageSize") Integer pageSize,
                                     @Param("userId")Long userId);
@@ -73,27 +73,27 @@ Long countRallyPostsList(@Param("area") List<String> area,
                          @Param("ntrpMax") Double ntrpMax,
                          @Param("activityType") Integer activityType);
 
-    @Select("SELECT * FROM rally_posts WHERE initiator_id = #{userId} AND status = 0 ORDER BY created_at DESC LIMIT #{offset}, #{pageSize}")
+    @Select("SELECT * FROM rally_posts WHERE initiator_id = #{userId} AND rally_status = 0 ORDER BY rally_created_at DESC LIMIT #{offset}, #{pageSize}")
     List<RallyPosts> getPublishedActivitiesByUser(@Param("userId") Long userId,
                                                   @Param("offset") int offset,
                                                   @Param("pageSize") int pageSize);
 
-    @Select("SELECT COUNT(*) FROM rally_posts WHERE initiator_id = #{userId} AND status = 0")
+    @Select("SELECT COUNT(*) FROM rally_posts WHERE initiator_id = #{userId} AND rally_status = 0")
     int countPublishedActivitiesByUser(@Param("userId") Long userId);
 
     @Select({
-            "SELECT * FROM rally_posts WHERE status = 2",
+            "SELECT * FROM rally_posts WHERE rally_status = 2",
             "AND (initiator_id = #{userId} OR rally_post_id IN (",
             "  SELECT rally_post_id FROM rally_participant WHERE participant_id = #{userId}",
             "))",
-            "ORDER BY created_at DESC LIMIT #{offset}, #{pageSize}"
+            "ORDER BY rally_created_at DESC LIMIT #{offset}, #{pageSize}"
     })
     List<RallyPosts> getCancelledActivities(@Param("userId") Long userId,
                                             @Param("offset") int offset,
                                             @Param("pageSize") int pageSize);
 
     @Select({
-            "SELECT COUNT(*) FROM rally_posts WHERE status = 4",
+            "SELECT COUNT(*) FROM rally_posts WHERE rally_status = 4",
             "AND (initiator_id = #{userId} OR rally_post_id IN (",
             "  SELECT rally_post_id FROM rally_participant WHERE participant_id = #{userId}",
             "))"

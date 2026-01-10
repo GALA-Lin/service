@@ -7,7 +7,6 @@ import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
-import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.order.OrderForMerchantRefundDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
@@ -23,8 +22,6 @@ import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
@@ -185,6 +182,7 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
                 refundApplyId,
                 false,
                 merchantId,
+                OperatorTypeEnum.USER,
                 SellerTypeEnum.VENUE,
                 dto.getRefundPercentage());
 

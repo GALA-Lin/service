@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
 import com.unlimited.sports.globox.dubbo.order.OrderForCoachDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import lombok.extern.slf4j.Slf4j;
@@ -36,7 +37,7 @@ public class CoachOrderController {
      */
     @GetMapping
     public R<IPage<CoachGetOrderResultDto>> getOrderPage(
-            @RequestHeader("X-User-Id") Long coachUserId,
+            @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码必须大于等于1") Integer pageNum,
             @RequestParam(defaultValue = "10") @Min(value = 1, message = "每页大小必须大于等于1") Integer pageSize) {
 
@@ -73,7 +74,7 @@ public class CoachOrderController {
     @GetMapping("/{orderNo}")
     public R<CoachGetOrderResultDto> getOrderDetails(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("获取订单详情 - orderNo: {}, coachUserId: {}", orderNo, coachUserId);
 
@@ -106,7 +107,7 @@ public class CoachOrderController {
     @PostMapping("/{orderNo}/cancel")
     public R<SellerCancelOrderResultDto> cancelUnpaidOrder(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("教练取消未支付订单 - orderNo: {}, coachUserId: {}", orderNo, coachUserId);
 
@@ -139,7 +140,7 @@ public class CoachOrderController {
     @PostMapping("/{orderNo}/confirm")
     public R<SellerConfirmResultDto> confirmOrder(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("教练确认订单 - orderNo: {}, coachUserId: {}", orderNo, coachUserId);
 
@@ -175,7 +176,7 @@ public class CoachOrderController {
     public R<SellerApproveRefundResultDto> approveRefund(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
             @Valid @RequestBody CoachApproveRefundRequestDto dto,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("教练同意退款 - orderNo: {}, coachUserId: {}, refundApplyId: {}, refundPercentage: {}",
                 orderNo, coachUserId, dto.getRefundApplyId(), dto.getRefundPercentage());
@@ -209,7 +210,7 @@ public class CoachOrderController {
     public R<SellerRejectRefundResultDto> rejectRefund(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
             @Valid @RequestBody CoachRejectRefundRequestDto dto,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("教练拒绝退款 - orderNo: {}, coachUserId: {}, refundApplyId: {}, remark: {}",
                 orderNo, coachUserId, dto.getRefundApplyId(), dto.getRemark());
@@ -243,7 +244,7 @@ public class CoachOrderController {
     public R<SellerRefundResultDto> refund(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
             @Valid @RequestBody CoachRefundRequestDto dto,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("教练申请退款 - orderNo: {}, coachUserId: {}, remark: {}",
                 orderNo, coachUserId, dto.getRemark());

@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.common.message.order;
 
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,5 +21,6 @@ public class OrderAutoCancelMessage implements Serializable {
     private Long orderNo;
     private Long userId;
     private LocalDate bookingDate;
-    private List<Long> slotIds;
+    private List<Long> recordIds;
+    private SellerTypeEnum sellerType;
 }

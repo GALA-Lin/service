@@ -50,7 +50,6 @@ public interface WechatPayService {
      * 取消指定的支付(未支付)。
      *
      * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
-     * @return 如果取消请求处理成功，则返回true；否则返回false
      */
     void cancel(Payments payments);
 }

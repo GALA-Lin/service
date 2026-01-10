@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.model.social.vo;
 
+import com.unlimited.sports.globox.common.result.PaginationResult;
 import lombok.*;
 
 import java.util.List;
@@ -11,27 +12,14 @@ import java.util.List;
 public class RallyQueryVo {
 
     @NonNull
-    private List<DictItem> area;
+    private List<String> area;
     @NonNull
-    private List<DictItem> timeRange;
+    private List<String> timeRange;
     @NonNull
-    private List<DictItem> genderLimit;
+    private List<String> genderLimit;
     @NonNull
-    private List<DictItem> activityType;
+    private List<String> activityType;
 
-    @Data
-    @AllArgsConstructor
-    @NoArgsConstructor
-    @Builder
-    public static class DictItem {
-        /**
-         * 值（用于前端提交参数）
-         */
-        private Integer value;
+    private PaginationResult<RallyPostsVo> rallyPostsVoList;
 
-        /**
-         * 描述（用于前端显示）
-         */
-        private String description;
-    }
 }

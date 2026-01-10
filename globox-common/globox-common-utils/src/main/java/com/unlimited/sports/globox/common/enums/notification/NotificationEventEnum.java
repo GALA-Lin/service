@@ -80,7 +80,8 @@ public enum NotificationEventEnum {
     SYSTEM_ANNOUNCEMENT(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_ANNOUNCEMENT", "系统公告"),
     SYSTEM_VERSION_UPDATE(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_VERSION_UPDATE", "版本更新"),
     SYSTEM_MARKETING(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_MARKETING", "营销推送"),
-    SYSTEM_ACCOUNT_LOGIN_ELSEWHERE(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_ACCOUNT_LOGIN_ELSEWHERE", "账号在别处登录");
+    SYSTEM_ACCOUNT_LOGIN_ELSEWHERE(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_ACCOUNT_LOGIN_ELSEWHERE", "账号在别处登录"),
+    SYSTEM_PORTRAIT_MATTING_COMPLETED(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_PORTRAIT_MATTING_COMPLETED", "球星卡肖像处理完成");
 
     private final NotificationModuleEnum module;
     private final NotificationRoleEnum role;

@@ -240,5 +240,12 @@ public class UserProfileController {
         return userMediaService.uploadMediaVideo(file);
     }
 
+    @PostMapping("/star-card/portrait/upload")
+    @Operation(summary = "上传球星卡肖像（自动抠图 - 异步处理）")
+    public R<String> uploadStarCardPortrait(
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @RequestParam("file") MultipartFile file) {
+        return userProfileService.uploadStarCardPortrait(userId, file);
+    }
 
 }

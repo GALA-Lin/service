@@ -1,9 +1,6 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.unlimited.sports.globox.common.result.PaginationResult;
-import com.unlimited.sports.globox.common.service.MQService;
-import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.dto.MessageDto;
@@ -49,9 +46,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
     @Autowired
     private ConversationService conversationService;
-
-    @Autowired
-    private IdGenerator idGenerator;
 
     @Autowired(required = false)  // 本地环境可能不存在，设为可选
     private MessageProducerService messageProducerService;
@@ -134,14 +128,12 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             
             for (Long toUserId : toUserIds) {
                 // 使用雪花算法生成消息ID
-                long messageId = idGenerator.nextId();
                 
                 // 获取或创建会话
                 Conversation conversation = conversationService.getOrCreateConversation(fromUserId, toUserId);
                 
                 // 构建消息实体
                 MessageEntity messageEntity = MessageEntity.builder()
-                    .messageId(messageId)
                     .fromUserId(fromUserId)
                     .toUserId(toUserId)
                     .messageType(messageDto.getMessageType())
@@ -345,13 +337,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                     return MessageResult.MESSAGE_HAS_EXISTED.getMessage();
                 }
             }
-
-            // 如果消息没有ID，使用雪花算法生成
-            if (messageEntity.getMessageId() == null) {
-                long messageId = idGenerator.nextId();
-                messageEntity.setMessageId(messageId);
-            }
-
             messageMapper.insert(messageEntity);
             return MessageResult.MESSAGE_IMPORT_SUCCESS.getMessage();
 
@@ -397,11 +382,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
 
     private MessageEntity convertToMessage(MessageDto dto, TencentImResult result, Long msgRandom, Long conversationId) {
-        // 使用雪花算法生成消息ID
-        long messageId = idGenerator.nextId();
-        
         MessageEntity messageEntity = MessageEntity.builder()
-            .messageId(messageId)
             .fromUserId(dto.getFromUserId())
             .toUserId(dto.getToUserId())
             .messageType(dto.getMessageType())
@@ -574,11 +555,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                     // 解析时间戳
                     long time = msgNode.path("Time").asLong();
                     messageEntity.setSendTime(LocalDateTime.ofEpochSecond(time, 0, java.time.ZoneOffset.UTC));
-
-                    // 使用雪花算法生成消息ID
-                    long messageId = idGenerator.nextId();
-                    messageEntity.setMessageId(messageId);
-                    
                     // 保存到数据库
                     messageMapper.insert(messageEntity);
                     messageEntities.add(messageEntity);

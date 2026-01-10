@@ -160,6 +160,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 if (SellerTypeEnum.VENUE.equals(sellerType)) {
                     UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
                             .userId(order.getBuyerId())
+                            .operatorType(OperatorTypeEnum.MERCHANT)
                             .recordIds(recordIds)
                             .bookingDate(bookingDate)
                             .build();
@@ -380,8 +381,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 refundApplyId,
                 false,
                 sellerId,
-                sellerType,
-                refundPercentage);
+                OperatorTypeEnum.USER,
+                sellerType, refundPercentage);
 
         SellerApproveRefundResultDto resultDto = SellerApproveRefundResultDto.builder()
                 .orderNo(orderNo)
@@ -699,8 +700,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         refundApplyId,
                         true,
                         null,
-                        order.getSellerType(),
-                        new BigDecimal("100"));
+                        SellerTypeEnum.COACH.equals(order.getSellerType()) ? OperatorTypeEnum.COACH : OperatorTypeEnum.MERCHANT,
+                        order.getSellerType(), new BigDecimal("100"));
             }
         });
 

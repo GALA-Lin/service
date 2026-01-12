@@ -9,8 +9,16 @@ import com.unlimited.sports.globox.model.merchant.enums.DateTypeEnum;
 import com.unlimited.sports.globox.model.merchant.enums.SlotRecordStatusEnum;
 import com.unlimited.sports.globox.model.merchant.vo.SlotAvailabilityVo;
 import com.unlimited.sports.globox.model.merchant.vo.SlotGenerationResultVo;
+import com.unlimited.sports.globox.model.merchant.vo.VenueSlotAvailabilityVo;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
+import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
+import com.unlimited.sports.globox.model.venue.enums.CourtStatus;
+import com.unlimited.sports.globox.model.venue.vo.BookingSlotVo;
+import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
+import com.unlimited.sports.globox.venue.service.IVenueActivityService;
+import com.unlimited.sports.globox.venue.service.IVenuePriceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +48,10 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
     private final VenueMapper venueMapper;
     private final VenueBusinessHoursMapper businessHoursMapper;
     private final VenuePriceTemplatePeriodMapper priceTemplatePeriodMapper;
+
+    private final IVenuePriceService venuePriceService;
+    private final IVenueActivityService venueActivityService;
+    private final VenueActivityMapper venueActivityMapper;
 
     /**
      * 为指定日期生成槽位记录
@@ -224,23 +236,319 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                     SlotAvailabilityVo vo = SlotAvailabilityVo.builder()
                             .startTime(template.getStartTime())
                             .endTime(template.getEndTime())
+                            .templateId(template.getBookingSlotTemplateId())
                             .build();
 
                     if (record == null) {
-                        // 未生成记录 = 不可预订
+                        // 未生成记录 = 可预订
                         vo.setAvailable(true);
+                        vo.setStatus(1);
                         vo.setPrice(calculatePrice(template.getStartTime(), pricePeriods, date));
                         vo.setStatusRemark("可预订");
                     } else {
                         vo.setBookingSlotId(record.getBookingSlotRecordId());
+                        vo.setStatus(record.getStatus());
                         vo.setAvailable(record.getStatus().equals(SlotRecordStatusEnum.AVAILABLE.getCode()));
                         vo.setPrice(calculatePrice(template.getStartTime(), pricePeriods, date));
                         vo.setStatusRemark(getStatusName(record.getStatus()));
+                        vo.setLockedType(record.getLockedType());
+                        vo.setLockReason(record.getLockReason());
+                        vo.setOrderId(String.valueOf(record.getOrderId()));
                     }
 
                     return vo;
                 })
                 .collect(Collectors.toList());
+    }
+    /**
+     * 查询场馆下所有场地某日的时段可用性（增强版 - 支持活动）
+     *
+     * @param venueId   场馆ID
+     * @param date      日期
+     * @param startTime 开始时间（可选，筛选时间范围）
+     * @param endTime   结束时间（可选，筛选时间范围）
+     * @return 场馆级时段可用性列表（按场地分组）
+     */
+    @Override
+    public List<VenueSlotAvailabilityVo> queryVenueAvailability(Long venueId, LocalDate date,
+                                                                LocalTime startTime, LocalTime endTime) {
+        // 1. 验证场馆
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null) {
+            throw new GloboxApplicationException("场馆不存在");
+        }
+
+        // 2. 获取营业时间
+        VenueBusinessHours businessHours = getBusinessHours(venueId, date);
+        if (businessHours == null) {
+            log.warn("场馆未配置营业时间或当天不营业 - venueId: {}, date: {}", venueId, date);
+            return Collections.emptyList();
+        }
+
+        if (BusinessHourRuleTypeEnum.CLOSED_DATE.getCode().equals(businessHours.getRuleType())) {
+            log.info("场馆当天不开放 - venueId: {}, date: {}", venueId, date);
+            return Collections.emptyList();
+        }
+
+        // 3. 查询场馆下的所有开放场地
+        List<Court> courts = courtMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Court>()
+                        .eq(Court::getVenueId, venueId)
+                        .eq(Court::getStatus, CourtStatus.OPEN.getValue())
+                        .orderByAsc(Court::getCourtId)
+        );
+
+        if (courts.isEmpty()) {
+            log.warn("场馆没有开放的场地 - venueId: {}", venueId);
+            return Collections.emptyList();
+        }
+
+        LocalTime openTime = businessHours.getOpenTime();
+        LocalTime closeTime = businessHours.getCloseTime();
+        List<Long> courtIds = courts.stream().map(Court::getCourtId).toList();
+
+        // 4. 批量查询所有场地的槽位模板（使用venue的mapper以支持活动）
+        List<VenueBookingSlotTemplate> allTemplates = templateMapper.MerchantSelectByCourtIdsAndTimeRange(
+                courtIds,
+                openTime,
+                closeTime
+        );
+
+        // 5. 批量查询所有场地该日期的槽位记录
+        List<VenueBookingSlotRecord> allRecords = recordMapper.MerchantSelectByCourtIdsAndDate(
+                courtIds,
+                date
+        );
+
+        // 6. 构建映射表
+        Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = allTemplates.stream()
+                .collect(Collectors.groupingBy(VenueBookingSlotTemplate::getCourtId));
+
+        Map<Long, VenueBookingSlotRecord> recordMap = allRecords.stream()
+                .collect(Collectors.toMap(VenueBookingSlotRecord::getSlotTemplateId, record -> record));
+
+        // 7. 批量获取所有槽位的价格
+        List<LocalTime> slotStartTimes = allTemplates.stream()
+                .map(VenueBookingSlotTemplate::getStartTime)
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (venue.getTemplateId() == null) {
+            throw new GloboxApplicationException("场馆价格未配置");
+        }
+
+        Map<LocalTime, BigDecimal> priceMap = venuePriceService.getSlotPriceMap(
+                venue.getTemplateId(),
+                venue.getVenueId(),
+                date,
+                slotStartTimes
+        );
+
+        // 8. 批量获取场馆在该日期的所有活动
+        List<VenueActivity> allActivities = venueActivityService.getActivitiesByVenueAndDate(
+                venue.getVenueId(),
+                date
+        );
+
+        // 构建活动ID映射表
+        Map<Long, VenueActivity> activityMap = allActivities.stream()
+                .collect(Collectors.toMap(VenueActivity::getActivityId, activity -> activity));
+
+        // 批量获取所有活动占用的槽位映射
+        List<Long> allActivityIds = allActivities.stream()
+                .map(VenueActivity::getActivityId)
+                .collect(Collectors.toList());
+
+        Map<Long, Long> activityLockedSlots = allActivityIds.isEmpty() ?
+                Map.of() :
+                venueActivityService.getActivityLockedSlotsByIds(allActivityIds, date);
+
+        // 9. 为每个场地构建槽位可用性信息
+        List<VenueSlotAvailabilityVo> result = new ArrayList<>();
+
+        for (Court court : courts) {
+            List<VenueBookingSlotTemplate> courtTemplates =
+                    templatesByCourtId.getOrDefault(court.getCourtId(), Collections.emptyList());
+
+            if (courtTemplates.isEmpty()) {
+                continue; // 跳过没有槽位模板的场地
+            }
+
+            // 转换为 BookingSlotVo 列表（包含活动信息）
+            List<BookingSlotVo> slots = courtTemplates.stream()
+                    .map(template -> buildBookingSlotVo(
+                            template,
+                            recordMap,
+                            priceMap,
+                            activityMap,
+                            activityLockedSlots,
+                            null // 商家端不需要判断是否是用户自己的预订
+                    ))
+                    .collect(Collectors.toList());
+
+            // 如果指定了时间范围，进行过滤
+            if (startTime != null || endTime != null) {
+                slots = filterSlotsByTimeRange(slots, startTime, endTime);
+            }
+
+            // 统计可用时段数量
+            long availableCount = slots.stream()
+                    .filter(BookingSlotVo::getIsAvailable)
+                    .count();
+
+            // 转换为 SlotAvailabilityVo 格式（兼容原接口）
+            List<SlotAvailabilityVo> merchantSlots = convertToSlotAvailabilityVo(slots);
+
+            // 构建场地级VO
+            VenueSlotAvailabilityVo courtVo = VenueSlotAvailabilityVo.builder()
+                    .courtId(court.getCourtId())
+                    .courtName(court.getName())
+                    .courtType(getCourtTypeName(court.getCourtType()))
+                    .slots(merchantSlots)
+                    .availableCount((int) availableCount)
+                    .totalCount(slots.size())
+                    .build();
+
+            result.add(courtVo);
+        }
+
+        log.info("场馆ID: {} 日期: {} 查询到 {} 个场地的时段信息", venueId, date, result.size());
+        return result;
+    }
+
+    /**
+     * 构建 BookingSlotVo（复用用户端逻辑）
+     */
+    private BookingSlotVo buildBookingSlotVo(
+            VenueBookingSlotTemplate template,
+            Map<Long, VenueBookingSlotRecord> recordMap,
+            Map<LocalTime, BigDecimal> priceMap,
+            Map<Long, VenueActivity> activityMap,
+            Map<Long, Long> activityLockedSlots,
+            Long userId) {
+
+        VenueBookingSlotRecord record = recordMap.get(template.getBookingSlotTemplateId());
+
+        // 检查是否被活动占用
+        Long activityId = activityLockedSlots.get(template.getBookingSlotTemplateId());
+        boolean isActivitySlot = activityId != null;
+
+        // 如果是活动槽位，获取活动详情
+        VenueActivity activity = isActivitySlot ? activityMap.get(activityId) : null;
+
+        BigDecimal price = priceMap.getOrDefault(template.getStartTime(), BigDecimal.ZERO);
+
+        // 如果是活动槽位且有单价，使用活动价格
+        if (isActivitySlot && activity != null && activity.getUnitPrice() != null) {
+            price = activity.getUnitPrice();
+        }
+
+        // 确定槽位状态
+        Integer status;
+        String statusDesc;
+        boolean isAvailable;
+
+        if (isActivitySlot) {
+            // 活动槽位逻辑
+            if (activity == null) {
+                status = BookingSlotStatus.EXPIRED.getValue();
+                statusDesc = "活动已失效";
+                isAvailable = false;
+            } else if (activity.getCurrentParticipants() >= activity.getMaxParticipants()) {
+                status = BookingSlotStatus.LOCKED_IN.getValue();
+                statusDesc = "活动已满员";
+                isAvailable = false;
+            } else {
+                status = BookingSlotStatus.AVAILABLE.getValue();
+                statusDesc = "可报名";
+                isAvailable = true;
+            }
+        } else if (record == null) {
+            // 未生成记录 = 可预订
+            status = BookingSlotStatus.AVAILABLE.getValue();
+            statusDesc = BookingSlotStatus.AVAILABLE.getDescription();
+            isAvailable = true;
+        } else {
+            // 普通槽位，根据记录状态判断
+            status = record.getStatus();
+            BookingSlotStatus slotStatus = BookingSlotStatus.fromValue(status);
+            statusDesc = slotStatus.getDescription();
+            isAvailable = BookingSlotStatus.AVAILABLE.getValue() == status;
+        }
+
+        return BookingSlotVo.builder()
+                .bookingSlotId(template.getBookingSlotTemplateId())
+                .startTime(template.getStartTime())
+                .endTime(template.getEndTime())
+                .slotType(isActivitySlot ?
+                        com.unlimited.sports.globox.model.venue.enums.SlotTypeEnum.ACTIVITY.getCode() :
+                        com.unlimited.sports.globox.model.venue.enums.SlotTypeEnum.NORMAL.getCode())
+                .status(status)
+                .statusDesc(statusDesc)
+                .isAvailable(isAvailable)
+                .price(price)
+                .isMyBooking(false) // 商家端不需要此字段
+                .activityName(activity != null ? activity.getActivityName() : null)
+                .currentParticipants(activity != null ? activity.getCurrentParticipants() : null)
+                .maxParticipants(activity != null ? activity.getMaxParticipants() : null)
+                .build();
+    }
+
+    /**
+     * 转换 BookingSlotVo 为 SlotAvailabilityVo（兼容商家端接口）
+     */
+    private List<SlotAvailabilityVo> convertToSlotAvailabilityVo(List<BookingSlotVo> bookingSlots) {
+        return bookingSlots.stream()
+                .map(slot -> SlotAvailabilityVo.builder()
+                        .startTime(slot.getStartTime())
+                        .endTime(slot.getEndTime())
+                        .templateId(slot.getBookingSlotId())
+                        .bookingSlotId(slot.getBookingSlotId())
+                        .status(slot.getStatus())
+                        .available(slot.getIsAvailable())
+                        .price(slot.getPrice())
+                        .statusRemark(slot.getStatusDesc())
+                        // 活动相关字段
+                        .slotType(slot.getSlotType())
+                        .activityName(slot.getActivityName())
+                        .currentParticipants(slot.getCurrentParticipants())
+                        .maxParticipants(slot.getMaxParticipants())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 根据时间范围过滤槽位（BookingSlotVo 版本）
+     */
+    private List<BookingSlotVo> filterSlotsByTimeRange(List<BookingSlotVo> slots,
+                                                       LocalTime startTime, LocalTime endTime) {
+        return slots.stream()
+                .filter(slot -> {
+                    if (startTime != null && slot.getStartTime().isBefore(startTime)) {
+                        return false;
+                    }
+                    if (endTime != null && slot.getEndTime().isAfter(endTime)) {
+                        return false;
+                    }
+                    return true;
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取场地类型名称
+     */
+    private String getCourtTypeName(Integer courtType) {
+        if (courtType == null) {
+            return "未知";
+        }
+        // 这里根据实际的枚举来映射，示例：
+        return switch (courtType) {
+            case 1 -> "红土";
+            case 2 -> "硬地";
+            case 3 -> "草地";
+            default -> "其他";
+        };
     }
 
     /**

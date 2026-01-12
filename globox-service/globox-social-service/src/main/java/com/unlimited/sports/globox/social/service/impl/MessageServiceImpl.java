@@ -66,14 +66,14 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         try {
             // 1. 生成消息随机值
             Long msgRandom = RandomUtils.nextLong(0, 999999999);
-            
+
             // 2. 调用腾讯IM发送消息（同步调用，确保消息真实发送成功）
             TencentImResult result = tencentCloudImUtil.sendMsgSync(
-                1, // 同步到发送方
-                messageDto.getFromUserId().toString(),
-                messageDto.getToUserId().toString(),
-                getTencentMsgType(messageDto.getMessageType().getCode()),
-                messageDto.getContent()
+                    1, // 同步到发送方
+                    messageDto.getFromUserId().toString(),
+                    messageDto.getToUserId().toString(),
+                    getTencentMsgType(messageDto.getMessageType().getCode()),
+                    messageDto.getContent()
             );
 
             if (!result.isSuccess()) {
@@ -106,7 +106,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
     public String batchSendMessage(Long fromUserId, List<Long> toUserIds, MessageDto messageDto) {
         try {
             Long msgRandom = RandomUtils.nextLong(0, 999999999);
-            
+
             List<String> toUserIdsStr = new ArrayList<>();
             for (Long userId : toUserIds) {
                 toUserIdsStr.add(userId.toString());
@@ -114,73 +114,73 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
             // 调用腾讯IM批量发送消息
             String result = tencentCloudImUtil.batchSendMsg(
-                1,
-                fromUserId.toString(),
-                toUserIdsStr,
-                getTencentMsgType(messageDto.getMessageType().getCode()),
-                messageDto.getContent()
+                    1,
+                    fromUserId.toString(),
+                    toUserIdsStr,
+                    getTencentMsgType(messageDto.getMessageType().getCode()),
+                    messageDto.getContent()
             );
 
             log.info("批量发送消息结果: {}", result);
 
             // 收集所有消息事件，批量发送到队列
             List<MessageQueueEvent> events = new ArrayList<>();
-            
+
             for (Long toUserId : toUserIds) {
                 // 使用雪花算法生成消息ID
-                
+
                 // 获取或创建会话
                 Conversation conversation = conversationService.getOrCreateConversation(fromUserId, toUserId);
-                
+
                 // 构建消息实体
                 MessageEntity messageEntity = MessageEntity.builder()
-                    .fromUserId(fromUserId)
-                    .toUserId(toUserId)
-                    .messageType(messageDto.getMessageType())
-                    .content(messageDto.getContent())
-                    .status(MessageStatusEnum.SENT)
-                    .isRead(false)
-                    .sendTime(LocalDateTime.now())
-                    .random(msgRandom)
-                    .conversationId(conversation.getConversationId())
-                    .extra(messageDto.getExtra())
-                    .build();
-                
+                        .fromUserId(fromUserId)
+                        .toUserId(toUserId)
+                        .messageType(messageDto.getMessageType())
+                        .content(messageDto.getContent())
+                        .status(MessageStatusEnum.SENT)
+                        .isRead(false)
+                        .sendTime(LocalDateTime.now())
+                        .random(msgRandom)
+                        .conversationId(conversation.getConversationId())
+                        .extra(messageDto.getExtra())
+                        .build();
+
                 // 保存到Redis缓存
                 saveMessageToRedis(messageEntity);
-                
+
                 // 同步保存到数据库
                 saveMessageToDB(messageEntity);
-                
+
                 // 同步更新会话
                 updateConversationAfterMessage(messageEntity, conversation.getConversationId());
-                
+
                 // 构建消息队列事件（用于其他异步处理）
                 MessageQueueEvent event = MessageQueueEvent.builder()
-                    .messageId(messageEntity.getMessageId())
-                    .fromUserId(messageEntity.getFromUserId())
-                    .toUserId(messageEntity.getToUserId())
-                    .messageType(messageEntity.getMessageType())
-                    .content(messageEntity.getContent())
-                    .status(messageEntity.getStatus())
-                    .isRead(messageEntity.getIsRead())
-                    .sendTime(messageEntity.getSendTime())
-                    .conversationId(messageEntity.getConversationId())
-                    .random(messageEntity.getRandom())
-                    .extra(messageEntity.getExtra())
-                    .operationType("SAVE_MESSAGE")
-                    .build();
-                
+                        .messageId(messageEntity.getMessageId())
+                        .fromUserId(messageEntity.getFromUserId())
+                        .toUserId(messageEntity.getToUserId())
+                        .messageType(messageEntity.getMessageType())
+                        .content(messageEntity.getContent())
+                        .status(messageEntity.getStatus())
+                        .isRead(messageEntity.getIsRead())
+                        .sendTime(messageEntity.getSendTime())
+                        .conversationId(messageEntity.getConversationId())
+                        .random(messageEntity.getRandom())
+                        .extra(messageEntity.getExtra())
+                        .operationType("SAVE_MESSAGE")
+                        .build();
+
                 events.add(event);
-                
+
                 log.info("批量发送消息到用户{}完成，会话ID: {}", toUserId, conversation.getConversationId());
             }
-            
+
             // 批量发送到消息队列（本地环境可能不存在 messageProducerService）
             if (!events.isEmpty() && messageProducerService != null) {
                 messageProducerService.sendBatchMessageToQueue(events);
             }
-            
+
             log.info("批量消息已发送到队列，数量: {}", events.size());
             return "批量发送消息成功";
 
@@ -211,16 +211,16 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             }
 
             tencentCloudImUtil.adminMsgWithDraw(
-                messageEntity.getFromUserId().toString(),
-                messageEntity.getToUserId().toString(),
-                messageEntity.getMessageId().toString()
+                    messageEntity.getFromUserId().toString(),
+                    messageEntity.getToUserId().toString(),
+                    messageEntity.getMessageId().toString()
             );
 
             messageEntity.setStatus(MessageStatusEnum.RECALLED);
             messageEntity.setIsRecalled(true);
             messageEntity.setRecalledAt(LocalDateTime.now());
             messageEntity.setUpdatedAt(LocalDateTime.now());
-            
+
             messageMapper.updateById(messageEntity);
             updateMessageInRedis(messageEntity);
 
@@ -237,7 +237,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         try {
             // 先从Redis查询
             List<MessageEntity> redisMessageEntities = queryMessagesFromRedis(fromUserId, toUserId, maxCnt, startTime, endTime);
-            
+
             if (redisMessageEntities.size() >= maxCnt) {
                 // 过滤撤回的消息
                 redisMessageEntities.removeIf(message -> message.getIsRecalled() != null && message.getIsRecalled());
@@ -246,19 +246,19 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
             // 从腾讯IM查询历史消息
             String result = tencentCloudImUtil.adminGetRoamMsg(
-                fromUserId.toString(),
-                toUserId.toString(),
-                maxCnt,
-                startTime,
-                endTime,
-                null
+                    fromUserId.toString(),
+                    toUserId.toString(),
+                    maxCnt,
+                    startTime,
+                    endTime,
+                    null
             );
 
             log.info("查询腾讯IM消息结果: {}", result);
 
             // 解析并保存到数据库
             List<MessageEntity> messageEntities = parseAndSaveMessages(result, fromUserId, toUserId);
-            
+
             // 合并结果
             if (redisMessageEntities.size() > 0) {
                 messageEntities.addAll(0, redisMessageEntities);
@@ -279,8 +279,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
     public Integer getC2CUnreadMsgNum(Long fromUserId, Long toUserId) {
         try {
             return tencentCloudImUtil.getC2CUnreadMsgNum(
-                fromUserId.toString(),
-                toUserId.toString()
+                    fromUserId.toString(),
+                    toUserId.toString()
             );
         } catch (Exception e) {
             log.error("查询未读消息计数异常", e);
@@ -310,7 +310,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
             messageEntity.setStatus(MessageStatusEnum.DELETED);
             messageEntity.setUpdatedAt(LocalDateTime.now());
-            
+
             messageMapper.updateById(messageEntity);
             updateMessageInRedis(messageEntity);
 
@@ -329,9 +329,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         try {
             if (messageEntity.getRandom() != null) {
                 MessageEntity existing = messageMapper.selectByRandom(
-                    messageEntity.getFromUserId(),
-                    messageEntity.getToUserId(),
-                    messageEntity.getRandom()
+                        messageEntity.getFromUserId(),
+                        messageEntity.getToUserId(),
+                        messageEntity.getRandom()
                 );
                 if (existing != null) {
                     return MessageResult.MESSAGE_HAS_EXISTED.getMessage();
@@ -351,7 +351,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         try {
             String redisKey = REDIS_MESSAGE_QUEUE + fromUserId + "_" + toUserId;
             List<MessageEntity> messageEntities = (List<MessageEntity>) redisTemplate.opsForValue().get(redisKey);
-            
+
             if (messageEntities == null || messageEntities.size() == 0) {
                 return 0;
             }
@@ -383,22 +383,22 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
     private MessageEntity convertToMessage(MessageDto dto, TencentImResult result, Long msgRandom, Long conversationId) {
         MessageEntity messageEntity = MessageEntity.builder()
-            .fromUserId(dto.getFromUserId())
-            .toUserId(dto.getToUserId())
-            .messageType(dto.getMessageType())
-            .content(dto.getContent())
-            .status(MessageStatusEnum.SENT)
-            .isRead(false)
-            .sendTime(LocalDateTime.now())
-            .random(msgRandom)
-            .conversationId(conversationId)
-            .extra(dto.getExtra()).build();
-        
+                .fromUserId(dto.getFromUserId())
+                .toUserId(dto.getToUserId())
+                .messageType(dto.getMessageType())
+                .content(dto.getContent())
+                .status(MessageStatusEnum.SENT)
+                .isRead(false)
+                .sendTime(LocalDateTime.now())
+                .random(msgRandom)
+                .conversationId(conversationId)
+                .extra(dto.getExtra()).build();
+
         if (result != null && result.getMsgKey() != null) {
             String extra = dto.getExtra() != null ? dto.getExtra() : "{}";
             messageEntity.setExtra(extra.replace("}", ",\"tencentMsgKey\":\"" + result.getMsgKey() + "\"}"));
         }
-        
+
         return messageEntity;
     }
 
@@ -449,24 +449,24 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         try {
             // 更新会话的最后消息信息
             conversationService.updateLastMessage(
-                conversationId,
-                messageEntity.getMessageId(),
-                messageEntity.getContent(),
-                messageEntity.getMessageType()
+                    conversationId,
+                    messageEntity.getMessageId(),
+                    messageEntity.getContent(),
+                    messageEntity.getMessageType()
             );
-            
+
             // 只有当消息状态为未读时，才增加接收方的未读计数
             if (!messageEntity.getIsRead() && messageEntity.getStatus() != MessageStatusEnum.READ) {
                 conversationService.incrementUnreadCount(
-                    conversationId,
-                    messageEntity.getFromUserId(),
-                    messageEntity.getToUserId()
+                        conversationId,
+                        messageEntity.getFromUserId(),
+                        messageEntity.getToUserId()
                 );
                 log.info("消息未读，增加接收方未读计数，conversationId: {}", conversationId);
             } else {
                 log.info("消息已读，不增加未读计数，conversationId: {}", conversationId);
             }
-            
+
             log.info("会话更新成功，conversationId: {}", conversationId);
         } catch (Exception e) {
             log.error("更新会话最后消息异常", e);
@@ -476,11 +476,11 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
     private List<MessageEntity> queryMessagesFromRedis(Long fromUserId, Long toUserId, Integer maxCnt, Long startTime, Long endTime) {
         List<MessageEntity> result = new ArrayList<>();
-        
+
         try {
             String queueKey = REDIS_MESSAGE_QUEUE + fromUserId + "_" + toUserId;
             List<MessageEntity> queue = (List<MessageEntity>) redisTemplate.opsForValue().get(queueKey);
-            
+
             if (queue != null) {
                 for (MessageEntity messageEntity : queue) {
                     if (startTime != null && messageEntity.getSendTime() != null) {
@@ -493,9 +493,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                             continue;
                         }
                     }
-                    
+
                     result.add(messageEntity);
-                    
+
                     if (result.size() >= maxCnt) {
                         break;
                     }
@@ -504,7 +504,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
         } catch (Exception e) {
             log.error("从Redis查询消息异常", e);
         }
-        
+
         return result;
     }
 
@@ -587,34 +587,38 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             List<MessageEntity> messageEntities = messageMapper.selectByConversationId(conversationId, offset, pageSize);
             // 过滤撤回的消息
             messageEntities.removeIf(message -> message.getIsRecalled() != null && message.getIsRecalled());
-            
+
             // 查询总条数
             Long total = messageMapper.selectCountByConversationId(conversationId);
             List<MessageVo> messageVos = messageEntities.stream()
-                    .map(messageEntity -> MessageVo.builder()
-                        .messageId(messageEntity.getMessageId())
-                        .fromUserId(messageEntity.getFromUserId())
-                        .fromUserName(userDubboService.getUserInfo(messageEntity.getFromUserId()).getNickName())
-                        .fromUserAvatar(userDubboService.getUserInfo(messageEntity.getFromUserId()).getAvatarUrl())
-                        .toUserId(messageEntity.getToUserId())
-                        .toUserName(userDubboService.getUserInfo(messageEntity.getToUserId()).getNickName())
-                        .toUserAvatar(userDubboService.getUserInfo(messageEntity.getToUserId()).getAvatarUrl())
-                        .messageType(messageEntity.getMessageType())
-                        .content(messageEntity.getContent())
-                        .status(messageEntity.getStatus())
-                        .isRead(messageEntity.getIsRead())
-                        .sendTime(messageEntity.getSendTime())
-                        .receiveTime(messageEntity.getReceiveTime())
-                        .readTime(messageEntity.getReadTime())
-                        .conversationId(messageEntity.getConversationId())
-                        .random(messageEntity.getRandom())
-                        .isRecalled(messageEntity.getIsRecalled())
-                        .isDeletedBySender(messageEntity.getIsDeletedBySender())
-                        .isDeletedByReceiver(messageEntity.getIsDeletedByReceiver())
-                        .extra(messageEntity.getExtra())
-                        .createdAt(messageEntity.getCreatedAt())
-                        .updatedAt(messageEntity.getUpdatedAt())
-                        .build()).toList();
+                    .map(messageEntity ->{
+                        UserInfoVo fromUser = userDubboService.getUserInfo(messageEntity.getFromUserId());
+                        UserInfoVo toUser = userDubboService.getUserInfo(messageEntity.getToUserId());
+                        return MessageVo.builder()
+                                .messageId(messageEntity.getMessageId())
+                                .fromUserId(messageEntity.getFromUserId())
+                                .fromUserName(fromUser.getNickName())
+                                .fromUserAvatar(fromUser.getAvatarUrl())
+                                .toUserId(messageEntity.getToUserId())
+                                .toUserName(toUser.getNickName())
+                                .toUserAvatar(toUser.getAvatarUrl())
+                                .messageType(messageEntity.getMessageType())
+                                .content(messageEntity.getContent())
+                                .status(messageEntity.getStatus())
+                                .isRead(messageEntity.getIsRead())
+                                .sendTime(messageEntity.getSendTime())
+                                .receiveTime(messageEntity.getReceiveTime())
+                                .readTime(messageEntity.getReadTime())
+                                .conversationId(messageEntity.getConversationId())
+                                .random(messageEntity.getRandom())
+                                .isRecalled(messageEntity.getIsRecalled())
+                                .isDeletedBySender(messageEntity.getIsDeletedBySender())
+                                .isDeletedByReceiver(messageEntity.getIsDeletedByReceiver())
+                                .extra(messageEntity.getExtra())
+                                .createdAt(messageEntity.getCreatedAt())
+                                .updatedAt(messageEntity.getUpdatedAt())
+                                .build();
+                    }).toList();
             log.info("查询会话消息列表成功{}",messageVos);
             Conversation conversation = conversationMapper.selectByConversationId(conversationId);
             Long friendId = null;
@@ -624,7 +628,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                 friendId = conversation.getSenderUserId();
             }
             UserInfoVo userInfo = userDubboService.getUserInfo(friendId);
-            MessageListVo messageListVo = MessageListVo.builder()
+            return MessageListVo.builder()
                     .messageVoList(messageVos)
                     .total( total)
                     .page(page)
@@ -632,7 +636,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                     .name(userInfo.getNickName())
                     .avatar(userInfo.getAvatarUrl())
                     .build();
-            return messageListVo;
         } catch (Exception e) {
             log.error("查询会话消息列表异常", e);
             throw new RuntimeException("查询会话消息列表异常: " + e.getMessage());

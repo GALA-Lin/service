@@ -199,12 +199,10 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      * @return 返回商家确认订单的结果，包括订单号、是否确认成功、当前订单状态、状态描述以及确认时间
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerConfirmResultDto> sellerConfirm(Long orderNo, boolean autoConfirm, Long operatorId, SellerTypeEnum sellerType) {
         LocalDateTime now = LocalDateTime.now();
-
-
         // 1) 查询订单
         Orders orders = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()
@@ -218,60 +216,39 @@ public class OrderDubboServiceImpl implements OrderDubboService {
         OrderStatusEnum newOrderStatus = OrderStatusEnum.CONFIRMED;
 
         // 是否已经被确认
-        if (!orders.isConfirmed()) {
-            // 2) 只有 已支付、退款被拒绝、退款已取消、部分退款成功 才可以确认订单
-            if (currentOrderStatus == OrderStatusEnum.PAID
-                    || currentOrderStatus == OrderStatusEnum.REFUND_REJECTED
-                    || currentOrderStatus == OrderStatusEnum.REFUND_CANCELLED
-                    || currentOrderStatus == OrderStatusEnum.PARTIALLY_REFUNDED) {
-                int updated = ordersMapper.update(
-                        null,
-                        Wrappers.<Orders>lambdaUpdate()
-                                .eq(Orders::getOrderNo, orderNo)
-                                .eq(Orders::isConfirmed, false)
-                                .in(Orders::getOrderStatus,
-                                        OrderStatusEnum.PAID,
-                                        OrderStatusEnum.REFUND_REJECTED,
-                                        OrderStatusEnum.REFUND_CANCELLED,
-                                        OrderStatusEnum.PARTIALLY_REFUNDED)
-                                .set(Orders::getOrderStatus, OrderStatusEnum.CONFIRMED)
-                                .set(Orders::getConfirmedAt, now)
-                                .set(Orders::isConfirmed, true));
-                if (updated > 0) {
-                    // 3) 记录订单日志表
-                    OrderStatusLogs statusLogs = OrderStatusLogs.builder()
-                            .orderId(orders.getId())
-                            .orderNo(orders.getOrderNo())
-                            .action(OrderActionEnum.CONFIRM)
-                            .oldOrderStatus(currentOrderStatus)
-                            .newOrderStatus(newOrderStatus)
-                            .operatorType(autoConfirm ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
-                            .operatorName(autoConfirm ?
-                                    OperatorTypeEnum.SYSTEM.getOperatorTypeName() : sellerType.getDescription() + "_" + operatorId)
-                            .operatorId(autoConfirm ? null : operatorId)
-                            .remark("订单已被服务提供方确认")
-                            .build();
+        // 2) 只有 已支付才需要确认订单
+        if (currentOrderStatus == OrderStatusEnum.PAID) {
+            int updated = ordersMapper.update(
+                    null,
+                    Wrappers.<Orders>lambdaUpdate()
+                            .eq(Orders::getOrderNo, orderNo)
+                            .eq(Orders::getOrderStatus, OrderStatusEnum.PAID)
+                            .set(Orders::getOrderStatus, OrderStatusEnum.CONFIRMED));
+            if (updated > 0) {
+                // 3) 记录订单日志表
+                OrderStatusLogs statusLogs = OrderStatusLogs.builder()
+                        .orderId(orders.getId())
+                        .orderNo(orders.getOrderNo())
+                        .action(OrderActionEnum.CONFIRM)
+                        .oldOrderStatus(currentOrderStatus)
+                        .newOrderStatus(newOrderStatus)
+                        .operatorType(autoConfirm ? OperatorTypeEnum.SYSTEM : OperatorTypeEnum.MERCHANT)
+                        .operatorName(autoConfirm ?
+                                OperatorTypeEnum.SYSTEM.getOperatorTypeName() : sellerType.getDescription() + "_" + operatorId)
+                        .operatorId(autoConfirm ? null : operatorId)
+                        .remark("订单已被服务提供方确认")
+                        .build();
 
-                    orderStatusLogsMapper.insert(statusLogs);
-
-                    SellerConfirmResultDto resultDto = SellerConfirmResultDto.builder()
-                            .orderNo(orderNo)
-                            .orderStatus(newOrderStatus)
-                            .confirmAt(now)
-                            .success(true)
-                            .orderStatusName(newOrderStatus.getDescription())
-                            .build();
-                    return RpcResult.ok(resultDto);
-                }
+                orderStatusLogsMapper.insert(statusLogs);
             }
         }
 
         SellerConfirmResultDto resultDto = SellerConfirmResultDto.builder()
                 .orderNo(orderNo)
-                .orderStatus(currentOrderStatus)
-                .confirmAt(null)
-                .success(false)
-                .orderStatusName(currentOrderStatus.getDescription())
+                .orderStatus(newOrderStatus)
+                .confirmAt(now)
+                .success(true)
+                .orderStatusName(newOrderStatus.getDescription())
                 .build();
         return RpcResult.ok(resultDto);
     }
@@ -562,19 +539,6 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 .remark(ObjectUtils.isEmpty(remark) ? "商家拒绝退款申请" : remark)
                 .build();
         orderStatusLogsMapper.insert(orderLog);
-
-        // 11) 如果订单还没有确认，那么发送通知商家确认消息
-        if (!order.isConfirmed()) {
-            OrderNotifyMerchantConfirmMessage confirmMessage = OrderNotifyMerchantConfirmMessage.builder()
-                    .orderNo(orderNo)
-                    .venueId(order.getSellerId())
-                    .currentOrderStatus(OrderStatusEnum.REFUND_REJECTED)
-                    .build();
-            mqService.send(
-                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_CONFIRM_NOTIFY_MERCHANT,
-                    OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT,
-                    confirmMessage);
-        }
 
         SellerRejectRefundResultDto resultDto = SellerRejectRefundResultDto.builder()
                 .orderNo(orderNo)

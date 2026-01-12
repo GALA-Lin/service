@@ -27,13 +27,4 @@ public interface CoachDubboService {
      */
     RpcResult<CoachSnapshotResultDto> getCoachSnapshot(CoachSnapshotRequestDto dto);
 
-    void unlockCoachSlot(CoachUnlockSlotRequestDto dto);
-
-    //TODO MQ
-//    /**
-//     * 解锁教练时段（取消订单或订单失败时调用）
-//     *
-//     * @param dto 包含用户ID、时段记录ID的请求对象
-//     */
-//    void unlockCoachSlot(CoachUnlockSlotRequestDto dto);
 }

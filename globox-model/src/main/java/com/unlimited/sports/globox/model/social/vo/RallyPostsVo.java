@@ -122,4 +122,9 @@ public class RallyPostsVo {
 
     private Integer rallyRemainingPeople;
 
+    /**
+     * 当前已参加人数
+     */
+    private Integer currentPeopleCount;
+
 }

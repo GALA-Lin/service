@@ -3,7 +3,9 @@ package com.unlimited.sports.globox.social.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.dto.RallyPostsDto;
 import com.unlimited.sports.globox.model.social.dto.RallyQueryDto;
 import com.unlimited.sports.globox.model.social.dto.UpdateRallyDto;
@@ -135,6 +137,7 @@ public class RallyServiceImpl implements RallyService {
                 .ntrpMax(rallyPosts.getRallyNtrpMax())
                 .rallyTotalPeople(rallyPosts.getRallyTotalPeople())
                 .rallyRemainingPeople(rallyPosts.getRallyRemainingPeople())
+                .currentPeopleCount(rallyPosts.getRallyTotalPeople() - rallyPosts.getRallyRemainingPeople())
                 .rallyStatus(rallyPosts.getRallyStatus())
                 .rallyLabel(getRallyLabel(rallyPosts))
                 .rallyCost(rallyPosts.getRallyCost())
@@ -433,7 +436,7 @@ public class RallyServiceImpl implements RallyService {
             case 2: // 申请中 - 用户申请待审核的球局
                 return getPendingActivities(offset, pageSize, page, userId);
             case 3: // 已发布 - 用户自己创建的球局
-            return getPublishedActivities(offset, pageSize, page, userId);
+                return getPublishedActivities(offset, pageSize, page, userId);
             case 4: // 已取消 - 用户创建或参与但已取消的球局
                 return getCancelledActivities(offset, pageSize, page, userId);
             default:
@@ -459,16 +462,19 @@ public class RallyServiceImpl implements RallyService {
                         .last("LIMIT " + offset + ", " + pageSize)
         );
         List<RallyApplicationVo> list = rallyApplicationByRallyId.stream()
-                .map(rallyApplication -> RallyApplicationVo.builder()
-                        .id(rallyApplication.getApplicationId())
-                        .rallyPostId(rallyApplication.getRallyPostId())
-                        .applicantId(rallyApplication.getApplicantId())
-                        .nickName(userDubboService.getUserInfo(rallyApplication.getApplicantId()).getNickName())
-                        .avatarUrl(userDubboService.getUserInfo(rallyApplication.getApplicantId()).getAvatarUrl())
-                        .userNtrpLevel(userDubboService.getUserInfo(rallyApplication.getApplicantId()).getUserNtrpLevel())
-                        .inspectResult(RallyApplyStatusEnum.fromCode(rallyApplication.getStatus()).getDescription())
-                        .appliedAt(rallyApplication.getAppliedAt())
-                        .build()
+                .map(rallyApplication -> {
+                            UserInfoVo userInfo = userDubboService.getUserInfo(rallyApplication.getApplicantId());
+                            return RallyApplicationVo.builder()
+                                    .id(rallyApplication.getApplicationId())
+                                    .rallyPostId(rallyApplication.getRallyPostId())
+                                    .applicantId(rallyApplication.getApplicantId())
+                                    .nickName(userInfo.getNickName())
+                                    .avatarUrl(userInfo.getAvatarUrl())
+                                    .userNtrpLevel(userInfo.getUserNtrpLevel())
+                                    .inspectResult(RallyApplyStatusEnum.fromCode(rallyApplication.getStatus()).getDescription())
+                                    .appliedAt(rallyApplication.getAppliedAt())
+                                    .build();
+                        }
                 ).toList();
         Long total = rallyApplicationMapper.selectCount(
                 Wrappers.<RallyApplication>lambdaQuery()
@@ -517,29 +523,32 @@ public class RallyServiceImpl implements RallyService {
      */
     private List<RallyPostsVo> rallyPostsToRallyPostsVo (List < RallyPosts > rallyPostsList) {
 
-        List<RallyPostsVo> rallyPostsVoList = rallyPostsList.stream()
-                .map(rallyPosts -> RallyPostsVo.builder()
-                        .rallyPostId(rallyPosts.getRallyPostId())
-                        .rallyInitiatorId(rallyPosts.getInitiatorId())
-                        .avatarUrl(userDubboService.getUserInfo(rallyPosts.getInitiatorId()).getAvatarUrl())
-                        .nickName(userDubboService.getUserInfo(rallyPosts.getInitiatorId()).getNickName())
-                        .rallyTitle(rallyPosts.getRallyTitle())
-                        .rallyRegion(rallyPosts.getRallyRegion())
-                        .rallyVenueName(rallyPosts.getRallyVenueName())
-                        .rallyCourtName(rallyPosts.getRallyCourtName())
-                        .rallyEventDate(rallyPosts.getRallyEventDate())
-                        .rallyStartTime(rallyPosts.getRallyStartTime())
-                        .rallyEndTime(rallyPosts.getRallyEndTime())
-                        .ntrpMin(rallyPosts.getRallyNtrpMin())
-                        .rallyLabel(getRallyLabel(rallyPosts))
-                        .ntrpMax(rallyPosts.getRallyNtrpMax())
-                        .rallyTotalPeople(rallyPosts.getRallyTotalPeople())
-                        .rallyStatus(getRallyStatus(rallyPosts))
-                        .rallyParticipants(rallyParticipantVos(rallyPosts.getRallyPostId()))
-                        .createdAt(rallyPosts.getRallyCreatedAt())
-                        .rallyRemainingPeople(rallyPosts.getRallyRemainingPeople())
-                        .build()).toList();
-        return rallyPostsVoList;
+        return rallyPostsList.stream()
+                .map(rallyPosts -> {
+                    UserInfoVo userInfo = userDubboService.getUserInfo(rallyPosts.getInitiatorId());
+                    return RallyPostsVo.builder()
+                            .rallyPostId(rallyPosts.getRallyPostId())
+                            .rallyInitiatorId(rallyPosts.getInitiatorId())
+                            .avatarUrl(userInfo.getAvatarUrl())
+                            .nickName(userInfo.getNickName())
+                            .rallyTitle(rallyPosts.getRallyTitle())
+                            .rallyRegion(rallyPosts.getRallyRegion())
+                            .rallyVenueName(rallyPosts.getRallyVenueName())
+                            .rallyCourtName(rallyPosts.getRallyCourtName())
+                            .rallyEventDate(rallyPosts.getRallyEventDate())
+                            .rallyStartTime(rallyPosts.getRallyStartTime())
+                            .rallyEndTime(rallyPosts.getRallyEndTime())
+                            .ntrpMin(rallyPosts.getRallyNtrpMin())
+                            .rallyLabel(getRallyLabel(rallyPosts))
+                            .ntrpMax(rallyPosts.getRallyNtrpMax())
+                            .rallyTotalPeople(rallyPosts.getRallyTotalPeople())
+                            .rallyStatus(getRallyStatus(rallyPosts))
+                            .rallyParticipants(rallyParticipantVos(rallyPosts.getRallyPostId()))
+                            .createdAt(rallyPosts.getRallyCreatedAt())
+                            .currentPeopleCount(rallyPosts.getRallyTotalPeople() - rallyPosts.getRallyRemainingPeople())
+                            .rallyRemainingPeople(rallyPosts.getRallyRemainingPeople())
+                            .build();
+                }).toList();
     }
 
     /**
@@ -549,17 +558,18 @@ public class RallyServiceImpl implements RallyService {
      * @return 插入结果
      */
     private int initRallyParticipant (RallyPosts rallyPosts, Long rallyApplicantId){
+        UserInfoVo userInfo = userDubboService.getUserInfo(rallyApplicantId);
+
         RallyParticipant rallyParticipant = RallyParticipant.builder()
                 .rallyPostId(rallyPosts.getRallyPostId())
                 .participantId(rallyApplicantId)
-                .userNtrp(userDubboService.getUserInfo(rallyApplicantId)==null?
-                        userDubboService.getUserInfo(rallyApplicantId).getUserNtrpLevel():0  )
+                .userNtrp(userInfo.getUserNtrpLevel()!=null?
+                        userInfo.getUserNtrpLevel():0 )
                 .joinedAt(LocalDateTime.now())
                 .isInitiator(IsInitiatorForRallyEnum.YES.getCode())
                 .build();
         log.info("创建社交活动成功 - rallyParticipant: {}", rallyParticipant);
-        int insert = rallyParticipantMapper.insert(rallyParticipant);
-        return insert;
+        return rallyParticipantMapper.insert(rallyParticipant);
     }
 
     /**
@@ -573,17 +583,19 @@ public class RallyServiceImpl implements RallyService {
                 Wrappers.<RallyParticipant>lambdaQuery()
                         .eq(RallyParticipant::getRallyPostId, postId)
         );
-        List<RallyParticipantVo> rallyParticipantsVoList = rallyParticipantList.stream()
-                .map(participant -> RallyParticipantVo.builder()
-                        .participantId(participant.getParticipantId())
-                        .avatarUrl(userDubboService.getUserInfo(participant.getParticipantId()).getAvatarUrl())
-                        .nickName(userDubboService.getUserInfo(participant.getParticipantId()).getNickName())
-                        .userNtrp(participant.getUserNtrp())
-                        .joinedAt(participant.getJoinedAt())
-                        .isInitiator(participant.getIsInitiator()==1)
-                        .build())
+        return rallyParticipantList.stream()
+                .map(participant -> {
+                    UserInfoVo userInfo = userDubboService.getUserInfo(participant.getParticipantId());
+                    return RallyParticipantVo.builder()
+                            .participantId(participant.getParticipantId())
+                            .avatarUrl(userInfo.getAvatarUrl())
+                            .nickName(userInfo.getNickName())
+                            .userNtrp(participant.getUserNtrp())
+                            .joinedAt(participant.getJoinedAt())
+                            .isInitiator(participant.getIsInitiator()==1)
+                            .build();
+                })
                 .toList();
-        return rallyParticipantsVoList;
     }
 
     /**
@@ -743,7 +755,7 @@ public class RallyServiceImpl implements RallyService {
                         .eq(RallyApplication::getStatus, RallyApplyStatusEnum.PENDING.getCode())
                         .last("LIMIT " + offset + ", " + pageSize)
         );
-                if (pendingApplications.isEmpty()) {
+        if (pendingApplications.isEmpty()) {
             return PaginationResult.build(new ArrayList<>(), 0, page, pageSize);
         }
 

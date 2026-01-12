@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serializable;
 
 /**
  * 商家查询订单详情请求的数据传输对象。
@@ -11,7 +12,7 @@ import javax.validation.constraints.NotNull;
  */
 @Data
 @Builder
-public class MerchantGetOrderDetailsRequestDto {
+public class MerchantGetOrderDetailsRequestDto implements Serializable {
     @NotNull(message = "订单号不能为空")
     private Long orderNo;
 

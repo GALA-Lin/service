@@ -65,7 +65,6 @@ public class OrderMQInitConfig {
     @Bean
     public CustomExchange orderAutoCancelExchange() {
         Map<String, Object> args = new HashMap<>();
-        // 关键：让延迟交换机表现为 topic 类型
         args.put("x-delayed-type", "topic");
 
         return new CustomExchange(
@@ -139,6 +138,97 @@ public class OrderMQInitConfig {
                 .with(OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL_FINAL);
     }
 
+
+
+    /**
+     * 重试间隔（TTL），例如 10s / 30s（单位：ms）
+     */
+    @Value("${order.mq.auto-complete.retry-interval:10000}")
+    private Integer autoCompleteRetryInterval;
+
+    // 主交换机（Delayed Exchange）
+    @Bean
+    public CustomExchange orderAutoCompleteExchange() {
+        Map<String, Object> args = new HashMap<>();
+        args.put("x-delayed-type", "topic");
+
+        return new CustomExchange(
+                OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE,
+                "x-delayed-message",
+                true,
+                false,
+                args
+        );
+    }
+
+    @Bean
+    public TopicExchange orderAutoCompleteRetryDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_AUTO_COMPLETE_RETRY_DLX,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public TopicExchange orderAutoCompleteFinalDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_AUTO_COMPLETE_FINAL_DLX,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public Queue orderAutoCompleteQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_AUTO_COMPLETE_ORDER)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_ORDER_AUTO_COMPLETE_RETRY_DLX)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Queue orderAutoCompleteRetryQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_AUTO_COMPLETE_ORDER_RETRY)
+                .withArgument("x-message-ttl", autoCompleteRetryInterval)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE)
+                .build();
+    }
+
+    @Bean
+    public Queue orderAutoCompleteDlq() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_AUTO_COMPLETE_ORDER_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Binding bindOrderAutoCompleteQueue() {
+        return BindingBuilder
+                .bind(orderAutoCompleteQueue())
+                .to(orderAutoCompleteExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE)
+                .noargs();
+    }
+
+    @Bean
+    public Binding bindOrderAutoCompleteRetryQueue() {
+        return BindingBuilder
+                .bind(orderAutoCompleteRetryQueue())
+                .to(orderAutoCompleteRetryDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE_RETRY);
+    }
+
+    @Bean
+    public Binding bindOrderAutoCompleteDlq() {
+        return BindingBuilder
+                .bind(orderAutoCompleteDlq())
+                .to(orderAutoCompleteFinalDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE_FINAL);
+    }
 
     /**
      * 通知场地解锁（Unlock Slot）
@@ -277,49 +367,6 @@ public class OrderMQInitConfig {
                 .bind(orderUnlockCoachSlotDlq())
                 .to(orderUnlockCoachSlotFinalDlxExchange())
                 .with(OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_FINAL);
-    }
-
-
-    /**
-     * 订单创建成功事件（Created）
-     * 通常不需要 retry，失败直接进入 DLQ 可选
-     */
-    @Bean
-    public TopicExchange orderCreatedExchange() {
-        return new TopicExchange(OrderMQConstants.EXCHANGE_TOPIC_ORDER_CREATED, true, false);
-    }
-
-    @Bean
-    public TopicExchange orderCreatedFinalDlxExchange() {
-        return new TopicExchange(OrderMQConstants.EXCHANGE_ORDER_CREATED_FINAL_DLX, true, false);
-    }
-
-    @Bean
-    public Queue orderCreatedQueue() {
-        return QueueBuilder.durable(OrderMQConstants.QUEUE_ORDER_CREATED_MERCHANT)
-                // created 失败直接进 DLQ，就保留这两行
-                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_ORDER_CREATED_FINAL_DLX)
-                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_CREATED_FINAL)
-                .build();
-    }
-
-    @Bean
-    public Queue orderCreatedDlq() {
-        return QueueBuilder.durable(OrderMQConstants.QUEUE_ORDER_CREATED_MERCHANT_DLQ).build();
-    }
-
-    @Bean
-    public Binding bindOrderCreatedQueue() {
-        return BindingBuilder.bind(orderCreatedQueue())
-                .to(orderCreatedExchange())
-                .with(OrderMQConstants.ROUTING_ORDER_CREATED);
-    }
-
-    @Bean
-    public Binding bindOrderCreatedDlq() {
-        return BindingBuilder.bind(orderCreatedDlq())
-                .to(orderCreatedFinalDlxExchange())
-                .with(OrderMQConstants.ROUTING_ORDER_CREATED_FINAL);
     }
 
 

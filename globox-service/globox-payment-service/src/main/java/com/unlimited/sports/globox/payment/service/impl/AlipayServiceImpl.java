@@ -239,8 +239,8 @@ public class AlipayServiceImpl implements AlipayService {
         bizContent.put("total_amount", payments.getTotalAmount());
         // 商品名称
         bizContent.put("subject", payments.getSubject());
-        // TODO 修改销售产品码，销售产品码，应该是商家和支付宝签约的产品码
-        bizContent.put("product_code", "QUICK_MSECURITY_PAY");
+//      销售产品码，销售产品码，应该是商家和支付宝签约的产品码
+//        bizContent.put("product_code", "QUICK_MSECURITY_PAY");
 
         // 设置超时时间 - 绝对时间
         bizContent.put("time_expire", paymentsService.getPaymentTimeout(payments));

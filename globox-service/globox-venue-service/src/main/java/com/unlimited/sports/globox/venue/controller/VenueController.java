@@ -19,13 +19,25 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/venue/venues")
 public class VenueController {
+
+    /**
+     * 默认价格范围最小值
+     */
+    private static final BigDecimal DEFAULT_PRICE_MIN = BigDecimal.ZERO;
+
+    /**
+     * 默认价格范围最大值
+     */
+    private static final BigDecimal DEFAULT_PRICE_MAX = new BigDecimal("500");
 
     @Autowired
     private IVenueSearchService venueSearchService;
@@ -49,6 +61,9 @@ public class VenueController {
         // 获取搜索过滤字典数据
         VenueDictVo dictVo = venueService.getSearchFilterDictionary();
 
+        // 计算价格范围
+        VenueListResponse.PriceRange priceRange = calculatePriceRange(venues.getList());
+
         // 组装响应
         VenueListResponse result = VenueListResponse.builder()
                 .venues(venues)
@@ -57,6 +72,7 @@ public class VenueController {
                 .courtCountFilters(convertDictItems(dictVo.getCourtCountFilters()))
                 .distances(convertDictItems(dictVo.getDistances()))
                 .facilities(convertDictItems(dictVo.getFacilities()))
+                .priceRange(priceRange)
                 .build();
 
         return R.ok(result);
@@ -152,5 +168,49 @@ public class VenueController {
                         .description(item.getDescription())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 计算价格范围
+     * 从场馆列表中提取最小价格和最大价格
+     *
+     * @param venues 场馆列表
+     * @return 价格范围
+     */
+    private VenueListResponse.PriceRange calculatePriceRange(List<VenueItemVo> venues) {
+        // 如果列表为空或没有有效价格，返回默认范围
+        if (venues == null || venues.isEmpty()) {
+            return VenueListResponse.PriceRange.builder()
+                    .minPrice(DEFAULT_PRICE_MIN)
+                    .maxPrice(DEFAULT_PRICE_MAX)
+                    .build();
+        }
+
+        // 从场馆列表中提取所有有效的minPrice
+        List<BigDecimal> prices = venues.stream()
+                .map(VenueItemVo::getMinPrice)
+                .toList();
+
+        // 如果没有有效价格，返回默认范围
+        if (prices.isEmpty()) {
+            return VenueListResponse.PriceRange.builder()
+                    .minPrice(DEFAULT_PRICE_MIN)
+                    .maxPrice(DEFAULT_PRICE_MAX)
+                    .build();
+        }
+
+        // 计算实际的最小值和最大值
+        BigDecimal minPrice = prices.stream()
+                .min(BigDecimal::compareTo)
+                .orElse(DEFAULT_PRICE_MIN);
+
+        BigDecimal maxPrice = prices.stream()
+                .max(BigDecimal::compareTo)
+                .orElse(DEFAULT_PRICE_MAX);
+
+        return VenueListResponse.PriceRange.builder()
+                .minPrice(minPrice)
+                .maxPrice(maxPrice)
+                .build();
     }
 }

@@ -3,10 +3,12 @@ package com.unlimited.sports.globox.social.controller;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
 import com.unlimited.sports.globox.model.social.dto.UpdateNoteRequest;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
+import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
 import com.unlimited.sports.globox.model.social.vo.NoteDetailVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
@@ -58,7 +60,7 @@ public class NoteController {
             @RequestParam(value = "cursor", required = false) String cursor,
             @Parameter(description = "每页数量（默认10，最大50）", example = "10")
             @RequestParam(value = "size", required = false) Integer size,
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(value = RequestHeaderConstants.HEADER_USER_ID, required = false) Long userId) {
         return noteService.getNoteFeed(sort, cursor, size, userId);
     }
@@ -76,13 +78,13 @@ public class NoteController {
             @RequestParam(value = "cursor", required = false) String cursor,
             @Parameter(description = "每页数量（默认10，最大50）", example = "10")
             @RequestParam(value = "size", required = false) Integer size,
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(value = RequestHeaderConstants.HEADER_USER_ID, required = false) Long userId) {
         return noteService.getHomeNotes(cursor, size, userId);
     }
 
     @GetMapping("/{noteId}")
-    @Operation(summary = "获取笔记详情", description = "获取笔记完整信息（包含媒体列表）")
+    @Operation(summary = "获取笔记详情", description = "获取笔记完整信息（包含媒体列表）。草稿仅作者可见")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "查询成功"),
             @ApiResponse(responseCode = "3006", description = "笔记不存在或已删除"),
@@ -91,19 +93,19 @@ public class NoteController {
     public R<NoteDetailVo> getNoteDetail(
             @Parameter(description = "笔记ID", example = "1", required = true)
             @PathVariable Long noteId,
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(value = RequestHeaderConstants.HEADER_USER_ID, required = false) Long userId) {
         return noteService.getNoteDetail(noteId, userId);
     }
 
     @GetMapping("/mine")
-    @Operation(summary = "获取我的笔记列表", description = "获取当前用户的笔记列表（排除 DELETED 状态），支持分页")
+    @Operation(summary = "获取我的笔记列表", description = "获取当前用户已发布的笔记列表（只返回 PUBLISHED 状态），支持分页")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "查询成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<PaginationResult<NoteItemVo>> getMyNotes(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(value = "page", defaultValue = "1") Integer page,
@@ -112,20 +114,39 @@ public class NoteController {
         return noteService.getMyNotes(userId, page, pageSize);
     }
 
+    @GetMapping("/users/{userId}/notes")
+    @Operation(summary = "获取用户的笔记列表（他人主页）", description = "获取指定用户已发布的笔记列表，支持分页；包含拉黑校验")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "3031", description = "你已被对方拉黑或已拉黑对方"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<PaginationResult<NoteItemVo>> getUserNotes(
+            @Parameter(description = "当前登录用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(value = RequestHeaderConstants.HEADER_USER_ID, required = false) Long viewerId,
+            @Parameter(description = "目标用户ID", required = true)
+            @PathVariable("userId") Long targetUserId,
+            @Parameter(description = "页码（从1开始）", example = "1")
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "10")
+            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize) {
+        return noteService.getUserNotes(targetUserId, page, pageSize, viewerId);
+    }
+
     @GetMapping("/draft")
-    @Operation(summary = "获取我的草稿", description = "获取当前用户的草稿（每个用户仅保留1份）")
+    @Operation(summary = "获取我的草稿（兼容接口）", description = "获取当前用户的最新一条草稿（兼容），草稿箱入口请使用 /social/notes/drafts")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "查询成功（无草稿时返回null）"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<DraftNoteVo> getDraft(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         return noteService.getDraft(userId);
     }
 
     @PostMapping("/draft")
-    @Operation(summary = "保存草稿", description = "保存或更新草稿（upsert），每个用户只保留一条草稿。标题、正文、媒体至少填写一项")
+    @Operation(summary = "保存草稿", description = "保存草稿（新建或更新）。若传 noteId 则更新草稿；正文/标题/媒体至少一项；mediaList=null 不更新媒体，mediaList=[] 允许清空媒体（仅草稿）")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "保存成功，返回笔记ID"),
             @ApiResponse(responseCode = "3018", description = "草稿不能完全为空"),
@@ -135,7 +156,7 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<Long> saveDraft(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "保存草稿请求", required = true)
             @Validated @RequestBody SaveDraftRequest request) {
@@ -143,7 +164,7 @@ public class NoteController {
     }
 
     @PostMapping("/publish")
-    @Operation(summary = "发布笔记", description = "直接发布新笔记，创建 PUBLISHED 状态的笔记。发布成功后自动清理用户所有草稿。正文和媒体列表必填")
+    @Operation(summary = "直接发布笔记", description = "直接发布笔记（不含 noteId），新建 PUBLISHED 状态的笔记。正文和媒体列表必填")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "发布成功，返回新创建的笔记ID"),
             @ApiResponse(responseCode = "3001", description = "正文不能为空"),
@@ -153,12 +174,50 @@ public class NoteController {
             @ApiResponse(responseCode = "3005", description = "视频必须提供封面图"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R<Long> publishNote(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+    public R<Long> directPublishNote(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
-            @Parameter(description = "发布笔记请求", required = true)
+            @Parameter(description = "直接发布笔记请求", required = true)
+            @Validated @RequestBody DirectPublishNoteRequest request) {
+        return noteService.directPublishNote(userId, request);
+    }
+
+    @PostMapping("/draft/publish")
+    @Operation(summary = "草稿转正发布", description = "草稿转正发布。必须传 noteId（草稿ID），将该草稿状态改为 PUBLISHED。正文和媒体列表必填")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "发布成功，返回笔记ID"),
+            @ApiResponse(responseCode = "3029", description = "笔记ID不能为空"),
+            @ApiResponse(responseCode = "3001", description = "正文不能为空"),
+            @ApiResponse(responseCode = "3020", description = "发布失败：媒体列表不能为空"),
+            @ApiResponse(responseCode = "3003", description = "图片最多9张，视频仅1条"),
+            @ApiResponse(responseCode = "3004", description = "媒体类型不合法"),
+            @ApiResponse(responseCode = "3005", description = "视频必须提供封面图"),
+            @ApiResponse(responseCode = "3006", description = "笔记不存在或已删除"),
+            @ApiResponse(responseCode = "3008", description = "笔记状态无效（必须是 DRAFT 状态）"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<Long> publishDraftNote(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "草稿转正发布请求", required = true)
             @Validated @RequestBody PublishNoteRequest request) {
-        return noteService.publishNote(userId, request);
+        return noteService.publishDraftNote(userId, request);
+    }
+
+    @GetMapping("/drafts")
+    @Operation(summary = "获取草稿箱列表", description = "获取当前用户的草稿列表（只返回 DRAFT 状态），按更新时间倒序，支持分页")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<PaginationResult<DraftNoteItemVo>> getDrafts(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "页码（从1开始）", example = "1")
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "10")
+            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize) {
+        return noteService.getDrafts(userId, page, pageSize);
     }
 
     @PutMapping("/{noteId}")
@@ -176,7 +235,7 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<String> updateNote(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "笔记ID", example = "1", required = true)
             @PathVariable Long noteId,
@@ -194,7 +253,7 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<String> deleteNote(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "笔记ID", example = "1", required = true)
             @PathVariable Long noteId) {
@@ -210,13 +269,34 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<CursorPaginationResult<NoteItemVo>> getLikedNotes(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "游标（可选，格式：{likeCreatedAt}|{likeId}，例如：2025-12-28T10:00:00|123）", example = "2025-12-28T10:00:00|123")
             @RequestParam(value = "cursor", required = false) String cursor,
             @Parameter(description = "每页数量（默认10，最大50）", example = "10")
             @RequestParam(value = "size", required = false) Integer size) {
         return noteService.getLikedNotes(userId, cursor, size);
+    }
+
+    @GetMapping("/users/{userId}/liked")
+    @Operation(summary = "获取用户点赞的笔记列表（他人主页）", description = "获取指定用户点赞的笔记列表，按点赞时间倒序，支持游标分页；包含拉黑校验")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "3031", description = "你已被对方拉黑或已拉黑对方"),
+            @ApiResponse(responseCode = "3009", description = "游标格式错误"),
+            @ApiResponse(responseCode = "3011", description = "每页数量不能超过50"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<CursorPaginationResult<NoteItemVo>> getUserLikedNotes(
+            @Parameter(description = "当前登录用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(value = RequestHeaderConstants.HEADER_USER_ID, required = false) Long viewerId,
+            @Parameter(description = "目标用户ID", required = true)
+            @PathVariable("userId") Long targetUserId,
+            @Parameter(description = "游标（可选）", example = "2025-12-28T10:00:00|123")
+            @RequestParam(value = "cursor", required = false) String cursor,
+            @Parameter(description = "每页数量（默认10，最大50）", example = "10")
+            @RequestParam(value = "size", required = false) Integer size) {
+        return noteService.getUserLikedNotes(targetUserId, cursor, size, viewerId);
     }
 
     @PostMapping("/{noteId}/like")
@@ -227,7 +307,7 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<String> likeNote(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "笔记ID", example = "1", required = true)
             @PathVariable Long noteId) {
@@ -242,7 +322,7 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<String> unlikeNote(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "笔记ID", example = "1", required = true)
             @PathVariable Long noteId) {
@@ -260,7 +340,7 @@ public class NoteController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<String> deleteNoteMedia(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "笔记ID", example = "1", required = true)
             @PathVariable Long noteId,

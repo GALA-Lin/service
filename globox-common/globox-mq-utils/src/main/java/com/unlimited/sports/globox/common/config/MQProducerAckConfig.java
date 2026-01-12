@@ -58,7 +58,10 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
     @Override
     public void confirm(CorrelationData correlationData, boolean ack, String cause) {
         if (!ack) {
-            log.warn("msgId：{} 发送失败 cause:{}， 数据：{}", correlationData.getId(), cause, jsonUtils.objectToJson(correlationData));
+            log.warn("msgId：{} 发送失败 cause:{}， 数据：{}",
+                    correlationData.getId(),
+                    cause,
+                    jsonUtils.objectToJson(correlationData));
             this.retryMessage(correlationData);
         }
     }
@@ -78,13 +81,14 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
                 .getHeaders()
                 .get("spring_returned_message_correlation");
 
-        if(exchange.equals(OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL)){
+        if (exchange.equals(OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL)
+                || exchange.equals(OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE)) {
             return;
         }
 
         // 场馆延迟消息交换机不需要重试
-        if(exchange.equals(VenueMQConstants.EXCHANGE_TOPIC_ACTIVITY_BOOKING_REMINDER) ||
-           exchange.equals(VenueMQConstants.EXCHANGE_TOPIC_VENUE_BOOKING_REMINDER)){
+        if (exchange.equals(VenueMQConstants.EXCHANGE_TOPIC_ACTIVITY_BOOKING_REMINDER)
+                || exchange.equals(VenueMQConstants.EXCHANGE_TOPIC_VENUE_BOOKING_REMINDER)) {
             return;
         }
 
@@ -140,13 +144,20 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
         // 重试发送消息
         if (MQRetryCorrelationData.isDelay()) {
             // 如果是延迟队列
-            rabbitTemplate.convertAndSend(MQRetryCorrelationData.getExchange(), MQRetryCorrelationData.getRoutingKey(), MQRetryCorrelationData.getMessage(), message -> {
-                message.getMessageProperties().setDelay(MQRetryCorrelationData.getDelayTime() * 1000);
-                return message;
-            }, MQRetryCorrelationData);
+            rabbitTemplate.convertAndSend(MQRetryCorrelationData.getExchange(),
+                    MQRetryCorrelationData.getRoutingKey(),
+                    MQRetryCorrelationData.getMessage(),
+                    message -> {
+                        message.getMessageProperties().setDelay(MQRetryCorrelationData.getDelayTime() * 1000);
+                        return message;
+                    },
+                    MQRetryCorrelationData);
         } else {
             // 如果不是延迟队列
-            rabbitTemplate.convertAndSend(MQRetryCorrelationData.getExchange(), MQRetryCorrelationData.getRoutingKey(), MQRetryCorrelationData.getMessage(), MQRetryCorrelationData);
+            rabbitTemplate.convertAndSend(MQRetryCorrelationData.getExchange(),
+                    MQRetryCorrelationData.getRoutingKey(),
+                    MQRetryCorrelationData.getMessage(),
+                    MQRetryCorrelationData);
         }
 
         log.warn("msgId:{} 正在第【{}】次重试", correlationData.getId(), MQRetryCorrelationData.getRetryCount());

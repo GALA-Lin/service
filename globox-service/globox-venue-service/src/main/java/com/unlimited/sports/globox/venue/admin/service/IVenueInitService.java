@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.venue.admin.service;
 
 import com.unlimited.sports.globox.venue.admin.dto.CreateVenueInitDto;
+import com.unlimited.sports.globox.venue.admin.dto.CreateActivityDto;
 import com.unlimited.sports.globox.venue.admin.vo.VenueInitResultVo;
 
 /**
@@ -16,4 +17,12 @@ public interface IVenueInitService {
      * @return 创建结果
      */
     VenueInitResultVo createVenue(Long merchantId, CreateVenueInitDto dto);
+
+    /**
+     * 创建活动及其槽位锁定
+     *
+     * @param dto 活动创建信息
+     * @return 创建的活动ID
+     */
+    Long createActivity(CreateActivityDto dto);
 }

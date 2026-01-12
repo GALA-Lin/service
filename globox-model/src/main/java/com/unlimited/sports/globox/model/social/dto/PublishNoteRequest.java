@@ -11,10 +11,10 @@ import javax.validation.constraints.Pattern;
 import java.util.List;
 
 /**
- * 发布笔记请求
+ * 草稿转正发布请求
  */
 @Data
-@Schema(description = "发布笔记请求")
+@Schema(description = "草稿转正发布请求")
 public class PublishNoteRequest {
 
     @NotNull(message = "笔记ID不能为空")

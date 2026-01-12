@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import org.apache.dubbo.common.lang.Nullable;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
@@ -18,7 +19,7 @@ import java.math.BigDecimal;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CoachApproveRefundRequestDto {
+public class CoachApproveRefundRequestDto implements Serializable {
     @NotNull(message = "订单号不能为空")
     private Long orderNo;
 

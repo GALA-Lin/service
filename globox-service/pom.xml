@@ -12,8 +12,6 @@
     <artifactId>globox-service</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>globox-demo-service</module>
-        <module>globox-producer-demo-service</module>
         <module>globox-merchant-service</module>
         <module>globox-venue-service</module>
         <module>globox-user-service</module>

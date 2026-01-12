@@ -5,12 +5,16 @@ import com.unlimited.sports.globox.merchant.service.SlotTemplateService;
 import com.unlimited.sports.globox.merchant.service.VenueSlotRecordService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
+import com.unlimited.sports.globox.model.merchant.dto.BatchTemplateInitDto;
+import com.unlimited.sports.globox.model.merchant.vo.BatchTemplateInitResultVo;
 import com.unlimited.sports.globox.model.merchant.vo.SlotAvailabilityVo;
 import com.unlimited.sports.globox.model.merchant.vo.SlotGenerationResultVo;
+import com.unlimited.sports.globox.model.merchant.vo.VenueSlotAvailabilityVo;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -55,6 +59,28 @@ public class SlotManagementController {
 
         int count = templateService.initializeTemplatesForCourt(courtId, openTime, closeTime);
         return R.ok(count);
+    }
+
+    /**
+     * 【新增】批量初始化场地时段模板
+     *
+     * @param dto 批量初始化请求参数
+     * @return 批量初始化结果
+     */
+    @PostMapping("/templates/batch-init")
+    public R<BatchTemplateInitResultVo> batchInitTemplates(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestBody @Valid BatchTemplateInitDto dto) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        // 验证所有场地的访问权限
+        dto.getCourtIds().forEach(courtId ->
+                merchantAuthUtil.validateCourtAccess(context, courtId));
+
+        BatchTemplateInitResultVo result = templateService.batchInitializeTemplates(dto);
+        return R.ok(result);
     }
 
     /**
@@ -127,6 +153,32 @@ public class SlotManagementController {
         merchantAuthUtil.validateCourtAccess(context, courtId);
 
         List<SlotAvailabilityVo> result = recordService.queryAvailability(courtId, date);
+        return R.ok(result);
+    }
+
+    /**
+     * 【新增】查询场馆下所有场地某日的时段可用性
+     *
+     * @param venueId 场馆ID
+     * @param date    日期
+     * @param startTime 开始时间（可选，筛选时间范围）
+     * @param endTime   结束时间（可选，筛选时间范围）
+     * @return 场馆级时段可用性列表（按场地分组）
+     */
+    @GetMapping("/records/venue-availability")
+    public R<List<VenueSlotAvailabilityVo>> queryVenueAvailability(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestParam @NotNull Long venueId,
+            @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "HH:mm") LocalTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "HH:mm") LocalTime endTime) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        merchantAuthUtil.validateVenueAccess(context, venueId);
+
+        List<VenueSlotAvailabilityVo> result = recordService.queryVenueAvailability(
+                venueId, date, startTime, endTime);
         return R.ok(result);
     }
 }

@@ -79,10 +79,10 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             // 查询总数
             Long total = conversationMapper.countByUserId(userId);
             return PaginationResult.build(
-                pagedConversations != null ? conversationVoList : emptyList(),
-                total != null ? total : 0L, 
-                page != null ? page : 1, 
-                pageSize != null ? pageSize : 50
+                    pagedConversations != null ? conversationVoList : emptyList(),
+                    total != null ? total : 0L,
+                    page != null ? page : 1,
+                    pageSize != null ? pageSize : 50
             );
         } catch (Exception e) {
             log.error("查询会话列表失败", e);
@@ -121,15 +121,13 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             // 先检查会话是否已存在
             Conversation existing = conversationMapper.selectByUserPair(userId, friendId);
             if (existing != null) {
-                
+
                 log.info("会话已存在，返回现有会话: {}", existing.getConversationId());
                 return existing;
             }
 
             // 会话不存在，创建新会话
             log.info("会话不存在，开始创建新会话: userId={}, friendId={}", userId, friendId);
-
-            // 使用雪花算法生成会话ID
 
 
             UserInfoVo friendInfo = userDubboService.getUserInfo(friendId);
@@ -185,13 +183,13 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 log.warn("置顶操作失败：会话不存在, conversationId={}, userId={}", conversationId, userId);
                 return false;
             }
-            
+
             // 验证用户是否是会话成员
             if (!conversation.getSenderUserId().equals(userId) && !conversation.getReceiveUserId().equals(userId)) {
                 log.warn("置顶操作失败：用户{}不是会话{}的成员, userId={}", userId, conversationId, userId);
                 return false;
             }
-            
+
             // 验证用户是否已被删除（逻辑删除）
             if (conversation.getSenderUserId().equals(userId) && conversation.getIsDeletedSender()) {
                 log.warn("置顶操作失败：用户{}已删除会话{}", userId, conversationId);
@@ -201,7 +199,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 log.warn("置顶操作失败：用户{}已删除会话{}", userId, conversationId);
                 return false;
             }
-            
+
             int result = conversationMapper.updatePinned(conversationId, userId, isPinned);
             if (result > 0) {
                 if (isPinned) {
@@ -231,13 +229,13 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 log.warn("屏蔽操作失败：会话不存在, conversationId={}, userId={}", conversationId, userId);
                 return false;
             }
-            
+
             // 验证用户是否是会话成员
             if (!conversation.getSenderUserId().equals(userId) && !conversation.getReceiveUserId().equals(userId)) {
                 log.warn("屏蔽操作失败：用户{}不是会话{}的成员, userId={}", userId, conversationId, userId);
                 return false;
             }
-            
+
             // 验证用户是否已被删除（逻辑删除）
             if (conversation.getSenderUserId().equals(userId) && conversation.getIsDeletedSender()) {
                 log.warn("屏蔽操作失败：用户{}已删除会话{}", userId, conversationId);
@@ -247,7 +245,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 log.warn("屏蔽操作失败：用户{}已删除会话{}", userId, conversationId);
                 return false;
             }
-            
+
             int result = conversationMapper.updateBlocked(conversationId, userId, isBlocked);
             if (result > 0) {
                 if (isBlocked) {
@@ -272,7 +270,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     public Boolean clearUnreadCount(Long userId) {
         try {
             log.info("用户{}开始清除所有会话的未读计数", userId);
-            
+
             // 1. 获取用户的所有会话列表
             List<Conversation> conversations = conversationMapper.selectByUserId(userId);
 
@@ -290,14 +288,14 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                             if (conversation.getSenderUserId().equals(userId)) {
                                 // 当前用户是发送方，查询发送方是自己、接收方是对方的未读消息
                                 unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                    userId,
-                                    conversation.getReceiveUserId()
+                                        userId,
+                                        conversation.getReceiveUserId()
                                 );
                             } else {
                                 // 当前用户是接收方，查询发送方是对方、接收方是自己的未读消息
                                 unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                    conversation.getSenderUserId(),
-                                    userId
+                                        conversation.getSenderUserId(),
+                                        userId
                                 );
                             }
 
@@ -314,9 +312,9 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                                             messageMapper.updateById(message);
                                         })
                                         .count();
-                                
-                                log.info("将会话{}下的{}条未读消息标记为已读", 
-                                    conversation.getConversationId(), unreadMessageEntities.size());
+
+                                log.info("将会话{}下的{}条未读消息标记为已读",
+                                        conversation.getConversationId(), unreadMessageEntities.size());
                             } else {
                                 log.info("会话{}下没有未读消息", conversation.getConversationId());
                             }
@@ -344,16 +342,16 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                             List<MessageEntity> unreadMessageEntities;
                             if (conversation.getSenderUserId().equals(userId)) {
                                 unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                    userId,
-                                    conversation.getReceiveUserId()
+                                        userId,
+                                        conversation.getReceiveUserId()
                                 );
                             } else {
                                 unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                    conversation.getSenderUserId(),
-                                    userId
+                                        conversation.getSenderUserId(),
+                                        userId
                                 );
                             }
-                            
+
                             if (unreadMessageEntities != null && !unreadMessageEntities.isEmpty()) {
                                 return unreadMessageEntities.stream()
                                         .filter(message -> !message.getIsRead())
@@ -366,9 +364,9 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                     })
                     .sum();
 
-            log.info("用户{}清除所有会话未读计数完成，共清除{}个会话的计数，标记{}条消息为已读", 
-                userId, totalCleared, totalMessagesMarked);
-            
+            log.info("用户{}清除所有会话未读计数完成，共清除{}个会话的计数，标记{}条消息为已读",
+                    userId, totalCleared, totalMessagesMarked);
+
             return true;
         } catch (Exception e) {
             log.error("清除所有未读计数失败", e);
@@ -390,7 +388,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
 
             // 2. 标记会话已读（清除未读计数）
             int result = conversationMapper.markConversationRead(conversationId, userId);
-            
+
             // 3. 查询该会话下用户作为接收方的未读消息
             List<MessageEntity> unreadMessageEntities;
 
@@ -401,8 +399,8 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             } else {
                 // 当前用户是接收方，查询发送方是对方、接收方是当前用户的未读消息
                 unreadMessageEntities = messageMapper.selectUnreadMessages(
-                    conversation.getSenderUserId(),    // 发送方是对方
-                    conversation.getReceiveUserId()    // 接收方是当前用户
+                        conversation.getSenderUserId(),    // 发送方是对方
+                        conversation.getReceiveUserId()    // 接收方是当前用户
                 );
             }
 
@@ -440,13 +438,13 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
                 log.warn("删除操作失败：会话不存在, conversationId={}, userId={}", conversationId, userId);
                 return false;
             }
-            
+
             // 验证用户是否是会话成员
             if (!conversation.getSenderUserId().equals(userId) && !conversation.getReceiveUserId().equals(userId)) {
                 log.warn("删除操作失败：用户{}不是会话{}的成员, userId={}", userId, conversationId, userId);
                 return false;
             }
-            
+
             int result = conversationMapper.logicalDelete(conversationId, userId);
             if (result > 0) {
                 log.info("用户{}成功删除会话{}", userId, conversationId);
@@ -467,11 +465,11 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         try {
             Long peerId = Long.parseLong(peerUserId);
             Conversation conversation = conversationMapper.selectByUserPair(userId, peerId);
-            
+
             if (conversation == null) {
                 return true; // 会话不存在，视为成功
             }
-            
+
             int result = conversationMapper.logicalDelete(conversation.getConversationId(), userId);
             return result > 0;
         } catch (Exception e) {
@@ -502,18 +500,18 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             }
 
             // 判断发送方和接收方
-            if (conversation.getSenderUserId().equals(fromUserId) && 
-                conversation.getReceiveUserId().equals(toUserId)) {
+            if (conversation.getSenderUserId().equals(fromUserId) &&
+                    conversation.getReceiveUserId().equals(toUserId)) {
                 // 发送方是sender，接收方是receiver
                 int result = conversationMapper.incrementReceiverUnread(conversationId);
                 return result > 0;
-            } else if (conversation.getSenderUserId().equals(toUserId) && 
-                       conversation.getReceiveUserId().equals(fromUserId)) {
+            } else if (conversation.getSenderUserId().equals(toUserId) &&
+                    conversation.getReceiveUserId().equals(fromUserId)) {
                 // 发送方是receiver，接收方是sender
                 int result = conversationMapper.incrementSenderUnread(conversationId);
                 return result > 0;
             }
-            
+
             return false;
 
         } catch (Exception e) {

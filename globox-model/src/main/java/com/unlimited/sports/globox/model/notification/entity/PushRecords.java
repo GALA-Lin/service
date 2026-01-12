@@ -134,6 +134,19 @@ public class PushRecords  implements Serializable {
     private LocalDateTime clickedAt;
 
     /**
+     * 是否已读：0=未读，1=已读
+     */
+    @TableField("is_read")
+    private Integer isRead;
+
+    /**
+     * 已读时间
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @TableField("read_at")
+    private LocalDateTime readAt;
+
+    /**
      * 实际发送时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")

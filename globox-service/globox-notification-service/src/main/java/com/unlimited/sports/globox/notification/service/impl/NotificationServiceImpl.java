@@ -187,14 +187,13 @@ public class NotificationServiceImpl implements INotificationService {
                 // 构建离线推送信息
                 // ext字段必须是有效的JSON字符串，不能为null，用{}表示空对象
                 String extJson = null;
+                Map<String, Object> extData = new HashMap<>(variables);
+                // 将 notificationId 添加到 ext，前端可直接从推送数据中获取
+                extData.put("notificationId", messageId);
                 if (action != null) {
-                    Map<String, Object> extData = new HashMap<>(variables);
                     extData.put("action", action);
-                    extJson = JSON.toJSONString(extData);
-                } else {
-                    // 如果没有action，仍然需要序列化variables，但至少要一个有效的JSON
-                    extJson = JSON.toJSONString(variables);
                 }
+                extJson = JSON.toJSONString(extData);
 
                 OfflinePushInfo offlinePushInfo = OfflinePushInfo.builder()
                         .pushFlag(0)  // 0=启用离线推送（用户在线和离线都会收到消息）

@@ -5,9 +5,11 @@ import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.unlimited.sports.globox.model.payment.vo.WechatPayNotifyVo;
+import com.wechat.pay.java.core.notification.NotificationConfig;
+import com.wechat.pay.java.core.notification.RequestParam;
+import com.wechat.pay.java.service.payments.model.Transaction;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.math.BigDecimal;
 
 /**
@@ -23,7 +25,7 @@ public interface WechatPayService {
      */
     SubmitResultVo submit(Payments payments);
 
-    WechatPayNotifyVo handleCallback(HttpServletRequest request, HttpServletResponse response);
+    WechatPayNotifyVo handleCallback(HttpServletRequest request, NotificationConfig notificationConfig);
 
     /**
      * 查询指定订单号的微信支付状态。
@@ -52,4 +54,6 @@ public interface WechatPayService {
      * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
      */
     void cancel(Payments payments);
+
+
 }

@@ -59,7 +59,6 @@ public class GetOrderVo {
     @Schema(description = "预约日期", example = "2025-12-20")
     private LocalDate bookingDate;
 
-
     /**
      * 是否活动订单
      */

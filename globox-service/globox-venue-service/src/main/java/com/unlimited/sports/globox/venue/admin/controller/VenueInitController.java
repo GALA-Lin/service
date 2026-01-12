@@ -4,6 +4,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.cos.vo.BatchUploadResultVo;
 import com.unlimited.sports.globox.venue.admin.dto.CreateVenueInitDto;
+import com.unlimited.sports.globox.venue.admin.dto.CreateActivityDto;
 import com.unlimited.sports.globox.venue.admin.service.IVenueInitService;
 import com.unlimited.sports.globox.venue.admin.vo.VenueInitResultVo;
 import com.unlimited.sports.globox.venue.service.IFileUploadService;
@@ -78,7 +79,7 @@ public class VenueInitController {
      * @param dto 场馆配置信息（包含商家ID、图片URL列表）
      * @return 创建结果
      */
-    @PostMapping
+    @PostMapping("/create")
     @Operation(summary = "一键创建场馆",
             description = "创建场馆及其所有相关配置（场地、营业时间、价格、槽位、设施等）")
     public R<VenueInitResultVo> createVenue(
@@ -90,5 +91,24 @@ public class VenueInitController {
         VenueInitResultVo result = venueInitService.createVenue(dto.getMerchantId(), dto);
         log.info("场馆创建成功：venueId={}", result.getVenueId());
         return R.ok(result);
+    }
+
+    /**
+     * 创建活动
+     *
+     * @param dto 活动创建信息
+     * @return 创建的活动ID
+     */
+    @PostMapping("/activity")
+    @Operation(summary = "创建活动",
+            description = "创建场馆活动及其槽位锁定，确保所选时间段未被占用")
+    public R<Long> createActivity(@Valid @RequestBody CreateActivityDto dto) {
+        log.info("收到创建活动请求：venueId={}, courtId={}, activityName={}, date={}, time={}~{}",
+                dto.getVenueId(), dto.getCourtId(), dto.getActivityName(),
+                dto.getActivityDate(), dto.getStartTime(), dto.getEndTime());
+
+        Long activityId = venueInitService.createActivity(dto);
+        log.info("活动创建成功：activityId={}", activityId);
+        return R.ok(activityId);
     }
 }

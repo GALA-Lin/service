@@ -45,6 +45,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -55,7 +56,7 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl implements OrderService {
 
     /**
-     * 订单自动关闭时间 单位 m
+     * 订单自动关闭时间 单位 s
      */
     @Value("${order.unpaid-auto-cancel.scheduled}")
     private Integer delay;
@@ -572,12 +573,6 @@ public class OrderServiceImpl implements OrderService {
 
                     @Override
                     public void afterCommit() {
-                        // 事务成功，发成功事件
-                        mqService.send(
-                                OrderMQConstants.EXCHANGE_TOPIC_ORDER_CREATED,
-                                OrderMQConstants.ROUTING_ORDER_CREATED,
-                                order);
-
                         // 发送消息，定时关闭订单
                         mqService.sendDelay(
                                 OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL,
@@ -669,6 +664,11 @@ public class OrderServiceImpl implements OrderService {
 
                     OrderItems firstItem = orderItems.get(0);
 
+                    // TODO 2026/01/10 是否修改
+                    String resourceName = orderItems.stream().map(OrderItems::getResourceName)
+                            .reduce(String::concat)
+                            .orElseGet(order::getSellerName);
+
                     List<SlotBookingTime> slotTimes =
                             orderItems.stream()
                                     .map(item -> {
@@ -695,7 +695,7 @@ public class OrderServiceImpl implements OrderService {
                             .amount(order.getPayAmount())
                             .currentOrderStatus(order.getOrderStatus())
                             .createdAt(order.getCreatedAt())
-                            .itemCount(items.size())
+                            .itemCount(orderItems.size())
                             .slotBookingTimes(slotTimes)
                             .build();
 

@@ -135,6 +135,10 @@ public interface MerchantVenueBookingSlotRecordMapper extends BaseMapper<VenueBo
             @Param("date") LocalDate date
     );
 
+    List<VenueBookingSlotRecord> MerchantSelectByCourtIdsAndDate(
+            @Param("courtIds") List<Long> courtIds,
+            @Param("bookingDate") LocalDate bookingDate
+    );
     /**
      * 状态统计VO（内部类）
      */

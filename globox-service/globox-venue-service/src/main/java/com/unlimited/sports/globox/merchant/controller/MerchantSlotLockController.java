@@ -1,27 +1,24 @@
 package com.unlimited.sports.globox.merchant.controller;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
-import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
 import com.unlimited.sports.globox.merchant.service.MerchantSlotLockService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
-import com.unlimited.sports.globox.model.merchant.entity.Court;
-import com.unlimited.sports.globox.model.merchant.entity.Venue;
-import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
 import com.unlimited.sports.globox.model.merchant.vo.LockedSlotVo;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import javax.validation.Valid;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.NotEmpty;
+import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 
-import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
-import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIRED;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
@@ -41,16 +38,19 @@ public class MerchantSlotLockController {
     /**
      * 锁场
      */
-    @PostMapping("/{recordId}/lock")
+    @PostMapping("/lock")
     public R<Void> lockSlot(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @PathVariable Long recordId,
-            @RequestParam String reason) {
-
+            @RequestParam @NotNull(message = "模板ID不能为空") Long templateId,
+            @RequestParam @NotNull(message = "预约日期不能为空")
+            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate,
+            @RequestParam @NotBlank(message = "锁定原因不能为空") String reason) {
+        log.info("锁场请求, employeeId: {}, roleStr: {}, templateId: {}, bookingDate: {}, reason: {}",
+                employeeId, roleStr, templateId, bookingDate, reason);
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        lockService.lockSlotByMerchant(recordId, reason, context.getMerchantId());
+        lockService.lockSlotByMerchant(templateId, bookingDate, reason, context.getMerchantId());
         return R.ok();
     }
 
@@ -61,27 +61,35 @@ public class MerchantSlotLockController {
     public R<Void> lockSlotsBatch(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestBody List<Long> recordIds,
-            @RequestParam String reason) {
-
+            @RequestParam @NotNull(message = "预约日期不能为空")
+            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate,
+            @RequestParam @NotBlank(message = "锁定原因不能为空") String reason,
+            @Valid @RequestBody BatchLockRequest request) {
+        log.info("批量锁场请求, employeeId: {}, roleStr: {}, bookingDate: {}, reason: {}, request: {}",
+                employeeId, roleStr, bookingDate, reason, request);
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        lockService.lockSlotsBatchByMerchant(recordIds, reason, context.getMerchantId());
+        lockService.lockSlotsBatchByMerchant(
+                request.getTemplateIds(), bookingDate, reason, context.getMerchantId());
         return R.ok();
     }
 
     /**
      * 解锁场
      */
-    @PostMapping("/{recordId}/unlock")
+    @PostMapping("/unlock")
     public R<Void> unlockSlot(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @PathVariable Long recordId) {
+            @RequestParam @NotNull(message = "模板ID不能为空") Long templateId,
+            @RequestParam @NotNull(message = "预约日期不能为空")
+            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate) {
 
+        log.info("解锁场请求, employeeId: {}, roleStr: {}, templateId: {}, bookingDate: {}",
+                employeeId, roleStr, templateId, bookingDate);
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        lockService.unlockSlotByMerchant(recordId, context.getMerchantId());
+        lockService.unlockSlotByMerchant(templateId, bookingDate, context.getMerchantId());
         return R.ok();
     }
 
@@ -92,11 +100,16 @@ public class MerchantSlotLockController {
     public R<Void> unlockSlotsBatch(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestBody List<Long> recordIds) {
+            @RequestParam @NotNull(message = "预约日期不能为空")
+            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate,
+            @Valid @RequestBody BatchUnlockRequest request) {
 
+        log.info("批量解锁场请求, employeeId: {}, roleStr: {}, bookingDate: {}, request: {}",
+                employeeId, roleStr, bookingDate, request);
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        lockService.unlockSlotsBatchByMerchant(recordIds, context.getMerchantId());
+        lockService.unlockSlotsBatchByMerchant(
+                request.getTemplateIds(), bookingDate, context.getMerchantId());
         return R.ok();
     }
 
@@ -142,5 +155,25 @@ public class MerchantSlotLockController {
         List<LockedSlotVo> result = lockService.queryLockedSlots(
                 courtId, venueId, startDate, endDate, lockedType);
         return R.ok(result);
+    }
+
+    /**
+     * 批量锁场请求
+     */
+    @Data
+    public static class BatchLockRequest {
+        @NotEmpty(message = "模板ID列表不能为空")
+        @Size(max = 100, message = "一次最多锁定100个时段")
+        private List<Long> templateIds;
+    }
+
+    /**
+     * 批量解锁场请求
+     */
+    @Data
+    public static class BatchUnlockRequest {
+        @NotEmpty(message = "模板ID列表不能为空")
+        @Size(max = 100, message = "一次最多解锁100个时段")
+        private List<Long> templateIds;
     }
 }

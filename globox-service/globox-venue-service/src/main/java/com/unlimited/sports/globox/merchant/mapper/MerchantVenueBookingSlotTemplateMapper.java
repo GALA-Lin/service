@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotTemplat
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -35,4 +36,17 @@ public interface MerchantVenueBookingSlotTemplateMapper extends BaseMapper<Venue
      * @return 影响行数
      */
     int deleteByCourtId(@Param("courtId") Long courtId);
-}
+
+    /**
+     * 批量查询指定场地列表在指定时间范围内的槽位模板
+     *
+     * @param courtIds 场地ID列表
+     * @param openTime 开始时间（营业时间）
+     * @param closeTime 结束时间（营业时间）
+     * @return 槽位模板列表
+     */
+    List<VenueBookingSlotTemplate> MerchantSelectByCourtIdsAndTimeRange(
+            @Param("courtIds") List<Long> courtIds,
+            @Param("openTime") LocalTime openTime,
+            @Param("closeTime") LocalTime closeTime
+    );}

@@ -1,6 +1,8 @@
 package com.unlimited.sports.globox.merchant.service;
 
+import com.unlimited.sports.globox.model.merchant.dto.BatchTemplateInitDto;
 import com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotTemplate;
+import com.unlimited.sports.globox.model.merchant.vo.BatchTemplateInitResultVo;
 
 import java.time.LocalTime;
 import java.util.List;
@@ -33,5 +35,13 @@ public interface SlotTemplateService {
      * @param courtId 场地ID
      */
     void deleteTemplatesByCourtId(Long courtId);
+
+    /**
+     * 批量初始化场地时段模板
+     *
+     * @param dto 批量初始化参数
+     * @return 批量初始化结果
+     */
+    BatchTemplateInitResultVo batchInitializeTemplates(BatchTemplateInitDto dto);
 
 }

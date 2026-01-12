@@ -7,6 +7,7 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.SocialCode;
+import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.NoteMediaRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
@@ -16,6 +17,7 @@ import com.unlimited.sports.globox.model.social.entity.SocialNoteLike;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteMedia;
 import com.unlimited.sports.globox.model.social.entity.SocialNotePool;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
+import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
 import com.unlimited.sports.globox.model.social.vo.NoteDetailVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
@@ -25,6 +27,7 @@ import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMediaMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNotePoolMapper;
 import com.unlimited.sports.globox.social.service.NoteService;
+import com.unlimited.sports.globox.social.service.SocialRelationService;
 import com.unlimited.sports.globox.social.util.CursorUtils;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
@@ -77,6 +80,9 @@ public class NoteServiceImpl implements NoteService {
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
+
+    @Autowired
+    private SocialRelationService socialRelationService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -168,7 +174,7 @@ public class NoteServiceImpl implements NoteService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public R<Long> publishNote(Long userId, PublishNoteRequest request) {
+    public R<Long> directPublishNote(Long userId, DirectPublishNoteRequest request) {
         // 1. 参数校验
         if (userId == null) {
             return R.error(SocialCode.NOTE_NOT_FOUND);
@@ -230,6 +236,61 @@ public class NoteServiceImpl implements NoteService {
 
         log.info("笔记发布成功：userId={}, noteId={}", userId, note.getNoteId());
         return R.ok(note.getNoteId());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<Long> publishDraftNote(Long userId, PublishNoteRequest request) {
+        // 1. 参数校验
+        if (userId == null) {
+            return R.error(SocialCode.NOTE_NOT_FOUND);
+        }
+        if (request.getNoteId() == null) {
+            throw new GloboxApplicationException(SocialCode.NOTE_ID_REQUIRED);
+        }
+
+        // 2. 强校验：content 必填
+        if (!StringUtils.hasText(request.getContent())) {
+            throw new GloboxApplicationException(SocialCode.NOTE_CONTENT_EMPTY);
+        }
+
+        // 3. 强校验：mediaList 必填且非空
+        if (CollectionUtils.isEmpty(request.getMediaList())) {
+            throw new GloboxApplicationException(SocialCode.NOTE_PUBLISH_VALIDATION_FAILED);
+        }
+
+        // 4. 校验媒体类型和媒体列表
+        validateMedia(request.getMediaType(), request.getMediaList());
+
+        // 5. 查询草稿
+        SocialNote draft = socialNoteMapper.selectById(request.getNoteId());
+        if (draft == null || draft.getStatus() == SocialNote.Status.DELETED) {
+            return R.error(SocialCode.NOTE_NOT_FOUND);
+        }
+        if (!draft.getUserId().equals(userId)) {
+            throw new GloboxApplicationException(SocialCode.NOTE_PERMISSION_DENIED);
+        }
+        if (draft.getStatus() != SocialNote.Status.DRAFT) {
+            throw new GloboxApplicationException(SocialCode.NOTE_STATUS_INVALID);
+        }
+
+        // 6. 更新草稿为已发布
+        draft.setTitle(request.getTitle());
+        draft.setContent(request.getContent());
+        draft.setAllowComment(request.getAllowComment() != null ? request.getAllowComment() : draft.getAllowComment());
+        draft.setStatus(SocialNote.Status.PUBLISHED);
+        draft.setUpdatedAt(LocalDateTime.now());
+        applyMediaSummary(draft, request.getMediaType(), request.getMediaList());
+        socialNoteMapper.updateById(draft);
+
+        // 7. 更新媒体列表
+        LambdaQueryWrapper<SocialNoteMedia> mediaDeleteQuery = new LambdaQueryWrapper<>();
+        mediaDeleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId());
+        socialNoteMediaMapper.delete(mediaDeleteQuery);
+        insertMediaList(draft.getNoteId(), request.getMediaList(), request.getMediaType());
+
+        log.info("草稿转正成功：userId={}, noteId={}", userId, draft.getNoteId());
+        return R.ok(draft.getNoteId());
     }
 
     @Override
@@ -415,6 +476,70 @@ public class NoteServiceImpl implements NoteService {
 
         List<NoteItemVo> voList = convertToNoteItemVo(pageResult.getRecords(), userId);
 
+        PaginationResult<NoteItemVo> result = PaginationResult.build(voList, pageResult.getTotal(), page, pageSize);
+        return R.ok(result);
+    }
+
+    @Override
+    public R<PaginationResult<DraftNoteItemVo>> getDrafts(Long userId, Integer page, Integer pageSize) {
+        if (userId == null) {
+            return R.error(SocialCode.NOTE_NOT_FOUND);
+        }
+        if (page == null || page < 1) {
+            page = 1;
+        }
+        if (pageSize == null || pageSize < 1) {
+            pageSize = 10;
+        }
+
+        LambdaQueryWrapper<SocialNote> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(SocialNote::getUserId, userId)
+                .eq(SocialNote::getStatus, SocialNote.Status.DRAFT)
+                .orderByDesc(SocialNote::getUpdatedAt);
+
+        Page<SocialNote> pageParam = new Page<>(page, pageSize);
+        IPage<SocialNote> pageResult = socialNoteMapper.selectPage(pageParam, queryWrapper);
+
+        List<DraftNoteItemVo> voList = pageResult.getRecords().stream()
+                .map(note -> {
+                    DraftNoteItemVo vo = new DraftNoteItemVo();
+                    vo.setNoteId(note.getNoteId());
+                    vo.setTitle(note.getTitle());
+                    vo.setContent(note.getContent());
+                    vo.setCoverUrl(note.getCoverUrl());
+                    vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
+                    vo.setUpdatedAt(note.getUpdatedAt());
+                    return vo;
+                })
+                .collect(Collectors.toList());
+
+        PaginationResult<DraftNoteItemVo> result = PaginationResult.build(voList, pageResult.getTotal(), page, pageSize);
+        return R.ok(result);
+    }
+
+    @Override
+    public R<PaginationResult<NoteItemVo>> getUserNotes(Long targetUserId, Integer page, Integer pageSize, Long viewerId) {
+        if (targetUserId == null) {
+            return R.error(SocialCode.NOTE_NOT_FOUND);
+        }
+        if (socialRelationService.isBlocked(viewerId, targetUserId)) {
+            return R.error(SocialCode.USER_BLOCKED);
+        }
+        if (page == null || page < 1) {
+            page = 1;
+        }
+        if (pageSize == null || pageSize < 1) {
+            pageSize = 10;
+        }
+
+        LambdaQueryWrapper<SocialNote> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(SocialNote::getUserId, targetUserId)
+                .eq(SocialNote::getStatus, SocialNote.Status.PUBLISHED)
+                .orderByDesc(SocialNote::getCreatedAt);
+
+        Page<SocialNote> pageParam = new Page<>(page, pageSize);
+        IPage<SocialNote> pageResult = socialNoteMapper.selectPage(pageParam, queryWrapper);
+        List<NoteItemVo> voList = convertToNoteItemVo(pageResult.getRecords(), viewerId);
         PaginationResult<NoteItemVo> result = PaginationResult.build(voList, pageResult.getTotal(), page, pageSize);
         return R.ok(result);
     }
@@ -802,25 +927,41 @@ public class NoteServiceImpl implements NoteService {
 
     @Override
     public R<CursorPaginationResult<NoteItemVo>> getLikedNotes(Long userId, String cursor, Integer size) {
-        // 1. 参数校验
+        return getLikedNotesInternal(userId, cursor, size, userId, true);
+    }
+
+    @Override
+    public R<CursorPaginationResult<NoteItemVo>> getUserLikedNotes(Long targetUserId, String cursor, Integer size, Long viewerId) {
+        if (socialRelationService.isBlocked(viewerId, targetUserId)) {
+            return R.error(SocialCode.USER_BLOCKED);
+        }
+        return getLikedNotesInternal(targetUserId, cursor, size, viewerId, false);
+    }
+
+    private R<CursorPaginationResult<NoteItemVo>> getLikedNotesInternal(Long userId, String cursor, Integer size, Long viewerId, boolean forceLikedTrue) {
         if (size == null || size < 1) {
             size = DEFAULT_PAGE_SIZE;
         }
         if (size > MAX_PAGE_SIZE) {
-            throw new GloboxApplicationException(SocialCode.NOTE_PAGE_SIZE_EXCEEDED);
+            return R.error(SocialCode.NOTE_PAGE_SIZE_EXCEEDED);
         }
 
-        // 2. 解析游标
-        CursorUtils.LikedCursor likedCursorObj = null;
         LocalDateTime cursorTime = null;
         Long cursorLikeId = null;
         if (StringUtils.hasText(cursor)) {
-            likedCursorObj = CursorUtils.parseLikedCursor(cursor);
-            cursorTime = likedCursorObj.getLikeCreatedAt();
-            cursorLikeId = likedCursorObj.getLikeId();
+            try {
+                String[] parts = cursor.split("\\|");
+                if (parts.length == 2) {
+                    cursorTime = LocalDateTime.parse(parts[0]);
+                    cursorLikeId = Long.parseLong(parts[1]);
+                } else {
+                    throw new GloboxApplicationException(SocialCode.NOTE_CURSOR_INVALID);
+                }
+            } catch (Exception e) {
+                throw new GloboxApplicationException(SocialCode.NOTE_CURSOR_INVALID);
+            }
         }
 
-        // 3. 使用 JOIN 查询获取点赞的笔记（查询 size+1 条以判断是否有更多）
         List<SocialNote> notes = socialNoteLikeMapper.selectLikedNotesWithJoin(
                 userId, cursorTime, cursorLikeId, size + 1);
 
@@ -835,7 +976,6 @@ public class NoteServiceImpl implements NoteService {
             return R.ok(result);
         }
 
-        // 4. 批量查询点赞记录以获取 like_id 和 created_at（用于构建游标）
         List<Long> noteIds = resultNotes.stream()
                 .map(SocialNote::getNoteId)
                 .collect(Collectors.toList());
@@ -846,12 +986,11 @@ public class NoteServiceImpl implements NoteService {
         Map<Long, SocialNoteLike> likeMap = likes.stream()
                 .collect(Collectors.toMap(SocialNoteLike::getNoteId, like -> like));
 
-        // 5. 转换为VO，并设置 liked=true（因为这些都是用户点赞的笔记）
-        List<NoteItemVo> voList = convertToNoteItemVo(resultNotes, userId);
-        // 点赞列表中的笔记都是已点赞的
-        voList.forEach(vo -> vo.setLiked(true));
+        List<NoteItemVo> voList = convertToNoteItemVo(resultNotes, viewerId);
+        if (forceLikedTrue) {
+            voList.forEach(vo -> vo.setLiked(true));
+        }
 
-        // 6. 构建nextCursor（使用最后一条笔记对应的点赞记录）
         String nextCursor = null;
         if (hasMore && !resultNotes.isEmpty()) {
             SocialNote lastNote = resultNotes.get(resultNotes.size() - 1);
@@ -861,7 +1000,6 @@ public class NoteServiceImpl implements NoteService {
             }
         }
 
-        // 7. 构建结果
         CursorPaginationResult<NoteItemVo> result = new CursorPaginationResult<>();
         result.setList(voList);
         result.setNextCursor(nextCursor);

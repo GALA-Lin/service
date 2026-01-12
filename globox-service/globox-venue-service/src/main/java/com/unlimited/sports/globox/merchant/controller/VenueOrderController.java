@@ -68,6 +68,7 @@ public class VenueOrderController {
         if (context.isStaff() && dto.getVenueId() == null) {
             dto.setVenueId(context.getVenueId());
         }
+        dto.setMerchantId(context.getMerchantId());
         RpcResult<IPage<MerchantGetOrderResultDto>> resultDto = orderForMerchantDubboService.getOrderPage(dto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
@@ -84,7 +85,7 @@ public class VenueOrderController {
             @Valid MerchantGetOrderDetailsRequestDto dto) {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-
+        dto.setMerchantId(context.getMerchantId());
         RpcResult<MerchantGetOrderResultDto> resultDto = orderForMerchantDubboService.getOrderDetails(dto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
@@ -102,6 +103,7 @@ public class VenueOrderController {
             @RequestBody @Valid MerchantCancelOrderRequestDto dto) {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        dto.setMerchantId(context.getMerchantId());
         RpcResult<SellerCancelOrderResultDto> resultDto =  orderForMerchantDubboService.cancelUnpaidOrder(dto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
@@ -118,7 +120,7 @@ public class VenueOrderController {
             @RequestBody @Valid MerchantRefundRequestDto dto) {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-
+        dto.setMerchantId(context.getMerchantId());
         RpcResult<SellerRefundResultDto> resultDto = orderForMerchantRefundDubboService.refund(dto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());

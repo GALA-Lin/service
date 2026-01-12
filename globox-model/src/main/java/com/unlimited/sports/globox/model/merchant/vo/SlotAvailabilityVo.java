@@ -16,17 +16,16 @@ import java.time.LocalTime;
 @Builder
 public class SlotAvailabilityVo {
 
-    /**
-     * 槽位记录ID（如果已生成记录）
-     */
-
-    private Long bookingSlotId;
 
     /**
      * 槽位模板ID
      */
-
     private Long templateId;
+
+    /**
+     * 槽位记录ID（如果已生成）
+     */
+    private Long bookingSlotId;
 
     /**
      * 开始时间
@@ -39,7 +38,12 @@ public class SlotAvailabilityVo {
     private LocalTime endTime;
 
     /**
-     * 是否可预订
+     * 状态码
+     */
+    private Integer status;
+
+    /**
+     * 是否可用
      */
     private Boolean available;
 
@@ -49,29 +53,51 @@ public class SlotAvailabilityVo {
     private BigDecimal price;
 
     /**
-     * 状态码：1=可预订，2=占用中，3=不可预订
-     */
-    private Integer status;
-
-    /**
      * 状态说明
      */
     private String statusRemark;
 
     /**
-     * 锁定类型：1=用户订单，2=商家锁场，null=未锁定
+     * 锁定类型（如果被锁定）
      */
     private Integer lockedType;
 
     /**
-     * 锁定原因（商家锁场时显示）
+     * 锁定原因
      */
     private String lockReason;
 
     /**
-     * 关联订单ID（用户订单占用时显示）
+     * 关联订单ID
      */
     private String orderId;
+
+    // ========== 活动相关字段（新增） ==========
+
+    /**
+     * 槽位类型：1-普通槽位，2-活动槽位
+     */
+    private Integer slotType;
+
+    /**
+     * 活动ID（如果是活动槽位）
+     */
+    private Long activityId;
+
+    /**
+     * 活动名称
+     */
+    private String activityName;
+
+    /**
+     * 当前参与人数
+     */
+    private Integer currentParticipants;
+
+    /**
+     * 最大参与人数
+     */
+    private Integer maxParticipants;
 
     /**
      * 快速构建可用时段

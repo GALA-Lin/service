@@ -9,7 +9,7 @@
         <Property name="LOG_DATEFORMAT_PATTERN">yyyy-MM-dd HH:mm:ss.SSS</Property>
 
         <!-- 日志目录 -->
-        <Property name="LOG_PATH">logs/venue</Property>
+        <Property name="LOG_PATH">logs/notification</Property>
 
         <!-- 控制台日志格式（Spring Boot 风格） -->
         <Property name="CONSOLE_LOG_PATTERN">
@@ -66,11 +66,6 @@
 
     <!-- ================== Loggers ================== -->
     <Loggers>
-        <!-- MyBatis / MyBatis-Plus SQL -->
-        <Logger name="org.mybatis" level="DEBUG"/>
-        <Logger name="org.apache.ibatis" level="DEBUG"/>
-        <Logger name="com.baomidou.mybatisplus" level="DEBUG"/>
-
         <!-- 三方库降噪 -->
         <Logger name="org.apache.catalina.startup.DigesterFactory" level="ERROR"/>
         <Logger name="org.apache.catalina.util.LifecycleBase" level="ERROR"/>

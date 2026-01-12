@@ -2,8 +2,11 @@ package com.unlimited.sports.globox.merchant.service;
 
 import com.unlimited.sports.globox.model.merchant.vo.SlotAvailabilityVo;
 import com.unlimited.sports.globox.model.merchant.vo.SlotGenerationResultVo;
+import com.unlimited.sports.globox.model.merchant.vo.VenueSlotAvailabilityVo;
 
+import javax.validation.constraints.NotNull;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 /**
@@ -41,4 +44,5 @@ public interface VenueSlotRecordService {
      */
     List<SlotAvailabilityVo> queryAvailability(Long courtId, LocalDate date);
 
+    List<VenueSlotAvailabilityVo> queryVenueAvailability(@NotNull Long venueId, LocalDate date, LocalTime startTime, LocalTime endTime);
 }

@@ -28,12 +28,6 @@ import org.springframework.stereotype.Component;
 public class UserRefundConsumer {
 
     @Autowired
-    private AlipayService alipayService;
-
-    @Autowired
-    private WechatPayService wechatPayService;
-
-    @Autowired
     private PaymentsService paymentsService;
 
     @Autowired

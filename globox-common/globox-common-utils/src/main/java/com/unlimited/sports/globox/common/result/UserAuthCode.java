@@ -6,9 +6,6 @@ import lombok.Getter;
 /**
  * 登录认证相关响应码枚举
  * 错误码区间：2000-2999（认证授权模块专用）
- *
- * @author Wreckloud
- * @since 2025/12/19
  */
 @Getter
 @AllArgsConstructor

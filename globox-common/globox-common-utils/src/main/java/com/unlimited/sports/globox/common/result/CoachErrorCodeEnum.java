@@ -4,8 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
- * @since 2026/1/6 15:01
  * 教练预约业务错误码
+ * 4000-4999
  */
 @Getter
 @AllArgsConstructor

@@ -25,4 +25,23 @@
         WHERE court_id = #{courtId} AND is_deleted = 0
     </delete>
 
+    <select id="MerchantSelectByCourtIdsAndTimeRange" resultType="com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotTemplate">
+        SELECT
+        booking_slot_template_id AS bookingSlotTemplateId,
+        court_id AS courtId,
+        start_time AS startTime,
+        end_time AS endTime,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+        FROM venue_booking_slot_template
+        WHERE court_id IN
+        <foreach collection="courtIds" item="courtId" open="(" separator="," close=")">
+            #{courtId}
+        </foreach>
+        <!-- 槽位开始时间 >= 营业开始时间 且 槽位结束时间 <= 营业结束时间 -->
+        AND start_time &gt;= #{openTime}
+        AND end_time &lt;= #{closeTime}
+        ORDER BY court_id ASC, start_time ASC
+    </select>
+
 </mapper>

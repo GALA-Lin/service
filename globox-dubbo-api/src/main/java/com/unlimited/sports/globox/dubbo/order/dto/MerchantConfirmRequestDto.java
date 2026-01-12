@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serializable;
 
 /**
  * 商家确认订单 rpc - 请求类
@@ -14,7 +15,7 @@ import javax.validation.constraints.NotNull;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class MerchantConfirmRequestDto {
+public class MerchantConfirmRequestDto implements Serializable {
 
     @NotNull
     private Long orderNo;

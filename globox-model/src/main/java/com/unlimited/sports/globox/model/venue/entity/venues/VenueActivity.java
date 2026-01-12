@@ -105,6 +105,17 @@ public class VenueActivity {
      */
     private Integer organizerType;
 
+
+    /**
+     * 组织者姓名(商家名称/员工displayName)
+     */
+    private String organizerName;
+
+    /**
+     * 联系电话
+     */
+    private String contactPhone;
+
     /**
      * 参与用户的最低NTRP水平要求
      * 范围：1.0 - 7.0，允许半值（1.5, 2.5等）

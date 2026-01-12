@@ -15,10 +15,7 @@ import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.unlimited.sports.globox.model.payment.vo.WechatPayNotifyVo;
 import com.unlimited.sports.globox.payment.prop.WechatPayProperties;
-import com.unlimited.sports.globox.payment.service.PaymentsService;
-import com.unlimited.sports.globox.payment.service.WechatPayAppService;
-import com.unlimited.sports.globox.payment.service.WechatPayJsapiService;
-import com.unlimited.sports.globox.payment.service.WechatPayService;
+import com.unlimited.sports.globox.payment.service.*;
 import com.unlimited.sports.globox.payment.utils.AmountUtils;
 import com.wechat.pay.java.core.notification.NotificationConfig;
 import com.wechat.pay.java.core.notification.NotificationParser;
@@ -27,7 +24,6 @@ import com.wechat.pay.java.service.payments.model.Transaction;
 import com.wechat.pay.java.service.payments.model.Transaction.*;
 import com.wechat.pay.java.service.refund.RefundService;
 import com.wechat.pay.java.service.refund.model.*;
-import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -36,8 +32,8 @@ import org.springframework.stereotype.Service;
 
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -54,6 +50,9 @@ import static com.wechat.pay.java.core.http.Constant.*;
 public class WechatPayServiceImpl implements WechatPayService {
 
     @Autowired
+    private WechatPayMoonCourtJsapiService wechatPayMoonCourtJsapiService;
+
+    @Autowired
     private WechatPayJsapiService wechatPayJsapiService;
 
     @Autowired
@@ -67,9 +66,6 @@ public class WechatPayServiceImpl implements WechatPayService {
 
     @Autowired
     private RedisTemplate<Object, Object> redisTemplate;
-
-    @Autowired
-    private NotificationConfig notificationConfig;
 
     @Lazy
     @Autowired
@@ -92,16 +88,20 @@ public class WechatPayServiceImpl implements WechatPayService {
     public SubmitResultVo submit(Payments payments) {
         if (ClientType.APP.equals(payments.getClientType())) {
             return wechatPayAppService.submit(payments);
-        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+        } else if (ClientType.JSAPI.equals(payments.getClientType())) {
             return wechatPayJsapiService.submit(payments);
+        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+            return wechatPayMoonCourtJsapiService.submit(payments);
         } else {
             throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_CLIENT_TYPE);
         }
     }
 
     @Override
-    public WechatPayNotifyVo handleCallback(HttpServletRequest request, HttpServletResponse response) {
+    public WechatPayNotifyVo handleCallback(HttpServletRequest request, NotificationConfig notificationConfig) {
         LocalDateTime callbackAt = LocalDateTime.now();
+
+        String notify;
         try (ServletInputStream inputStream = request.getInputStream();
              BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream))) {
             // 读取请求体
@@ -110,80 +110,83 @@ public class WechatPayServiceImpl implements WechatPayService {
             while ((line = bufferedReader.readLine()) != null) {
                 sb.append(line);
             }
-            String notify = sb.toString();
-            Map<String, Object> bodyMap = jsonUtils.jsonToMap(notify);
-            log.info("微信支付通知: {}", notify);
-            RequestParam requestParam = buildByHeaderRequestParam(request, notify);
-            // 验证签名并解析请求体
-            NotificationParser notificationParser = new NotificationParser(notificationConfig);
-            // 调用 NotificationParser.parse() 验签、解密并将 JSON 转换成具体的通知回调对象。如果验签失败，SDK 会抛出 ValidationException。
-            log.info("支付通知回调:验签、解密并转换成 Transaction对象:-------");
-            Transaction transaction = null;
-            try {
-                /*
-                 * 常用的通知回调调对象类型有：
-                 * 支付 Transaction
-                 * 退款 RefundNotification
-                 * 若 SDK 暂不支持的类型，请使用 Map.class，嵌套的 Json 对象将被转换成 LinkedTreeMap
-                 */
-                transaction = notificationParser.parse(requestParam, Transaction.class);
-            } catch (Exception e) {
-                throw new GloboxApplicationException("微信支付：支付通知回调，验签、解密失败--->" + e.getMessage());
-            }
-            log.info("Transaction:===>>>>支付CallBack状态" + transaction.getTradeState());
-            log.info("Transaction:===>>>>" + transaction);
-
-            String notifyId = bodyMap.get("id").toString();
-            String outTradeNo = transaction.getOutTradeNo();
-            String tradeNo = transaction.getTransactionId();
-            LocalDateTime paymentAt = LocalDateUtils.toLocalDateTime(transaction.getSuccessTime());
-            String callbackContent = jsonUtils.objectToJson(transaction);
-            Payments payments = paymentsService.getPaymentByOutTradeNo(outTradeNo);
-
-            BigDecimal totalAmount = AmountUtils.toBigDecimal(transaction.getAmount().getTotal());
-            if (payments.getTotalAmount().compareTo(totalAmount) != 0) {
-                log.warn("微信金额不匹配, outTradeNo={}, db={}, cb={}",
-                        outTradeNo, payments.getTotalAmount(), totalAmount);
-                return WechatPayNotifyVo.fail();
-            }
-
-            // 已经处理过的支付信息
-            if (!PaymentStatusEnum.UNPAID.equals(payments.getPaymentStatus())) {
-                return WechatPayNotifyVo.ok();
-            }
-
-            // 5) 添加标识
-            Boolean flag = redisTemplate.opsForValue().setIfAbsent(notifyId, notifyId, 1461, TimeUnit.MINUTES);
-            if (Boolean.TRUE.equals(flag)) {
-                payments.setTradeNo(tradeNo);
-                payments.setPaymentAt(paymentAt);
-                payments.setCallbackAt(callbackAt);
-                payments.setCallbackContent(callbackContent);
-                int cnt = paymentsService.updatePayment(payments);
-                if (cnt > 0) {
-                    PaymentSuccessMessage message = PaymentSuccessMessage.builder()
-                            .orderNo(payments.getOrderNo())
-                            .tradeNo(tradeNo)
-                            .outTradeNo(outTradeNo)
-                            .paymentAt(paymentAt)
-                            .totalAmount(totalAmount)
-                            .paymentType(PaymentTypeEnum.WECHAT_PAY)
-                            .build();
-
-                    mqService.send(
-                            PaymentMQConstants.EXCHANGE_TOPIC_PAYMENT_SUCCESS,
-                            PaymentMQConstants.ROUTING_PAYMENT_SUCCESS,
-                            message);
-                    return WechatPayNotifyVo.ok();
-                } else {
-                    return WechatPayNotifyVo.fail();
-                }
-            }
-            return WechatPayNotifyVo.fail();
-        } catch (Exception e) {
+            notify = sb.toString();
+        } catch (IOException e) {
             log.error("解析付款通知出错：{}", e.getMessage(), e);
             return WechatPayNotifyVo.fail();
         }
+        Map<String, Object> bodyMap = jsonUtils.jsonToMap(notify);
+        log.info("微信支付通知: {}", notify);
+        RequestParam requestParam = buildByHeaderRequestParam(request, notify);
+        // 验证签名并解析请求体
+        NotificationParser notificationParser = new NotificationParser(notificationConfig);
+        // 调用 NotificationParser.parse() 验签、解密并将 JSON 转换成具体的通知回调对象。如果验签失败，SDK 会抛出 ValidationException。
+        log.info("支付通知回调:验签、解密并转换成 Transaction对象:-------");
+        Transaction transaction = null;
+        try {
+            /*
+             * 常用的通知回调调对象类型有：
+             * 支付 Transaction
+             * 退款 RefundNotification
+             * 若 SDK 暂不支持的类型，请使用 Map.class，嵌套的 Json 对象将被转换成 LinkedTreeMap
+             */
+            transaction = notificationParser.parse(requestParam, Transaction.class);
+
+        } catch (Exception e) {
+            throw new GloboxApplicationException("微信支付：支付通知回调，验签、解密失败--->" + e.getMessage());
+        }
+        log.info("Transaction:===>>>>支付CallBack状态" + transaction.getTradeState());
+        log.info("Transaction:===>>>>" + transaction);
+
+        String notifyId = bodyMap.get("id").toString();
+
+        String outTradeNo = transaction.getOutTradeNo();
+        String tradeNo = transaction.getTransactionId();
+        LocalDateTime paymentAt = LocalDateUtils.toLocalDateTime(transaction.getSuccessTime());
+        String callbackContent = jsonUtils.objectToJson(transaction);
+        Payments payments = paymentsService.getPaymentByOutTradeNo(outTradeNo);
+
+        BigDecimal totalAmount = AmountUtils.toBigDecimal(transaction.getAmount().getTotal());
+        if (payments.getTotalAmount().compareTo(totalAmount) != 0) {
+            log.warn("微信金额不匹配, outTradeNo={}, db={}, cb={}",
+                    outTradeNo, payments.getTotalAmount(), totalAmount);
+            return WechatPayNotifyVo.fail();
+        }
+
+        // 已经处理过的支付信息
+        if (!PaymentStatusEnum.UNPAID.equals(payments.getPaymentStatus())) {
+            return WechatPayNotifyVo.ok();
+        }
+
+        // 5) 添加标识
+        Boolean flag = redisTemplate.opsForValue().setIfAbsent(notifyId, notifyId, 1461, TimeUnit.MINUTES);
+        if (Boolean.TRUE.equals(flag)) {
+            payments.setTradeNo(tradeNo);
+            payments.setPaymentAt(paymentAt);
+            payments.setPaymentStatus(PaymentStatusEnum.PAID);
+            payments.setCallbackAt(callbackAt);
+            payments.setCallbackContent(callbackContent);
+            int cnt = paymentsService.updatePayment(payments);
+            if (cnt > 0) {
+                PaymentSuccessMessage message = PaymentSuccessMessage.builder()
+                        .orderNo(payments.getOrderNo())
+                        .tradeNo(tradeNo)
+                        .outTradeNo(outTradeNo)
+                        .paymentAt(paymentAt)
+                        .totalAmount(totalAmount)
+                        .paymentType(PaymentTypeEnum.WECHAT_PAY)
+                        .build();
+
+                mqService.send(
+                        PaymentMQConstants.EXCHANGE_TOPIC_PAYMENT_SUCCESS,
+                        PaymentMQConstants.ROUTING_PAYMENT_SUCCESS,
+                        message);
+                return WechatPayNotifyVo.ok();
+            } else {
+                return WechatPayNotifyVo.fail();
+            }
+        }
+        return WechatPayNotifyVo.fail();
     }
 
     /**
@@ -193,7 +196,7 @@ public class WechatPayServiceImpl implements WechatPayService {
      * @param notify  notify
      * @return notify
      */
-    public RequestParam buildByHeaderRequestParam(HttpServletRequest request, String notify) {
+    private RequestParam buildByHeaderRequestParam(HttpServletRequest request, String notify) {
         // HTTP 头 Wechatpay-Timestamp。签名中的时间戳。
         String timestamp = request.getHeader(WECHAT_PAY_TIMESTAMP);
         // HTTP 头 Wechatpay-Nonce。签名中的随机数。
@@ -229,8 +232,10 @@ public class WechatPayServiceImpl implements WechatPayService {
         Transaction transaction;
         if (ClientType.APP.equals(payments.getClientType())) {
             transaction = wechatPayAppService.getPaymentStatus(payments);
-        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+        } else if (ClientType.JSAPI.equals(payments.getClientType())) {
             transaction = wechatPayJsapiService.getPaymentStatus(payments);
+        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+            transaction = wechatPayMoonCourtJsapiService.getPaymentStatus(payments);
         } else {
             throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_CLIENT_TYPE);
         }
@@ -303,8 +308,10 @@ public class WechatPayServiceImpl implements WechatPayService {
     public void cancel(Payments payments) {
         if (ClientType.APP.equals(payments.getClientType())) {
             wechatPayAppService.cancel(payments);
-        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+        } else if (ClientType.JSAPI.equals(payments.getClientType())) {
             wechatPayJsapiService.cancel(payments);
+        } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
+            wechatPayMoonCourtJsapiService.cancel(payments);
         }
 
     }

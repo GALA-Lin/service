@@ -1,11 +1,14 @@
 package com.unlimited.sports.globox.merchant.controller;
 
 
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.merchant.mapper.MerchantMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.service.CourtManagementService;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
+import com.unlimited.sports.globox.model.merchant.entity.Merchant;
 import com.unlimited.sports.globox.model.merchant.vo.CourtVo;
 import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueBasicInfo;
 import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueDetailVo;
@@ -35,6 +38,31 @@ public class CourtManagementController {
     private final MerchantAuthUtil merchantAuthUtil;
     private final VenueMapper venueMapper;
 
+    // 1. 注入 MerchantMapper
+    private final MerchantMapper merchantMapper;
+
+    /**
+     * 查询当前登录的商家基本信息
+     */
+    @GetMapping("/info")
+    public R<Merchant> getMerchantInfo(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+
+        // 2. 认证并获取上下文，确保请求合法
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        log.info("[商家信息查询] merchantId: {}", context.getMerchantId());
+
+        // 3. 从数据库中查询商家详细信息
+        Merchant merchant = merchantMapper.selectById(context.getMerchantId());
+
+        if (merchant == null) {
+            throw new GloboxApplicationException("商家信息不存在");
+        }
+
+        return R.ok(merchant);
+    }
 
     /**
      * 创建场地

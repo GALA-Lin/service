@@ -336,5 +336,24 @@
           AND r.booking_date = #{date}
         GROUP BY r.status
     </select>
-
+    <select id="MerchantSelectByCourtIdsAndDate" resultType="com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotRecord">
+        SELECT
+        vbsr.booking_slot_record_id AS bookingSlotRecordId,
+        vbsr.slot_template_id AS slotTemplateId,
+        vbsr.status,
+        vbsr.booking_date AS bookingDate,
+        vbsr.operator_id AS operatorId,
+        vbsr.created_at AS createdAt,
+        vbsr.updated_at AS updatedAt
+        FROM venue_booking_slot_record vbsr
+        INNER JOIN venue_booking_slot_template vbst
+        ON vbsr.slot_template_id = vbst.booking_slot_template_id
+        WHERE vbst.court_id IN
+        <foreach collection="courtIds" item="courtId" open="(" separator="," close=")">
+            #{courtId}
+        </foreach>
+        AND DATE(vbsr.booking_date) = #{bookingDate}
+        AND vbsr.status IN (2, 3)
+        ORDER BY vbst.court_id ASC, vbst.start_time ASC
+    </select>
 </mapper>

@@ -63,16 +63,23 @@
             </if>
             <if test="timeRange != null">
                 AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) >= NOW()
-                AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(),
-                INTERVAL
-                CASE #{timeRange}
-                WHEN 1 THEN 12
-                WHEN 2 THEN 24
-                WHEN 3 THEN 48
-                WHEN 4 THEN 120
-                ELSE 24
-                END
-                HOUR)
+                <choose>
+                    <when test="timeRange == 1">
+                        AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(), INTERVAL 12 HOUR)
+                    </when>
+                    <when test="timeRange == 2">
+                        AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(), INTERVAL 24 HOUR)
+                    </when>
+                    <when test="timeRange == 3">
+                        AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(), INTERVAL 48 HOUR)
+                    </when>
+                    <when test="timeRange == 4">
+                        AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(), INTERVAL 120 HOUR)
+                    </when>
+                    <otherwise>
+                        AND TIMESTAMP(rally_event_date, COALESCE(rally_start_time, '09:00:00')) &lt;= DATE_ADD(NOW(), INTERVAL 24 HOUR)
+                    </otherwise>
+                </choose>
             </if>
             <if test="genderLimit != null">
                 AND rally_gender_limit = #{genderLimit}

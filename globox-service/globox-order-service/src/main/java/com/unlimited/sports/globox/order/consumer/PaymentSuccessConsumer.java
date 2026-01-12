@@ -6,10 +6,15 @@ import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.message.order.OrderAutoCompleteMessage;
 import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
 import com.unlimited.sports.globox.common.message.order.OrderPaidMessage;
+import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
+import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.service.MQService;
+import com.unlimited.sports.globox.common.utils.LocalDateUtils;
 import com.unlimited.sports.globox.model.order.entity.OrderActivities;
 import com.unlimited.sports.globox.model.order.entity.OrderItems;
 import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
@@ -29,9 +34,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalTime;
+import java.util.*;
 
 /**
  * 支付成功回调
@@ -115,15 +121,34 @@ public class PaymentSuccessConsumer {
             return;
         }
 
-        // 4) 状态前置校验（按你业务规则调整）
-        //    一般：订单必须处于 PENDING 才允许支付成功落库
+        // 4) 状态前置校验，必须 pending
         if (order.getOrderStatus() != OrderStatusEnum.PENDING) {
+            if (order.getOutTradeNo() != null && message.getOutTradeNo().equals(order.getOutTradeNo())) {
+                // 同一个支付信息，已处理直接返回
+                return;
+            }
+
+            if (order.getOrderStatus().equals(OrderStatusEnum.CANCELLED)) {
+                // 需要触发退款
+                UserRefundMessage refundMessage = UserRefundMessage.builder()
+                        .orderNo(orderNo)
+                        .outTradeNo(message.getOutTradeNo())
+                        .refundReason("订单已取消，无需支付")
+                        .refundAmount(message.getTotalAmount())
+                        .build();
+
+                mqService.send(
+                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_REFUND_APPLY_TO_PAYMENT,
+                        OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT,
+                        refundMessage);
+                return;
+            }
             log.warn("[支付成功回调] 订单状态不允许支付回调落库，忽略 orderNo={}, orderStatus={}, payStatus={}",
                     orderNo, order.getOrderStatus(), order.getPaymentStatus());
             return;
         }
 
-        // 5) 金额校验（强烈建议：防止回调篡改/错单）
+        // 5) 金额校验
         BigDecimal expected = order.getPayAmount();
         if (expected != null && message.getTotalAmount().compareTo(expected) != 0) {
             throw new IllegalStateException("[支付成功回调] 金额不一致 orderNo=" + orderNo
@@ -168,6 +193,14 @@ public class PaymentSuccessConsumer {
 
         orderStatusLogsMapper.insert(logEntity);
 
+        List<OrderItems> orderItems = orderItemsMapper.selectList(
+                Wrappers.<OrderItems>lambdaQuery()
+                        .eq(OrderItems::getOrderNo, orderNo));
+
+        if (orderItems == null) {
+            throw new GloboxApplicationException(OrderCode.ORDER_ITEM_NOT_EXIST);
+        }
+
         // 8) 发送订单支付成功消息给商家
         if (order.getSellerType() == SellerTypeEnum.VENUE) {
             OrderPaidMessage paidMessage = OrderPaidMessage.builder()
@@ -181,42 +214,48 @@ public class PaymentSuccessConsumer {
             if (ObjectUtils.isEmpty(orderActivities)) {
                 // 不是活动订单
                 paidMessage.setIsActivity(false);
-                List<OrderItems> orderItems = orderItemsMapper.selectList(
-                        Wrappers.<OrderItems>lambdaQuery()
-                                .eq(OrderItems::getOrderNo, orderNo));
-                if (orderItems != null) {
-                    paidMessage.setRecordIds(
-                            orderItems.stream()
-                                    .map(OrderItems::getRecordId)
-                                    .toList());
-                }
+                paidMessage.setRecordIds(
+                        orderItems.stream()
+                                .map(OrderItems::getRecordId)
+                                .toList());
             } else {
                 // 是活动订单
                 paidMessage.setIsActivity(true);
                 paidMessage.setRecordIds(List.of(orderActivities.getActivityId()));
             }
 
+            // 发送订单已支付通知商家
             mqService.send(
                     OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
                     OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
                     paidMessage);
 
-            if (!order.isConfirmed()) {
-                // 9.1) 发送订单确认消息给商家
-                OrderNotifyMerchantConfirmMessage confirmMessage = OrderNotifyMerchantConfirmMessage.builder()
-                        .orderNo(orderNo)
-                        .venueId(order.getSellerId())
-                        .currentOrderStatus(order.getOrderStatus())
-                        .build();
-
-                mqService.send(
-                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_CONFIRM_NOTIFY_MERCHANT,
-                        OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT,
-                        confirmMessage);
-            }
         } else if (order.getSellerType().equals(SellerTypeEnum.COACH)) {
             // 9.2) 发送订单确认消息给教练 TODO ETA 等待约教练模块完成
+
         }
+
+        // 找出最晚时间
+        LocalTime localTime = orderItems
+                .stream()
+                .map(OrderItems::getEndTime)
+                .max(LocalTime::compareTo)
+                .orElse(LocalTime.of(23, 0));
+
+        LocalDate bookingDate = orderItems.get(0).getBookingDate();
+
+        long delayMillis = LocalDateUtils.delayMillis(bookingDate, localTime);
+        int delay = Math.toIntExact(delayMillis / 1000);
+
+        // 10) 发送延迟消息订单完成
+        OrderAutoCompleteMessage autoCompleteMessage = OrderAutoCompleteMessage.builder()
+                .orderNo(orderNo)
+                .build();
+        mqService.sendDelay(
+                OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE,
+                OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
+                autoCompleteMessage,
+                delay);
 
         log.info("[支付成功回调] 处理完成 orderNo={}, payStatus {}->{} , orderStatus {}->{}",
                 orderNo, oldPayStatus, order.getPaymentStatus(), oldOrderStatus, order.getOrderStatus());

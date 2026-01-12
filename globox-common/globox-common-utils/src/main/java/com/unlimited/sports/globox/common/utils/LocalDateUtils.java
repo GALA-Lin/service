@@ -666,6 +666,32 @@ public class LocalDateUtils {
         return odt.toLocalDateTime();
     }
 
+    /**
+     * 计算现在到目标时间的延迟毫秒数
+     *
+     * @param targetTime 目标时间
+     * @return 延迟毫秒（<= 0 表示已到期）
+     */
+    public static long delayMillis(LocalDateTime targetTime) {
+        if (targetTime == null) {
+            return 0L;
+        }
+
+        Instant now = Instant.now();
+        Instant target = targetTime
+                .atZone(ZoneId.systemDefault())
+                .toInstant();
+
+        return Math.max(Duration.between(now, target).toMillis(), 0L);
+    }
+
+    public static long delayMillis(LocalDate date, LocalTime time) {
+        if (date == null || time == null) {
+            return 0L;
+        }
+        return delayMillis(LocalDateTime.of(date, time));
+    }
+
 }
 
 

@@ -44,6 +44,11 @@ public enum SocialCode implements ResultCode {
     NOTE_DRAFT_MEDIA_REQUIRED(3028, "草稿必须有媒体"),
     NOTE_ID_REQUIRED(3029, "笔记ID不能为空"),
 
+    // 关系相关 3030-3032
+    FOLLOW_SELF_NOT_ALLOWED(3030, "不允许关注自己"),
+    USER_BLOCKED(3031, "你已被对方拉黑或已拉黑对方"),
+    FOLLOW_DISABLED_BY_BLOCK(3032, "拉黑状态下无法关注"),
+
     ;
 
     private final Integer code;

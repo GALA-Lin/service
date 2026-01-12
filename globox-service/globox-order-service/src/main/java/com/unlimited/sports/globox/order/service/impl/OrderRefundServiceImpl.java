@@ -77,9 +77,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     private OrderExtraChargeLinksMapper orderExtraChargeLinksMapper;
 
     @Autowired
-    private MQService mqService;
-
-    @Autowired
     private ExecutorService businessExecutorService;
 
     @Autowired
@@ -124,8 +121,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 order.getOrderStatus() == OrderStatusEnum.PAID
                         // 订单已确认
                         || order.getOrderStatus() == OrderStatusEnum.CONFIRMED
-                        // 订单退款被拒绝
-                        || order.getOrderStatus() == OrderStatusEnum.REFUND_REJECTED
                         // 部分退款申请完成
                         || order.getOrderStatus() == OrderStatusEnum.PARTIALLY_REFUNDED
                         // 退款已取消
@@ -169,9 +164,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             requestDto.setEventStartTime(eventStartTime);
             RpcResult<MerchantRefundRuleJudgeResultVo> refundRuleResult =
                     merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
-            Assert.rpcResultOk(refundRuleResult);
-            MerchantRefundRuleJudgeResultVo resultVo = refundRuleResult.getData();
-            if (!resultVo.isCanRefund()) {
+            if (!refundRuleResult.isSuccess()) {
                 // 修改为退款被拒绝
                 order.setOrderStatus(OrderStatusEnum.REFUND_REJECTED);
                 ordersMapper.updateById(order);
@@ -182,12 +175,15 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         .refundApplyId(null)
                         .applyStatus(null)
                         .appliedAt(appliedAt)
-                        .reason(resultVo.getReason())
+                        .reason(refundRuleResult.getResultCode().getMessage())
                         .build();
             } else {
+                MerchantRefundRuleJudgeResultVo resultVo = refundRuleResult.getData();
                 refundPercentage = resultVo.getRefundPercentage();
                 autoRefund = true;
             }
+
+
         } else {
             refundPercentage = new BigDecimal(100);
             autoRefund = false;
@@ -691,19 +687,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .remark("用户取消退款申请")
                 .build();
         orderStatusLogsMapper.insert(cancelLog);
-
-        // 10) 如果订单还没有确认，那么发送通知商家确认消息
-        if (!order.isConfirmed()) {
-            OrderNotifyMerchantConfirmMessage confirmMessage = OrderNotifyMerchantConfirmMessage.builder()
-                    .orderNo(orderNo)
-                    .venueId(order.getSellerId())
-                    .currentOrderStatus(OrderStatusEnum.REFUND_CANCELLED)
-                    .build();
-            mqService.send(
-                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_CONFIRM_NOTIFY_MERCHANT,
-                    OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT,
-                    confirmMessage);
-        }
 
         return CancelRefundApplyResultVo.builder()
                 .orderNo(orderNo)

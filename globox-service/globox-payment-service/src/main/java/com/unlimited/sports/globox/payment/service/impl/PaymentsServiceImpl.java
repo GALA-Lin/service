@@ -2,6 +2,8 @@ package com.unlimited.sports.globox.payment.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.ObjectUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.unlimited.sports.globox.common.enums.ClientType;
+import com.unlimited.sports.globox.common.enums.ThirdPartyJsapiEnum;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
@@ -20,6 +22,7 @@ import com.unlimited.sports.globox.payment.prop.TimeoutProperties;
 import com.unlimited.sports.globox.payment.service.AlipayService;
 import com.unlimited.sports.globox.payment.service.PaymentsService;
 import com.unlimited.sports.globox.payment.mapper.PaymentsMapper;
+import com.unlimited.sports.globox.payment.service.WechatPayMoonCourtJsapiService;
 import com.unlimited.sports.globox.payment.service.WechatPayService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -65,6 +68,9 @@ public class PaymentsServiceImpl implements PaymentsService {
 
     @Autowired
     private WechatPayService wechatPayService;
+
+    @Autowired
+    private WechatPayMoonCourtJsapiService wechatPayMoonCourtJsapiService;
 
     /**
      * 根据对外业务编号获取支付信息。
@@ -138,6 +144,13 @@ public class PaymentsServiceImpl implements PaymentsService {
         payments.setOpenId(dto.getOpenId());
         payments.setActivity(resultDto.isActivity());
         payments.setPaymentStatus(PaymentStatusEnum.UNPAID);
+        // 设置三方小程序
+        if (dto.getClientType().equals(ClientType.THIRD_PARTY_JSAPI)) {
+            // 揽月
+            payments.setThirdPartyJsapi(ThirdPartyJsapiEnum.MOON_COURT);
+        } else {
+            payments.setThirdPartyJsapi(null);
+        }
 
         int cnt = thisService.insertPayments(payments);
         Assert.isTrue(cnt > 0, PaymentsCode.PAYMENT_CREATE_FAILED);
@@ -238,7 +251,7 @@ public class PaymentsServiceImpl implements PaymentsService {
         BigDecimal remain = payments.getTotalAmount().subtract(currentRefundAmount);
 
         if (remain.compareTo(BigDecimal.ZERO) == 0) {
-            payments.setPaymentStatus(PaymentStatusEnum.CLOSED); // 或 REFUNDED，看你枚举语义
+            payments.setPaymentStatus(PaymentStatusEnum.CLOSED);
         } else if (remain.compareTo(BigDecimal.ZERO) > 0) {
             payments.setPaymentStatus(PaymentStatusEnum.PARTIALLY_REFUNDED);
         } else {
@@ -246,18 +259,30 @@ public class PaymentsServiceImpl implements PaymentsService {
             return false;
         }
 
+        thisService.updatePayment(payments);
+
+        boolean success = false;
         // 具体支付平台实现
         if (PaymentTypeEnum.ALIPAY.equals(payments.getPaymentType())) {
             // 支付宝退款实现
-            return alipayService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+            success = alipayService.refund(payments, message.getRefundAmount(), message.getRefundReason());
         } else if (PaymentTypeEnum.WECHAT_PAY.equals(payments.getPaymentType())) {
-            // 微信支付退款实现
-            return wechatPayService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+            if (payments.getThirdPartyJsapi() != null) {
+                // 三方小程序退款
+                if (payments.getThirdPartyJsapi().equals(ThirdPartyJsapiEnum.MOON_COURT)) {
+                    success = wechatPayMoonCourtJsapiService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+                } else {
+                    throw new GloboxApplicationException(PaymentsCode.THIRD_PARTY_TYPE_NOT_EXIST);
+                }
+            } else {
+                // 微信支付退款实现
+                success = wechatPayService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+            }
         } else {
             // 不支持的退款方式
             throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE);
         }
 
-
+        return success;
     }
 }

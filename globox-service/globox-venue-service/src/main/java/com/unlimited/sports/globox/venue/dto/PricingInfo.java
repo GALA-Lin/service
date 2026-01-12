@@ -115,8 +115,13 @@ public class PricingInfo {
         private BigDecimal fixedValue;
 
         /**
-         * 费用金额（单个槽位）
+         * 费用金额（该场地所有槽位的总金额）
          */
         private BigDecimal amount;
+
+        /**
+         * 单个槽位的费用金额
+         */
+        private BigDecimal perSlotAmount;
     }
 }

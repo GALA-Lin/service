@@ -105,7 +105,7 @@
     <!-- 场馆搜索计数 V2 版本：使用子查询处理GROUP BY/HAVING -->
     <select id="countSearchVenues" resultType="long">
         SELECT COUNT(*) FROM (
-            SELECT v.venue_id
+            SELECT v.venue_id, v.latitude, v.longitude
             FROM venues v
             LEFT JOIN courts c ON v.venue_id = c.venue_id AND c.status = 1
             WHERE 1=1

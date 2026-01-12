@@ -236,11 +236,10 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
             if (chargeLevel == 1) {  // ORDER_LEVEL
                 return unitAmount.setScale(2, RoundingMode.HALF_UP);
             }
-            // 订单项级别：固定金额乘以槽位数
+            // 订单项级别：返回单位金额（每个槽位的费用），不乘以槽位数
             else if (chargeLevel == 2) {  // ORDER_ITEM_LEVEL
-                if (slotCount != null && slotCount > 0) {
-                    return unitAmount.multiply(new BigDecimal(slotCount)).setScale(2, RoundingMode.HALF_UP);
-                }
+                // amount 代表单个槽位的费用，使用时需要根据实际槽位数计算总金额
+                return unitAmount.setScale(2, RoundingMode.HALF_UP);
             }
         }
 
@@ -306,10 +305,25 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
         Map<Long, List<PricingInfo.ItemLevelExtraInfo>> itemLevelExtrasByCourtId =
                 calculateItemLevelExtrasByCourtId(templates, venueId, priceMap);
 
-        // 计算所有项级额外费用的总和
-        BigDecimal itemLevelExtraAmount = itemLevelExtrasByCourtId.values().stream()
-                .flatMap(List::stream)
-                .map(PricingInfo.ItemLevelExtraInfo::getAmount)
+        // 按场地分组templates，用于计算每个场地的槽位数
+        Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = templates.stream()
+                .collect(Collectors.groupingBy(VenueBookingSlotTemplate::getCourtId));
+
+        // 计算所有项级额外费用的总和（单位金额 × 对应场地的槽位数）
+        BigDecimal itemLevelExtraAmount = itemLevelExtrasByCourtId.entrySet().stream()
+                .map(entry -> {
+                    Long courtId = entry.getKey();
+                    List<PricingInfo.ItemLevelExtraInfo> extras = entry.getValue();
+                    int courtSlotCount = templatesByCourtId.getOrDefault(courtId, Collections.emptyList()).size();
+
+                    // 该场地的总额外费用 = 单位额外费用之和 × 槽位数
+                    BigDecimal courtExtraAmount = extras.stream()
+                            .map(PricingInfo.ItemLevelExtraInfo::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .multiply(new BigDecimal(courtSlotCount));
+
+                    return courtExtraAmount;
+                })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // 总价格 = 基础价格 + 订单级额外费用 + 项级额外费用
@@ -428,7 +442,7 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                     continue;  // 不适用于该场地
                 }
 
-                // 计算该费用的金额（基于该场地的所有槽位和基础价格）
+                // 计算该费用的金额（返回单个槽位的费用）
                 BigDecimal amount = calculateExtraChargeAmount(chargeTemplate, courtBasePrice, slotCount);
 
                 PricingInfo.ItemLevelExtraInfo itemExtra = PricingInfo.ItemLevelExtraInfo.builder()
@@ -437,12 +451,13 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                         .chargeMode(chargeTemplate.getChargeMode())
                         .fixedValue(chargeTemplate.getUnitAmount())
                         .amount(amount)
+                        .perSlotAmount(amount)  // perSlotAmount 和 amount 相同
                         .build();
 
                 itemExtras.add(itemExtra);
 
-                log.debug("订单项费用 - courtId: {}, slotCount: {}, chargeName: {}, amount: {}",
-                        courtId, slotCount, chargeTemplate.getChargeName(), amount);
+                log.debug("订单项费用 - courtId: {}, slotCount: {}, chargeName: {}, perSlotAmount: {}, totalAmount: {}",
+                        courtId, slotCount, chargeTemplate.getChargeName(), amount, amount.multiply(new BigDecimal(slotCount)));
             }
 
             result.put(courtId, itemExtras);

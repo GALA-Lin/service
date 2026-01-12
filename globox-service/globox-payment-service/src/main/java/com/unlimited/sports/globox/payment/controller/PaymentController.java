@@ -40,7 +40,7 @@ public class PaymentController {
             @PathVariable("orderNo") Long orderNo,
             @RequestHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE) String clientTypeStr,
             @RequestHeader(value = RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID, required = false) String openId,
-            @ModelAttribute @Valid SubmitRequestDto dto) {
+            @RequestBody @Valid SubmitRequestDto dto) {
         dto.setOrderNo(orderNo);
 
         ClientType clientType = ClientType.fromValue(clientTypeStr);

@@ -2,10 +2,12 @@ package com.unlimited.sports.globox.social.service;
 
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
 import com.unlimited.sports.globox.model.social.dto.UpdateNoteRequest;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
+import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
 import com.unlimited.sports.globox.model.social.vo.NoteDetailVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
@@ -16,22 +18,24 @@ import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
 public interface NoteService {
 
     /**
-     * 保存草稿（upsert）
-     * 规则：title/content/media 至少一个非空，否则返回 NOTE_DRAFT_EMPTY
-     * 每个用户只保留一条草稿，有则更新，无则插入
+     * 保存草稿（支持新建和更新）
+     * 规则：标题/正文/媒体至少一项非空；mediaList=null 不更新媒体；mediaList=[] 允许清空媒体（仅草稿）
+     * 如果传 noteId 则更新该草稿，否则新建草稿
      */
     R<Long> saveDraft(Long userId, SaveDraftRequest request);
 
     /**
-     * 直接发布新笔记
-     * 规则：创建 PUBLISHED 状态的笔记，强校验 content 和 mediaList 必填
-     * 发布成功后自动清理用户所有草稿
-     *
-     * @param userId  用户ID
-     * @param request 发布请求
-     * @return 新创建的笔记ID
+     * 直接发布笔记（不含 noteId）
+     * 强校验 content 和 mediaList 必填，新建 PUBLISHED 状态的笔记
      */
-    R<Long> publishNote(Long userId, PublishNoteRequest request);
+    R<Long> directPublishNote(Long userId, DirectPublishNoteRequest request);
+
+    /**
+     * 草稿转正发布
+     * 规则：必须传 noteId（草稿ID），将该草稿状态改为 PUBLISHED
+     * 强校验 content 和 mediaList 必填
+     */
+    R<Long> publishDraftNote(Long userId, PublishNoteRequest request);
 
     R<String> updateNote(Long userId, Long noteId, UpdateNoteRequest request);
 
@@ -43,6 +47,11 @@ public interface NoteService {
 
     R<PaginationResult<NoteItemVo>> getMyNotes(Long userId, Integer page, Integer pageSize);
 
+    R<PaginationResult<DraftNoteItemVo>> getDrafts(Long userId, Integer page, Integer pageSize);
+
+    /**
+     * 获取最新一条草稿
+     */
     R<DraftNoteVo> getDraft(Long userId);
 
     /**
@@ -56,7 +65,7 @@ public interface NoteService {
     R<CursorPaginationResult<NoteItemVo>> getNoteListLatest(String cursor, Integer size, Long userId);
 
     /**
-     * 获取推荐池子流笔记列表（随机但稳定）
+     * 获取推荐池子流笔记列表
      *
      * @param cursor 游标（可选，包含seed）
      * @param size   每页数量
@@ -64,6 +73,11 @@ public interface NoteService {
      * @return 游标分页结果
      */
     R<CursorPaginationResult<NoteItemVo>> getNoteListPool(String cursor, Integer size, Long userId);
+
+    /**
+     * 获取指定用户的已发布笔记（用于他人主页，带拉黑校验）
+     */
+    R<PaginationResult<NoteItemVo>> getUserNotes(Long targetUserId, Integer page, Integer pageSize, Long viewerId);
 
     /**
      * 获取最热流笔记列表
@@ -84,6 +98,11 @@ public interface NoteService {
      * @return 游标分页结果
      */
     R<CursorPaginationResult<NoteItemVo>> getLikedNotes(Long userId, String cursor, Integer size);
+
+    /**
+     * 获取指定用户点赞的笔记列表（用于他人主页，带拉黑校验）
+     */
+    R<CursorPaginationResult<NoteItemVo>> getUserLikedNotes(Long targetUserId, String cursor, Integer size, Long viewerId);
 
     /**
      * 点赞笔记

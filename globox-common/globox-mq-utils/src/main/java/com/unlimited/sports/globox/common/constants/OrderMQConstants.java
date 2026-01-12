@@ -67,28 +67,6 @@ public class OrderMQConstants {
             "queue.order.unlock-coach-slot.coach.dlq";
 
 
-    /**
-     * 订单创建成功事件
-     * 无重试
-     */
-    public static final String EXCHANGE_TOPIC_ORDER_CREATED =
-            "exchange.topic.order.created";
-    public static final String ROUTING_ORDER_CREATED =
-            "routing.order.created";
-    public static final String QUEUE_ORDER_CREATED_MERCHANT =
-            "queue.order.created.merchant";
-
-    /**
-     * Final-DLX
-     */
-    public static final String EXCHANGE_ORDER_CREATED_FINAL_DLX =
-            "exchange.topic.order.created.final.dlx";
-    public static final String ROUTING_ORDER_CREATED_FINAL =
-            "routing.order.created.final";
-    public static final String QUEUE_ORDER_CREATED_MERCHANT_DLQ =
-            "queue.order.created.merchant.dlq";
-
-
 
     /**
      * 订单未支付自动关闭
@@ -124,6 +102,43 @@ public class OrderMQConstants {
             "routing.order.auto-cancel.final";
     public static final String QUEUE_ORDER_AUTO_CANCEL_ORDER_DLQ =
             "queue.order.auto-cancel.order.dlq";
+
+
+    /**
+     * 订单定时完成（Auto Complete）
+     * 主交换机 & 主路由 & 主队列
+     */
+    public static final String EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE =
+            "exchange.topic.order.auto-complete";
+    public static final String ROUTING_ORDER_AUTO_COMPLETE =
+            "routing.order.auto-complete";
+    public static final String QUEUE_ORDER_AUTO_COMPLETE_ORDER =
+            "queue.order.auto-complete.order";
+
+    /**
+     * 重试队列（TTL）
+     */
+    public static final String QUEUE_ORDER_AUTO_COMPLETE_ORDER_RETRY =
+            "queue.order.auto-complete.order.retry";
+
+    /**
+     * Retry-DLX：主队列失败后进入重试队列
+     */
+    public static final String EXCHANGE_ORDER_AUTO_COMPLETE_RETRY_DLX =
+            "exchange.topic.order.auto-complete.retry.dlx";
+    public static final String ROUTING_ORDER_AUTO_COMPLETE_RETRY =
+            "routing.order.auto-complete.retry";
+
+    /**
+     * Final-DLX：超过最大次数进入最终 DLQ
+     */
+    public static final String EXCHANGE_ORDER_AUTO_COMPLETE_FINAL_DLX =
+            "exchange.topic.order.auto-complete.final.dlx";
+    public static final String ROUTING_ORDER_AUTO_COMPLETE_FINAL =
+            "routing.order.auto-complete.final";
+    public static final String QUEUE_ORDER_AUTO_COMPLETE_ORDER_DLQ =
+            "queue.order.auto-complete.order.dlq";
+
 
 
     /**

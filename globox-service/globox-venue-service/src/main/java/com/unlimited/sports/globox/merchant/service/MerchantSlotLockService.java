@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.merchant.service;
 
 import com.unlimited.sports.globox.model.merchant.vo.LockedSlotVo;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -14,34 +15,21 @@ public interface MerchantSlotLockService {
 
     /**
      * 商家锁定单个时段
-     * @param recordId 记录ID
-     * @param reason 锁场原因（如："场地维护"、"私人使用"、"设备检修"）
-     * @param merchantId 商家ID（用于权限校验）
      */
-    void lockSlotByMerchant(Long recordId, String reason, Long merchantId);
-
-    /**
-     * 商家批量锁定时段
-     * @param recordIds 记录ID列表
-     * @param reason 锁场原因
-     * @param merchantId 商家ID
-     */
-    void lockSlotsBatchByMerchant(List<Long> recordIds, String reason, Long merchantId);
+    @Transactional(rollbackFor = Exception.class)
+    void lockSlotByMerchant(Long templateId, LocalDate bookingDate, String reason, Long merchantId);
 
 
-    /**
-     * 商家解锁时段
-     * @param recordId 记录ID
-     * @param merchantId 商家ID
-     */
-    void unlockSlotByMerchant(Long recordId, Long merchantId);
+    @Transactional(rollbackFor = Exception.class)
+    void lockSlotsBatchByMerchant(List<Long> templateIds, LocalDate bookingDate,
+                                  String reason, Long merchantId);
 
-    /**
-     * 商家批量解锁时段
-     * @param recordIds 记录ID列表
-     * @param merchantId 商家ID
-     */
-    void unlockSlotsBatchByMerchant(List<Long> recordIds, Long merchantId);
+    @Transactional(rollbackFor = Exception.class)
+    void unlockSlotByMerchant(Long templateId, LocalDate bookingDate, Long merchantId);
+
+    @Transactional(rollbackFor = Exception.class)
+    void unlockSlotsBatchByMerchant(List<Long> templateIds, LocalDate bookingDate,
+                                    Long merchantId);
 
     /**
      * 查询商家已锁定的时段

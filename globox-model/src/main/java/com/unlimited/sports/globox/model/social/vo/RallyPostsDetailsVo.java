@@ -98,6 +98,11 @@ public class RallyPostsDetailsVo {
     private Integer rallyRemainingPeople;
 
     /**
+     * 当前参加人数
+     */
+    private Integer currentPeopleCount;
+
+    /**
      * 约球状态
      */
     @NonNull

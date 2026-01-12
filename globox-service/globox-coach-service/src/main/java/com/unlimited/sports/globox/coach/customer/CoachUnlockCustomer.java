@@ -10,6 +10,7 @@ import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +25,7 @@ import java.util.List;
 @Component
 public class CoachUnlockCustomer {
 
+    @Autowired
     private CoachSlotServiceImpl coachSlotService;
 
     @RabbitListener(queues = OrderMQConstants.QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH)
@@ -47,13 +49,11 @@ public class CoachUnlockCustomer {
             // 参数验证
             if (recordIds == null || recordIds.isEmpty()) {
                 log.warn("[教练解锁槽位] recordIds为空，跳过处理");
-                channel.basicAck(amqpMessage.getMessageProperties().getDeliveryTag(), false);
                 return;
             }
 
             if (userId == null) {
                 log.warn("[教练解锁槽位] userId为空，跳过处理");
-                channel.basicAck(amqpMessage.getMessageProperties().getDeliveryTag(), false);
                 return;
             }
 
@@ -63,15 +63,9 @@ public class CoachUnlockCustomer {
             log.info("[教练解锁槽位] 批量解锁成功 - userId: {}, 解锁数量: {}/{}",
                     userId, unlockedCount, recordIds.size());
 
-            // 手动确认消息
-            channel.basicAck(amqpMessage.getMessageProperties().getDeliveryTag(), false);
-
         } catch (Exception e) {
             log.error("[教练解锁槽位] 处理失败 - userId: {}, recordIds: {}",
                     userId, recordIds, e);
-
-            // 拒绝消息，进入重试队列
-            channel.basicNack(amqpMessage.getMessageProperties().getDeliveryTag(), false, false);
             throw e;
         }
     }

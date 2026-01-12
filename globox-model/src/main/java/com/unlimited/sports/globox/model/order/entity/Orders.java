@@ -16,9 +16,6 @@ import lombok.*;
 
 /**
  * 订单主表
- *
- * @author dk
- * @since 2025/12/23 09:27
  */
 @TableName(value ="orders")
 @Data
@@ -74,11 +71,6 @@ public class Orders extends BaseEntity implements Serializable {
     private OrderStatusEnum orderStatus;
 
     /**
-     * 订单是否已被服务提供方确认
-     */
-    private boolean confirmed;
-
-    /**
      * 支付状态：1=UNPAID，2=PAID，3=REFUNDING，4=REFUNDED
      */
     private OrdersPaymentStatusEnum paymentStatus;
@@ -119,11 +111,6 @@ public class Orders extends BaseEntity implements Serializable {
      * 支付时间
      */
     private LocalDateTime paidAt;
-
-    /**
-     * 订单确认时间
-     */
-    private LocalDateTime confirmedAt;
 
     /**
      * 取消时间

@@ -29,6 +29,9 @@ public class WechatPayConfig {
     @Autowired
     private WechatPayProperties wechatPayProperties;
 
+    /**
+     * App 支付时的配置
+     */
     @Bean
     public Config wechatPayClientConfig() throws IOException {
         String apiV3KeyPath = wechatPayProperties.getApiV3Key();
@@ -45,6 +48,9 @@ public class WechatPayConfig {
                 .build();
     }
 
+    /**
+     * App 支付时的回调配置
+     */
     @Bean
     public NotificationConfig notificationConfig() throws IOException {
 
@@ -79,7 +85,7 @@ public class WechatPayConfig {
 
 
     /**
-     * 退款专用客户端
+     * App 支付时退款专用客户端
      */
     @Bean
     public RefundService refundService(Config wechatPayClientConfig) {

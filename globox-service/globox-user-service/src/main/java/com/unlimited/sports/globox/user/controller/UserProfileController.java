@@ -23,6 +23,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -60,6 +61,19 @@ public class UserProfileController {
     public R<UserProfileVo> getUserProfile(
             @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+        return userProfileService.getUserProfile(userId);
+    }
+
+    @GetMapping("/{userId}")
+    @Operation(summary = "按ID查询用户资料", description = "获取指定用户的完整资料（含球拍+标签）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<UserProfileVo> getUserProfileById(
+            @Parameter(description = "目标用户ID", required = true)
+            @PathVariable Long userId) {
         return userProfileService.getUserProfile(userId);
     }
 

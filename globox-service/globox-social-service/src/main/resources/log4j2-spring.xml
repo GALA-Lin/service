@@ -16,6 +16,7 @@
             %clr{%d{${LOG_DATEFORMAT_PATTERN}}}{faint} %clr{${LOG_LEVEL_PATTERN}} %clr{%pid}{magenta} %clr{---}{faint} %clr{[%15.15t]}{faint} %clr{%-40.40c{1.}}{cyan} %clr{:}{faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD}
         </Property>
 
+
         <!-- 文件日志格式 -->
         <Property name="FILE_LOG_PATTERN">
             %d{${LOG_DATEFORMAT_PATTERN}} ${LOG_LEVEL_PATTERN} %pid --- [%t] %-40.40c{1.} : %m%n${LOG_EXCEPTION_CONVERSION_WORD}
@@ -66,11 +67,6 @@
 
     <!-- ================== Loggers ================== -->
     <Loggers>
-        <!-- MyBatis / MyBatis-Plus SQL -->
-        <Logger name="org.mybatis" level="DEBUG"/>
-        <Logger name="org.apache.ibatis" level="DEBUG"/>
-        <Logger name="com.baomidou.mybatisplus" level="DEBUG"/>
-
         <!-- 三方库降噪 -->
         <Logger name="org.apache.catalina.startup.DigesterFactory" level="ERROR"/>
         <Logger name="org.apache.catalina.util.LifecycleBase" level="ERROR"/>

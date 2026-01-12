@@ -303,19 +303,21 @@ public class BookingServiceImpl implements IBookingService {
                             pricingInfo.getItemLevelExtrasByCourtId().getOrDefault(courtId, Collections.emptyList());
 
                     // 转换为ExtraChargeVo格式
+                    // 注意：itemLevelExtras 中的 amount 是单个槽位的费用，需要乘以槽位数得到该场地的总费用
+                    int slotCount = courtTemplates.size();
                     List<ExtraChargeVo> extraCharges = itemLevelExtras.stream()
                             .map(extra -> ExtraChargeVo.builder()
                                     .chargeTypeId(extra.getChargeTypeId())
                                     .chargeName(extra.getChargeName())
                                     .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
                                     .fixedValue(extra.getFixedValue())
-                                    .chargeAmount(extra.getAmount())
+                                    .chargeAmount(extra.getAmount().multiply(new BigDecimal(slotCount)))  // 单位金额 × 槽位数
                                     .build())
                             .collect(Collectors.toList());
 
                     // 计算该item的实际金额（基础金额 + 订单项级附加费用）
                     BigDecimal itemLevelExtraAmount = itemLevelExtras.stream()
-                            .map(PricingInfo.ItemLevelExtraInfo::getAmount)
+                            .map(extra -> extra.getAmount().multiply(new BigDecimal(slotCount)))  // 单位金额 × 槽位数
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
                     BigDecimal itemAmount = itemBaseAmount.add(itemLevelExtraAmount);
 
@@ -613,13 +615,14 @@ public class BookingServiceImpl implements IBookingService {
                             pricingInfo.getItemLevelExtrasByCourtId().getOrDefault(courtId, Collections.emptyList());
 
                     // 转换为ExtraQuote格式
+                    // 注意：itemLevelExtras 中的 amount 是单个槽位的费用，直接使用即可
                     List<ExtraQuote> recordExtras = itemLevelExtras.stream()
                             .map(extra -> ExtraQuote.builder()
                                     .chargeTypeId(extra.getChargeTypeId())
                                     .chargeName(extra.getChargeName())
                                     .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
                                     .fixedValue(extra.getFixedValue())
-                                    .amount(extra.getAmount())
+                                    .amount(extra.getAmount())  // 直接使用单位金额
                                     .build())
                             .collect(Collectors.toList());
 

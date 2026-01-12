@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serializable;
 
 /**
  * 教练确认订单 - 请求 dto
@@ -14,7 +15,7 @@ import javax.validation.constraints.NotNull;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CoachConfirmRequestDto {
+public class CoachConfirmRequestDto implements Serializable {
 
     @NotNull
     private Long orderNo;

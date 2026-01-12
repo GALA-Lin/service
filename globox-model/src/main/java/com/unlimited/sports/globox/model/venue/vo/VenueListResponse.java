@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.model.venue.vo;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,6 +53,11 @@ public class VenueListResponse {
     private List<DictItem> facilities = new ArrayList<>();
 
     /**
+     * 价格区间
+     */
+    private PriceRange priceRange;
+
+    /**
      * 字典项结构
      */
     @Data
@@ -70,5 +76,22 @@ public class VenueListResponse {
          */
         @NonNull
         private String description;
+    }
+
+    /**
+     * 价格区间
+     */
+    @Data
+    @Builder
+    public static class PriceRange {
+        /**
+         * 最小价格
+         */
+        private BigDecimal minPrice;
+
+        /**
+         * 最大价格
+         */
+        private BigDecimal maxPrice;
     }
 }

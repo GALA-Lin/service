@@ -8,6 +8,7 @@ import com.unlimited.sports.globox.model.merchant.dto.BatchTemplateInitDto;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotTemplate;
 import com.unlimited.sports.globox.model.merchant.vo.BatchTemplateInitResultVo;
+import com.unlimited.sports.globox.venue.util.TimeSlotSplitUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -52,24 +53,17 @@ public class SlotTemplateServiceImpl implements SlotTemplateService {
             log.warn("场地ID: {} 已有 {} 个模板，跳过初始化", courtId, existingTemplates.size());
             return 0;
         }
+
+        // 使用工具类拆分时间槽位
         List<VenueBookingSlotTemplate> templates = new ArrayList<>();
-        LocalTime currentTime = openTime;
-
-        while (currentTime.isBefore(closeTime)) {
-            LocalTime endTime = currentTime.plusMinutes(SLOT_INTERVAL_MINUTES);
-            if (endTime.isAfter(closeTime)) {
-                break; // 最后一段超出营业时间，不创建
-            }
-
+        TimeSlotSplitUtil.splitTimeSlots(openTime, closeTime, SLOT_INTERVAL_MINUTES, slot -> {
             VenueBookingSlotTemplate template = VenueBookingSlotTemplate.builder()
                     .courtId(courtId)
-                    .startTime(currentTime)
-                    .endTime(endTime)
+                    .startTime(slot.getStartTime())
+                    .endTime(slot.getEndTime())
                     .build();
-
             templates.add(template);
-            currentTime = endTime;
-        }
+        });
 
         // 批量插入
         if (templates.isEmpty()) {
@@ -168,25 +162,16 @@ public class SlotTemplateServiceImpl implements SlotTemplateService {
                     }
                 }
 
-                // 生成模板
+                // 生成模板（使用工具类拆分时间槽位）
                 List<VenueBookingSlotTemplate> templates = new ArrayList<>();
-                LocalTime currentTime = dto.getOpenTime();
-
-                while (currentTime.isBefore(dto.getCloseTime())) {
-                    LocalTime endTime = currentTime.plusMinutes(SLOT_INTERVAL_MINUTES);
-                    if (endTime.isAfter(dto.getCloseTime())) {
-                        break;
-                    }
-
+                TimeSlotSplitUtil.splitTimeSlots(dto.getOpenTime(), dto.getCloseTime(), SLOT_INTERVAL_MINUTES, slot -> {
                     VenueBookingSlotTemplate template = VenueBookingSlotTemplate.builder()
                             .courtId(courtId)
-                            .startTime(currentTime)
-                            .endTime(endTime)
+                            .startTime(slot.getStartTime())
+                            .endTime(slot.getEndTime())
                             .build();
-
                     templates.add(template);
-                    currentTime = endTime;
-                }
+                });
 
                 if (templates.isEmpty()) {
                     detail.setStatus("failed");

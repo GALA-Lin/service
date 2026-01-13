@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.VenueCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -181,10 +183,9 @@ public class VenueServiceImpl implements IVenueService {
         // 只有当存在非匿名用户时，才发送 RPC 请求获取用户信息
         Map<Long, UserInfoVo> userInfoMap;
         if (!allUserIds.isEmpty()) {
-            BatchUserInfoResponse batchUserInfoResponse = userDubboService.batchGetUserInfo(batchUserInfoRequest);
-            if(batchUserInfoResponse == null) {
-                throw new GloboxApplicationException("[getVenueReviews] : 获取用户信息失败");
-            }
+            RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(batchUserInfoRequest);
+            Assert.rpcResultOk(rpcResult);
+            BatchUserInfoResponse batchUserInfoResponse = rpcResult.getData();
             List<UserInfoVo> userInfoVOS = batchUserInfoResponse.getUsers();
             if (userInfoVOS != null && !userInfoVOS.isEmpty()) {
                 userInfoMap = userInfoVOS.stream()
@@ -429,7 +430,9 @@ public class VenueServiceImpl implements IVenueService {
         if (!userIds.isEmpty()) {
             BatchUserInfoRequest batchUserInfoRequest = new BatchUserInfoRequest();
             batchUserInfoRequest.setUserIds(userIds);
-            BatchUserInfoResponse batchUserInfoResponse = userDubboService.batchGetUserInfo(batchUserInfoRequest);
+            RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(batchUserInfoRequest);
+            Assert.rpcResultOk(rpcResult);
+            BatchUserInfoResponse batchUserInfoResponse = rpcResult.getData();
             if (batchUserInfoResponse != null && batchUserInfoResponse.getUsers() != null) {
                 userInfoMap.putAll(batchUserInfoResponse.getUsers().stream()
                         .collect(Collectors.toMap(UserInfoVo::getUserId, userInfo -> userInfo)));

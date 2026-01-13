@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.payment.service.WechatPayService;
 import com.wechat.pay.java.core.notification.NotificationConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +16,7 @@ import javax.servlet.http.HttpServletRequest;
  * 微信支付接入 controller
  */
 @Slf4j
+@Profile("beta")
 @RestController
 @RequestMapping("payments/wechat-pay/mooncourt")
 public class WechatPayMoonCourtController {

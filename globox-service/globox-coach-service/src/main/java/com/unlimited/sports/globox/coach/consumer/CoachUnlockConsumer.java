@@ -1,4 +1,4 @@
-package com.unlimited.sports.globox.coach.customer;
+package com.unlimited.sports.globox.coach.consumer;
 
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.coach.service.impl.CoachSlotServiceImpl;
@@ -23,7 +23,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
-public class CoachUnlockCustomer {
+public class CoachUnlockConsumer {
 
     @Autowired
     private CoachSlotServiceImpl coachSlotService;
@@ -31,8 +31,8 @@ public class CoachUnlockCustomer {
     @RabbitListener(queues = OrderMQConstants.QUEUE_ORDER_UNLOCK_COACH_SLOT_COACH)
     @Transactional(rollbackFor = Exception.class)
     @RabbitRetryable(
-            finalExchange = OrderMQConstants.EXCHANGE_ORDER_CONFIRM_NOTIFY_MERCHANT_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT_FINAL
+            finalExchange = OrderMQConstants.EXCHANGE_ORDER_UNLOCK_COACH_SLOT_FINAL_DLX,
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_FINAL
     )
     public void onUnlockSlotsMessage(
             UnlockSlotMessage message,

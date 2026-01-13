@@ -29,7 +29,15 @@ public enum NotificationRoleEnum {
     SOCIAL_USER(7, "SOCIAL_USER", "用户"),
 
     // ========== SYSTEM 系统模块 ==========
-    SYSTEM_USER(8, "SYSTEM_USER", "用户");
+    SYSTEM_USER(8, "SYSTEM_USER", "用户"),
+
+
+    // order 模块
+    ORDER_CREATOR(9, "ORDER_CREATOR", "订单创建者"),
+    ORDER_MERCHANT(10, "ORDER_MERCHANT", "订单商家"),
+    ORDER_COACH(11, "ORDER_MERCHANT", "订单教练"),
+
+    ;
 
     @EnumValue
     private final Integer code;

@@ -25,6 +25,15 @@ public class UserProfileVo {
     @Schema(description = "昵称", example = "Ace Player")
     private String nickName;
 
+    @Schema(description = "当前用户是否关注TA", example = "false")
+    private Boolean isFollowed;
+
+    @Schema(description = "是否互相关注", example = "false")
+    private Boolean isMutual;
+
+    @Schema(description = "用户身份", example = "USER")
+    private String role;
+
     @Schema(description = "个性签名", example = "Play hard, stay sharp")
     private String signature;
 

@@ -50,13 +50,8 @@ public class ChatController {
      */
     @GetMapping("/user/sig")
     public R<Map<String, Object>> getUserSig(
-            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId
-            ) {
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
-            if (userId == null) {
-                log.error("请求头中缺少{}",HEADER_USER_ID);
-                throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-            }
             String userSig = tencentCloudImService.getTxCloudUserSig(String.valueOf(userId));
             Map<String, Object> result = new HashMap<>();
             result.put("userSig", userSig);

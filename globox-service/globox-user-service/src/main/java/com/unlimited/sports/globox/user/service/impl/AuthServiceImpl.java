@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -110,6 +111,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Value("${third-party.jwt.access-token-expire:86400}")
     private long thirdPartyAccessTokenExpire;
+
+    @Value("${user.profile.default-avatar-url:}")
+    private String defaultAvatarUrl;
 
     private static final long SMS_CODE_EXPIRE = 300; // 验证码有效期5分钟
     private static final int MAX_SMS_ERROR_COUNT = 5; // 最大错误次数
@@ -283,6 +287,7 @@ public class AuthServiceImpl implements AuthService {
         UserProfile profile = new UserProfile();
         profile.setUserId(userId);
         profile.setNickName("用户" + phone.substring(phone.length() - 4)); // 默认昵称：用户+后4位
+        profile.setAvatarUrl(resolveAvatarUrl(null));
 
         userProfileMapper.insert(profile);
 
@@ -370,6 +375,9 @@ public class AuthServiceImpl implements AuthService {
             // 记录登录日志
             recordLoginLog(authUser.getUserId(), openid, AuthIdentity.IdentityType.WECHAT, true, null);
 
+            // 注册设备（如果提供了设备信息）
+            registerDeviceIfPresent(authUser.getUserId(), authUser.getRole().name(), request.getDeviceInfo());
+
             // 查询用户资料与手机号，用于返回统一 userInfo
             UserProfile userProfile = userProfileMapper.selectById(authUser.getUserId());
             LambdaQueryWrapper<AuthIdentity> phoneIdentityQuery = new LambdaQueryWrapper<>();
@@ -381,7 +389,7 @@ public class AuthServiceImpl implements AuthService {
                     .id(authUser.getUserId())
                     .phone(phoneIdentity != null ? phoneIdentity.getIdentifier() : null)
                     .nickname(userProfile != null ? userProfile.getNickName() : null)
-                    .avatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null)
+                    .avatarUrl(resolveAvatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null))
                     .build();
 
             // 已绑定直接登录，认为不是新用户
@@ -534,10 +542,7 @@ public class AuthServiceImpl implements AuthService {
             } else {
                 profile.setNickName("用户" + phone.substring(phone.length() - 4));
             }
-            // 如果提供了微信头像，使用微信头像
-            if (avatarUrl != null && !avatarUrl.trim().isEmpty()) {
-                profile.setAvatarUrl(avatarUrl);
-            }
+            profile.setAvatarUrl(resolveAvatarUrl(avatarUrl));
             userProfileMapper.insert(profile);
 
             // 导入腾讯IM账号（失败不影响注册流程）
@@ -697,9 +702,7 @@ public class AuthServiceImpl implements AuthService {
             } else {
                 profile.setNickName("用户" + phone.substring(phone.length() - 4));
             }
-            if (avatarUrl != null && !avatarUrl.trim().isEmpty()) {
-                profile.setAvatarUrl(avatarUrl);
-            }
+            profile.setAvatarUrl(resolveAvatarUrl(avatarUrl));
             userProfileMapper.insert(profile);
 
             // 导入腾讯IM账号（失败不影响注册流程）
@@ -760,7 +763,7 @@ public class AuthServiceImpl implements AuthService {
                 .id(userId)
                 .phone(phone)
                 .nickname(userProfile != null ? userProfile.getNickName() : null)
-                .avatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null)
+                .avatarUrl(resolveAvatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null))
                 .build();
 
         ThirdPartyLoginResponse response = ThirdPartyLoginResponse.builder()
@@ -1165,14 +1168,11 @@ public class AuthServiceImpl implements AuthService {
         try {
             String userIdStr = String.valueOf(userId);
             log.info("IM账号导入开始: userId={}, nickName={}", userId, userName);
-            
-            Boolean result = chatDubboService.accountImport(userIdStr, userName, faceUrl);
-            
-            if (Boolean.TRUE.equals(result)) {
-                log.info("IM账号导入成功: userId={}, nickName={}", userId, userName);
-            } else {
-                log.warn("IM账号导入失败: userId={}, nickName={}, result={}", userId, userName, result);
-            }
+
+            RpcResult<Void> importResult = chatDubboService.accountImport(userIdStr, userName, faceUrl);
+            Assert.rpcResultOk(importResult);
+
+            log.info("IM账号导入成功: userId={}, nickName={}", userId, userName);
         } catch (Exception e) {
             log.error("IM账号导入异常: userId={}, nickName={}, error={}", userId, userName, e.getMessage(), e);
             // 异常不影响注册登录流程，仅记录日志
@@ -1182,5 +1182,15 @@ public class AuthServiceImpl implements AuthService {
     private boolean isThirdPartyClient() {
         String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         return clientType != null && clientType.equalsIgnoreCase(ClientType.THIRD_PARTY_JSAPI.getValue());
+    }
+
+    private String resolveAvatarUrl(String avatarUrl) {
+        if (StringUtils.hasText(avatarUrl)) {
+            return avatarUrl;
+        }
+        if (StringUtils.hasText(defaultAvatarUrl)) {
+            return defaultAvatarUrl;
+        }
+        return null;
     }
 }

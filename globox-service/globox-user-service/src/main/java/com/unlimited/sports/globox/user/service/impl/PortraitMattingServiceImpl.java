@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.user.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
@@ -144,12 +145,12 @@ public class PortraitMattingServiceImpl implements PortraitMattingService {
             String mattingUrl = portraitMattingClient.uploadAndMatting(filePath, fileContent);
 
             // 更新用户资料数据库
-            UserProfile profile = userProfileMapper.selectById(userId);
+            UserProfile profile = userProfileMapper.selectOne(new LambdaQueryWrapper<UserProfile>()
+                    .eq(UserProfile::getUserId,userId));
             if (profile != null) {
                 profile.setPortraitUrl(mattingUrl);
-                userProfileMapper.updateById(profile);
-                log.info("球星卡肖像异步处理成功: userId={}, portraitUrl={}", userId, mattingUrl);
-
+                int res = userProfileMapper.updateById(profile);
+                log.info("球星卡肖像异步处理成功: userId={}, portraitUrl={},更新结果{}", userId, mattingUrl,res);
                 // 发送通知
                 try {
                     notificationSender.sendNotification(

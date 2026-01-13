@@ -47,6 +47,15 @@ public interface UserProfileService {
     R<UserProfileVo> getUserProfile(Long userId);
 
     /**
+     * 查询用户完整资料（含关注/互关状态）
+     *
+     * @param userId   目标用户ID
+     * @param viewerId 当前用户ID
+     * @return 用户资料视图
+     */
+    R<UserProfileVo> getUserProfile(Long userId, Long viewerId);
+
+    /**
      * 更新用户资料（patch更新，只更新非空字段）
      *
      * @param userId  用户ID

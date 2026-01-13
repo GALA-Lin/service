@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.NoteMediaRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
@@ -51,6 +53,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -65,6 +68,7 @@ public class NoteServiceImpl implements NoteService {
     private static final int MAX_VIDEO_COUNT = 1;
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
+    private static final String DEFAULT_VIDEO_COVER_QUERY = "ci-process=snapshot&time=0&format=jpg";
 
     @Autowired
     private SocialNoteMapper socialNoteMapper;
@@ -117,6 +121,7 @@ public class NoteServiceImpl implements NoteService {
         // 如果提供媒体且非空，校验媒体
         if (request.getMediaList() != null && !request.getMediaList().isEmpty()) {
             validateMedia(request.getMediaType(), request.getMediaList());
+            fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
         }
 
         if (draft != null) {
@@ -192,6 +197,7 @@ public class NoteServiceImpl implements NoteService {
 
         // 4. 校验媒体类型和媒体列表
         validateMedia(request.getMediaType(), request.getMediaList());
+        fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
 
         // 5. 创建 PUBLISHED 笔记
         SocialNote note = SocialNote.builder()
@@ -261,6 +267,7 @@ public class NoteServiceImpl implements NoteService {
 
         // 4. 校验媒体类型和媒体列表
         validateMedia(request.getMediaType(), request.getMediaList());
+        fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
 
         // 5. 查询草稿
         SocialNote draft = socialNoteMapper.selectById(request.getNoteId());
@@ -335,6 +342,7 @@ public class NoteServiceImpl implements NoteService {
             }
             // mediaList 传了且非空，全量替换
             validateMedia(request.getMediaType(), request.getMediaList());
+            fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
             applyMediaSummary(note, request.getMediaType(), request.getMediaList());
             
             socialNoteMapper.updateById(note);
@@ -418,7 +426,8 @@ public class NoteServiceImpl implements NoteService {
 
         // 通过RPC获取作者信息
         try {
-            UserInfoVo userInfo = userDubboService.getUserInfo(note.getUserId());
+            RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(note.getUserId());
+            UserInfoVo userInfo = rpcResult.getData();
             if (userInfo != null) {
                 vo.setNickName(userInfo.getNickName());
                 vo.setAvatarUrl(userInfo.getAvatarUrl());
@@ -608,9 +617,6 @@ public class NoteServiceImpl implements NoteService {
                     imageCount++;
                 } else if (type == SocialNote.MediaType.VIDEO) {
                     videoCount++;
-                    if (!StringUtils.hasText(mediaReq.getCoverUrl())) {
-                        throw new GloboxApplicationException(SocialCode.NOTE_VIDEO_COVER_REQUIRED);
-                    }
                 }
             }
 
@@ -645,11 +651,63 @@ public class NoteServiceImpl implements NoteService {
         }
         note.setMediaType(SocialNote.MediaType.valueOf(mediaType));
         NoteMediaRequest firstMedia = mediaList.get(0);
-        if (SocialNote.MediaType.VIDEO.name().equals(mediaType) && StringUtils.hasText(firstMedia.getCoverUrl())) {
-            note.setCoverUrl(firstMedia.getCoverUrl());
+        if (SocialNote.MediaType.VIDEO.name().equals(mediaType)) {
+            String coverUrl = firstMedia.getCoverUrl();
+            String baseUrl = StringUtils.hasText(firstMedia.getUrl()) ? firstMedia.getUrl() : coverUrl;
+            if (StringUtils.hasText(coverUrl)) {
+                if (coverUrl.contains("ci-process=")) {
+                    note.setCoverUrl(coverUrl);
+                } else if (looksLikeVideoUrl(coverUrl)) {
+                    note.setCoverUrl(buildVideoCoverUrl(baseUrl));
+                } else {
+                    note.setCoverUrl(coverUrl);
+                }
+            } else if (StringUtils.hasText(baseUrl)) {
+                note.setCoverUrl(buildVideoCoverUrl(baseUrl));
+            }
         } else if (SocialNote.MediaType.IMAGE.name().equals(mediaType) && StringUtils.hasText(firstMedia.getUrl())) {
             note.setCoverUrl(firstMedia.getUrl());
         }
+    }
+
+    private void fillVideoCoverUrls(String mediaType, List<NoteMediaRequest> mediaList) {
+        if (!SocialNote.MediaType.VIDEO.name().equals(mediaType) || CollectionUtils.isEmpty(mediaList)) {
+            return;
+        }
+        for (NoteMediaRequest mediaReq : mediaList) {
+            if (mediaReq == null || !StringUtils.hasText(mediaReq.getUrl())) {
+                continue;
+            }
+            String coverUrl = mediaReq.getCoverUrl();
+            if (!StringUtils.hasText(coverUrl)) {
+                mediaReq.setCoverUrl(buildVideoCoverUrl(mediaReq.getUrl()));
+            } else if (!coverUrl.contains("ci-process=") && looksLikeVideoUrl(coverUrl)) {
+                mediaReq.setCoverUrl(buildVideoCoverUrl(mediaReq.getUrl()));
+            }
+        }
+    }
+
+    private boolean looksLikeVideoUrl(String url) {
+        if (!StringUtils.hasText(url)) {
+            return false;
+        }
+        String path = url.toLowerCase(Locale.ROOT).split("\\?", 2)[0];
+        return path.endsWith(".mp4")
+                || path.endsWith(".mov")
+                || path.endsWith(".m3u8")
+                || path.endsWith(".webm")
+                || path.endsWith(".avi");
+    }
+
+    private String buildVideoCoverUrl(String videoUrl) {
+        if (!StringUtils.hasText(videoUrl)) {
+            return videoUrl;
+        }
+        if (videoUrl.contains("ci-process=")) {
+            return videoUrl;
+        }
+        String separator = videoUrl.contains("?") ? "&" : "?";
+        return videoUrl + separator + DEFAULT_VIDEO_COVER_QUERY;
     }
 
     @Override
@@ -1249,12 +1307,17 @@ public class NoteServiceImpl implements NoteService {
                     
                     BatchUserInfoRequest request = new BatchUserInfoRequest();
                     request.setUserIds(batch);
-                    BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
-                    
+                    RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
+                    Assert.rpcResultOk(rpcResult);
+                    BatchUserInfoResponse response = rpcResult.getData();
+
+
                     if (response != null && response.getUsers() != null) {
                         response.getUsers().forEach(userInfo -> {
                             if (userInfo != null && userInfo.getUserId() != null) {
-                                userInfoMap.put(userInfo.getUserId(), userInfo);
+                                UserInfoVo userInfoVo = new UserInfoVo();
+                                BeanUtils.copyProperties(userInfo, userInfoVo);
+                                userInfoMap.put(userInfo.getUserId(), userInfoVo);
                             }
                         });
                     }

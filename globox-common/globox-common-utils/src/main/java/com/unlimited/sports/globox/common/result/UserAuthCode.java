@@ -34,7 +34,8 @@ public enum UserAuthCode implements ResultCode {
     
     // RPC查询相关 2030-2039
     BATCH_QUERY_TOO_LARGE(2030, "批量查询数量超过限制，最多50个"),
-    
+    QUERY_NOT_EXIST(2031, "查询的用户信息不存在"),
+
     // 微信登录相关 2033-2039
     WECHAT_AUTH_FAILED(2033, "微信授权失败"),
     WECHAT_CODE_EXPIRED(2034, "微信授权code已过期"),

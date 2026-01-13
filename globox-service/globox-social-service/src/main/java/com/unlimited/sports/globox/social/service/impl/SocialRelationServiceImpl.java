@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -150,24 +152,27 @@ public class SocialRelationServiceImpl implements SocialRelationService {
     }
 
     @Override
-    public R<PaginationResult<FollowUserVo>> getFollowing(Long userId, Integer page, Integer pageSize, String keyword) {
-        Page<SocialUserFollow> pageParam = buildPage(userId, page, pageSize);
-        Page<SocialUserFollow> pageResult = socialUserFollowMapper.selectFollowingPage(userId, pageParam);
-        return R.ok(buildFollowVoPage(userId, pageResult.getRecords(), pageResult.getTotal(), keyword, true));
+    public R<PaginationResult<FollowUserVo>> getFollowing(Long viewerId, Long targetUserId, Integer page, Integer pageSize, String keyword) {
+        Long listOwnerId = targetUserId == null ? viewerId : targetUserId;
+        Page<SocialUserFollow> pageParam = buildPage(listOwnerId, page, pageSize);
+        Page<SocialUserFollow> pageResult = socialUserFollowMapper.selectFollowingPage(listOwnerId, pageParam);
+        return R.ok(buildFollowVoPage(viewerId, pageResult.getRecords(), pageResult.getTotal(), keyword, true));
     }
 
     @Override
-    public R<PaginationResult<FollowUserVo>> getFans(Long userId, Integer page, Integer pageSize, String keyword) {
-        Page<SocialUserFollow> pageParam = buildPage(userId, page, pageSize);
-        Page<SocialUserFollow> pageResult = socialUserFollowMapper.selectFansPage(userId, pageParam);
-        return R.ok(buildFollowVoPage(userId, pageResult.getRecords(), pageResult.getTotal(), keyword, false));
+    public R<PaginationResult<FollowUserVo>> getFans(Long viewerId, Long targetUserId, Integer page, Integer pageSize, String keyword) {
+        Long listOwnerId = targetUserId == null ? viewerId : targetUserId;
+        Page<SocialUserFollow> pageParam = buildPage(listOwnerId, page, pageSize);
+        Page<SocialUserFollow> pageResult = socialUserFollowMapper.selectFansPage(listOwnerId, pageParam);
+        return R.ok(buildFollowVoPage(viewerId, pageResult.getRecords(), pageResult.getTotal(), keyword, false));
     }
 
     @Override
-    public R<PaginationResult<FollowUserVo>> getMutual(Long userId, Integer page, Integer pageSize, String keyword) {
+    public R<PaginationResult<FollowUserVo>> getMutual(Long viewerId, Long targetUserId, Integer page, Integer pageSize, String keyword) {
+        Long listOwnerId = targetUserId == null ? viewerId : targetUserId;
         // 基于关注列表筛选互关
-        Page<SocialUserFollow> pageParam = buildPage(userId, page, pageSize);
-        Page<SocialUserFollow> followingPage = socialUserFollowMapper.selectFollowingPage(userId, pageParam);
+        Page<SocialUserFollow> pageParam = buildPage(listOwnerId, page, pageSize);
+        Page<SocialUserFollow> followingPage = socialUserFollowMapper.selectFollowingPage(listOwnerId, pageParam);
         List<SocialUserFollow> following = followingPage.getRecords();
         if (CollectionUtils.isEmpty(following)) {
             PaginationResult<FollowUserVo> empty = PaginationResult.build(
@@ -179,7 +184,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         }
         List<Long> targetIds = following.stream().map(SocialUserFollow::getFollowUserId).collect(Collectors.toList());
         LambdaQueryWrapper<SocialUserFollow> reverseQuery = new LambdaQueryWrapper<>();
-        reverseQuery.eq(SocialUserFollow::getFollowUserId, userId)
+        reverseQuery.eq(SocialUserFollow::getFollowUserId, listOwnerId)
                 .in(SocialUserFollow::getUserId, targetIds);
         List<SocialUserFollow> reverse = socialUserFollowMapper.selectList(reverseQuery);
         Set<Long> mutualSet = reverse.stream().map(SocialUserFollow::getUserId).collect(Collectors.toSet());
@@ -187,7 +192,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
                 .filter(f -> mutualSet.contains(f.getFollowUserId()))
                 .collect(Collectors.toList());
         // total 按当前页互关数量，简化处理
-        return R.ok(buildFollowVoPage(userId, mutualList, mutualList.size(), keyword, true));
+        return R.ok(buildFollowVoPage(viewerId, mutualList, mutualList.size(), keyword, true));
     }
 
     @Override
@@ -230,8 +235,8 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         return viewerBlocksTarget || targetBlocksViewer;
     }
 
-    private Page<SocialUserFollow> buildPage(Long userId, Integer page, Integer pageSize) {
-        if (userId == null) {
+    private Page<SocialUserFollow> buildPage(Long ownerId, Integer page, Integer pageSize) {
+        if (ownerId == null) {
             throw new GloboxApplicationException(SocialCode.NOTE_NOT_FOUND);
         }
         long p = (page == null || page < 1) ? 1 : page;
@@ -239,7 +244,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         return new Page<>(p, ps);
     }
 
-    private PaginationResult<FollowUserVo> buildFollowVoPage(Long userId,
+    private PaginationResult<FollowUserVo> buildFollowVoPage(Long viewerId,
                                                             List<SocialUserFollow> relations,
                                                             long total,
                                                             String keyword,
@@ -255,21 +260,23 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         // 批量查用户信息
         BatchUserInfoRequest req = new BatchUserInfoRequest();
         req.setUserIds(targetIds);
-        BatchUserInfoResponse resp = userDubboService.batchGetUserInfo(req);
+        RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(req);
+        Assert.rpcResultOk(rpcResult);
+        BatchUserInfoResponse resp = rpcResult.getData();
         Map<Long, UserInfoVo> userInfoMap = resp == null || CollectionUtils.isEmpty(resp.getUsers())
                 ? new HashMap<>()
                 : resp.getUsers().stream().collect(Collectors.toMap(UserInfoVo::getUserId, u -> u));
 
         // 反查我对对方的关注，标记 isFollowed/isMutual
         LambdaQueryWrapper<SocialUserFollow> myFollowQuery = new LambdaQueryWrapper<>();
-        myFollowQuery.eq(SocialUserFollow::getUserId, userId)
+        myFollowQuery.eq(SocialUserFollow::getUserId, viewerId)
                 .in(SocialUserFollow::getFollowUserId, targetIds);
         List<SocialUserFollow> myFollows = socialUserFollowMapper.selectList(myFollowQuery);
         Set<Long> myFollowSet = myFollows.stream().map(SocialUserFollow::getFollowUserId).collect(Collectors.toSet());
 
         // 反查对方是否关注我，用于互关
         LambdaQueryWrapper<SocialUserFollow> reverseQuery = new LambdaQueryWrapper<>();
-        reverseQuery.eq(SocialUserFollow::getFollowUserId, userId)
+        reverseQuery.eq(SocialUserFollow::getFollowUserId, viewerId)
                 .in(SocialUserFollow::getUserId, targetIds);
         List<SocialUserFollow> reverse = socialUserFollowMapper.selectList(reverseQuery);
         Set<Long> reverseSet = reverse.stream().map(SocialUserFollow::getUserId).collect(Collectors.toSet());

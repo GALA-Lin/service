@@ -1,6 +1,8 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.dto.MessageDto;
@@ -592,8 +594,13 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             Long total = messageMapper.selectCountByConversationId(conversationId);
             List<MessageVo> messageVos = messageEntities.stream()
                     .map(messageEntity ->{
-                        UserInfoVo fromUser = userDubboService.getUserInfo(messageEntity.getFromUserId());
-                        UserInfoVo toUser = userDubboService.getUserInfo(messageEntity.getToUserId());
+                        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(messageEntity.getFromUserId());
+                        Assert.rpcResultOk(rpcResult);
+                        UserInfoVo fromUser = rpcResult.getData();
+
+                        RpcResult<UserInfoVo> rpcResult2 = userDubboService.getUserInfo(messageEntity.getFromUserId());
+                        Assert.rpcResultOk(rpcResult2);
+                        UserInfoVo toUser = rpcResult2.getData();
                         return MessageVo.builder()
                                 .messageId(messageEntity.getMessageId())
                                 .fromUserId(messageEntity.getFromUserId())
@@ -627,7 +634,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             }else {
                 friendId = conversation.getSenderUserId();
             }
-            UserInfoVo userInfo = userDubboService.getUserInfo(friendId);
+            RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(friendId);
+            Assert.rpcResultOk(rpcResult);
+            UserInfoVo userInfo = rpcResult.getData();
             return MessageListVo.builder()
                     .messageVoList(messageVos)
                     .total( total)

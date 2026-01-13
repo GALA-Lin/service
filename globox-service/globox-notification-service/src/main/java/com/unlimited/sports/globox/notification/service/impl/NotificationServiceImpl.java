@@ -16,6 +16,7 @@ import com.unlimited.sports.globox.notification.service.IDeviceTokenService;
 import com.unlimited.sports.globox.notification.service.INotificationService;
 import com.unlimited.sports.globox.notification.service.IPushRecordsService;
 import com.unlimited.sports.globox.notification.util.TemplateRenderer;
+import com.unlimited.sports.globox.notification.enums.MessageTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -193,6 +194,16 @@ public class NotificationServiceImpl implements INotificationService {
                 if (action != null) {
                     extData.put("action", action);
                 }
+
+                // 添加消息类型（探索/球局/系统），便于前端做对应的UI展示或跳转
+                if (template != null && template.getNotificationModule() != null) {
+                    MessageTypeEnum userMsgType = MessageTypeEnum.fromModuleCode(template.getNotificationModule());
+                    if (userMsgType != null) {
+                        extData.put("messageType", userMsgType.getCode());
+                        log.debug("[批量推送] 消息分类: module={}, messageType={}", template.getNotificationModule(), userMsgType.getCode());
+                    }
+                }
+
                 extJson = JSON.toJSONString(extData);
 
                 OfflinePushInfo offlinePushInfo = OfflinePushInfo.builder()

@@ -3,7 +3,9 @@ package com.unlimited.sports.globox.social.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
@@ -393,7 +395,9 @@ public class CommentServiceImpl implements CommentService {
 
                     BatchUserInfoRequest request = new BatchUserInfoRequest();
                     request.setUserIds(batch);
-                    BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
+                    RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
+                    Assert.rpcResultOk(rpcResult);
+                    BatchUserInfoResponse response = rpcResult.getData();
 
                     if (response != null && response.getUsers() != null) {
                         response.getUsers().forEach(userInfo -> {

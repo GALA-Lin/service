@@ -4,11 +4,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
+import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusDto;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserRacketRequest;
+import com.unlimited.sports.globox.model.auth.entity.AuthUser;
 import com.unlimited.sports.globox.model.auth.entity.RacketDict;
 import com.unlimited.sports.globox.model.auth.entity.StyleTag;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
@@ -25,6 +29,7 @@ import com.unlimited.sports.globox.model.auth.vo.UserRacketVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.user.mapper.RacketDictMapper;
 import com.unlimited.sports.globox.user.mapper.StyleTagMapper;
+import com.unlimited.sports.globox.user.mapper.AuthUserMapper;
 import com.unlimited.sports.globox.user.mapper.UserProfileMapper;
 import com.unlimited.sports.globox.user.mapper.UserRacketMapper;
 import com.unlimited.sports.globox.user.mapper.UserStyleTagMapper;
@@ -32,6 +37,8 @@ import com.unlimited.sports.globox.user.service.FileUploadService;
 import com.unlimited.sports.globox.user.service.PortraitMattingService;
 import com.unlimited.sports.globox.user.service.UserProfileService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -59,8 +66,14 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     private static final int MAX_BATCH_SIZE = 50;
 
+    @Value("${user.profile.default-avatar-url:}")
+    private String defaultAvatarUrl;
+
     @Autowired
     private UserProfileMapper userProfileMapper;
+
+    @Autowired
+    private AuthUserMapper authUserMapper;
 
     @Autowired
     private UserRacketMapper userRacketMapper;
@@ -79,6 +92,9 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @Autowired
     private PortraitMattingService portraitMattingService;
+
+    @DubboReference(group = "rpc")
+    private SocialRelationDubboService socialRelationDubboService;
 
     @Override
     public UserProfile getUserProfileById(Long userId) {
@@ -202,8 +218,36 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setPreferredHand(profile.getPreferredHand() != null ? profile.getPreferredHand().name() : null);
         vo.setRackets(racketVos);
         vo.setStyleTags(styleTagVos);
+        vo.setIsFollowed(false);
+        vo.setIsMutual(false);
+        if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
+            vo.setAvatarUrl(defaultAvatarUrl);
+        }
+        AuthUser authUser = authUserMapper.selectById(userId);
+        if (authUser != null && authUser.getRole() != null) {
+            vo.setRole(authUser.getRole().name());
+        }
 
         return R.ok(vo);
+    }
+
+    @Override
+    public R<UserProfileVo> getUserProfile(Long userId, Long viewerId) {
+        R<UserProfileVo> result = getUserProfile(userId);
+        if (result == null || !result.success()) {
+            return result;
+        }
+        UserProfileVo vo = result.getData();
+        if (vo == null || viewerId == null || userId == null || viewerId.equals(userId)) {
+            return result;
+        }
+        RpcResult<UserRelationStatusDto> relationResult = socialRelationDubboService.getRelationStatus(viewerId, userId);
+        if (relationResult != null && relationResult.isSuccess() && relationResult.getData() != null) {
+            UserRelationStatusDto relationStatus = relationResult.getData();
+            vo.setIsFollowed(relationStatus.getIsFollowed());
+            vo.setIsMutual(relationStatus.getIsMutual());
+        }
+        return result;
     }
 
     @Override

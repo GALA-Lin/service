@@ -4,12 +4,14 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.service.MQService;
+import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
 import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 
 /**
@@ -35,6 +38,9 @@ import java.time.LocalDateTime;
 @Slf4j
 @Component
 public class OrderAutoCancelMQConsumer {
+
+    @Autowired
+    private NotificationSender notificationSender;
 
     @Autowired
     private OrdersMapper ordersMapper;
@@ -119,7 +125,17 @@ public class OrderAutoCancelMQConsumer {
             throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
         }
 
+        // 发送到通知系统
+        Map<String, Object> autoCancelNotificationMessage = NotificationSender.createCustomData()
+                .put("sellerName", order.getSellerName())
+                .build();
 
+        notificationSender.sendNotification(
+                order.getBuyerId(),
+                NotificationEventEnum.ORDER_AUTO_CANCELLED,
+                order.getId(),
+                autoCancelNotificationMessage
+        );
 
         log.info("[订单自动关闭] 成功关闭 orderNo={}", orderNo);
     }

@@ -53,6 +53,7 @@ public class UserRefundConsumer {
             PaymentRefundMessage refundMessage = PaymentRefundMessage.builder()
                     .outRequestNo(message.getOutRequestNo())
                     .orderNo(message.getOrderNo())
+                    .orderCancelled(message.isOrderCancelled())
                     .build();
             mqService.send(
                     PaymentMQConstants.EXCHANGE_TOPIC_PAYMENT_REFUND_SUCCESS,

@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.coach.mapper.*;
 import com.unlimited.sports.globox.coach.service.ICoachSlotService;
 import com.unlimited.sports.globox.common.lock.RedisDistributedLock;
 import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.coach.dto.*;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
@@ -147,10 +148,9 @@ public class CoachDubboServiceImpl implements CoachDubboService {
         }
 
         // 查询用户信息
-        UserInfoVo coachUserInfo = userDubboService.getUserInfo(dto.getCoachUserId());
-        if (coachUserInfo == null) {
-            RpcResult.error(COACH_BASE_INFO_GET_FAILED);
-        }
+        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(dto.getCoachUserId());
+        Assert.rpcResultOk(rpcResult);
+        UserInfoVo coachUserInfo = rpcResult.getData();
 
         // 查询用户选择的课程服务
         CoachCourseType courseType = courseTypeMapper.selectById(dto.getServiceTypeId());
@@ -413,10 +413,10 @@ public class CoachDubboServiceImpl implements CoachDubboService {
         }
 
         // 2. 查询教练用户基础信息 (从用户中心/Dubbo获取头像、昵称等)
-        UserInfoVo coachUserInfo = userDubboService.getUserInfo(dto.getCoachUserId());
-        if (coachUserInfo == null) {
-            return RpcResult.error(COACH_BASE_INFO_GET_FAILED);
-        }
+        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(dto.getCoachUserId());
+        Assert.rpcResultOk(rpcResult);
+        UserInfoVo coachUserInfo = rpcResult.getData();
+
 
         // 3. 构建并返回结果 (不包含时段信息)
         CoachSnapshotResultDto resultDto = CoachSnapshotResultDto.builder()
@@ -433,43 +433,6 @@ public class CoachDubboServiceImpl implements CoachDubboService {
                 .build();
 
         return RpcResult.ok(resultDto);
-    }
-
-
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void unlockCoachSlot(CoachUnlockSlotRequestDto dto) {
-        log.info("解锁教练时段 - userId: {}, slotIds: {}, bookingDate: {}",
-                dto.getUserId(), dto.getSlotIds(), dto.getBookingDate());
-
-        if (dto.getSlotIds() == null || dto.getSlotIds().isEmpty()) {
-            log.warn("时段模板ID列表为空");
-            return;
-        }
-
-        for (Long templateId : dto.getSlotIds()) {
-            // 查询记录
-            CoachSlotRecord record = slotRecordMapper.selectOne(
-                    new LambdaQueryWrapper<CoachSlotRecord>()
-                            .eq(CoachSlotRecord::getCoachSlotTemplateId, templateId)
-                            .eq(CoachSlotRecord::getBookingDate, dto.getBookingDate())
-            );
-
-            if (record == null) {
-                log.warn("时段记录不存在 - templateId: {}, date: {}",
-                        templateId, dto.getBookingDate());
-                continue;
-            }
-
-            // 只解锁当前用户锁定的时段
-            if (record.getStatus() == 1 && // LOCKED
-                    dto.getUserId().equals(record.getLockedByUserId())) {
-
-                coachSlotService.unlockSlot(record.getCoachSlotRecordId(), dto.getUserId());
-                log.info("时段解锁成功 - recordId: {}", record.getCoachSlotRecordId());
-            }
-        }
     }
 
     // ========== 辅助方法 ==========

@@ -19,5 +19,8 @@ public class WechatLoginRequest {
     @NotBlank(message = "微信授权code不能为空")
     @Schema(description = "微信授权code（通过uni.login获取）", example = "021abc123def456")
     private String code;
+
+    @Schema(description = "设备信息")
+    private DeviceInfo deviceInfo;
 }
 

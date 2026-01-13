@@ -116,9 +116,12 @@ public class CallbackServiceImpl implements ICallbackService {
                                      PushStatusEnum status, PushCallback.CallbackEvent errorEvent) {
         int updateCount = 0;
 
+        // 腾讯云批量推送的回调 taskId 不带 batch_ 前缀，需要补上
+        String fullTaskId = taskId.startsWith("batch_") ? taskId : "batch_" + taskId;
+
         for (PushCallback.CallbackEvent event : events) {
             LambdaUpdateWrapper<PushRecords> updateWrapper = Wrappers.lambdaUpdate(PushRecords.class)
-                    .eq(PushRecords::getTencentTaskId, taskId)
+                    .eq(PushRecords::getTencentTaskId, fullTaskId)
                     .eq(PushRecords::getDeviceToken, event.getToAccount())
                     .set(PushRecords::getStatus, status)
                     .set(PushRecords::getUpdatedAt, LocalDateTime.now());
@@ -155,13 +158,16 @@ public class CallbackServiceImpl implements ICallbackService {
             String toAccount = event.getToAccount();
             Long eventTime = event.getEventTime();
 
+            // 腾讯云批量推送的回调 taskId 不带 batch_ 前缀，需要补上
+            String fullTaskId = taskId.startsWith("batch_") ? taskId : "batch_" + taskId;
+
             // 转换时间戳为LocalDateTime
             LocalDateTime clickTime = Instant.ofEpochSecond(eventTime)
                     .atZone(ZoneId.systemDefault())
                     .toLocalDateTime();
 
             LambdaUpdateWrapper<PushRecords> updateWrapper = Wrappers.lambdaUpdate(PushRecords.class)
-                    .eq(PushRecords::getTencentTaskId, taskId)
+                    .eq(PushRecords::getTencentTaskId, fullTaskId)
                     .eq(PushRecords::getDeviceToken, toAccount)
                     .set(PushRecords::getStatus, PushStatusEnum.CLICKED)
                     .set(PushRecords::getClickedAt, clickTime)

@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.entity.*;
@@ -130,10 +132,16 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             log.info("会话不存在，开始创建新会话: userId={}, friendId={}", userId, friendId);
 
 
-            UserInfoVo friendInfo = userDubboService.getUserInfo(friendId);
+            RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(friendId);
+            Assert.rpcResultOk(rpcResult);
+            UserInfoVo friendInfo = rpcResult.getData();
             log.info("获取用户信息成功: {}", friendInfo);
-            UserInfoVo userInfo = userDubboService.getUserInfo(userId);
+
+            RpcResult<UserInfoVo> rpcResult2 = userDubboService.getUserInfo(userId);
+            Assert.rpcResultOk(rpcResult2);
+            UserInfoVo userInfo = rpcResult2.getData();
             log.info("获取用户信息成功: {}", userInfo);
+
             // 使用Builder模式创建新会话
             Conversation conversation = Conversation.builder()
                     .conversationType(ConversationTypeEnum.PRIVATE)
@@ -557,8 +565,10 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     }
     private UserInfoVo getUserInfoVo(Long userId, Conversation conversation) {
         if (userId.equals(conversation.getSenderUserId())){
-            return userDubboService.getUserInfo(conversation.getReceiveUserId());
+            RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(conversation.getReceiveUserId());
+            return rpcResult.getData();
         }
-        return userDubboService.getUserInfo(conversation.getSenderUserId());
+        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(conversation.getReceiveUserId());
+        return rpcResult.getData();
     }
 }

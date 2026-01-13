@@ -6,10 +6,13 @@ import com.unlimited.sports.globox.coach.mapper.CoachProfileMapper;
 import com.unlimited.sports.globox.coach.service.ICoachInfoService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.DistanceUtils;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
+import com.unlimited.sports.globox.dubbo.user.dto.UserInfoDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachListDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
@@ -23,6 +26,7 @@ import com.unlimited.sports.globox.model.coach.vo.CoachListResponse;
 import com.unlimited.sports.globox.model.coach.vo.CoachServiceVo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -201,7 +205,9 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         BatchUserInfoRequest request = new BatchUserInfoRequest();
         request.setUserIds(Collections.singletonList(coachUserId));
 
-        BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
+        RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
+        Assert.rpcResultOk(rpcResult);
+        BatchUserInfoResponse response = rpcResult.getData();
 
         if (response == null || response.getUsers() == null || response.getUsers().isEmpty()) {
             log.error("无法获取教练基本信息 - coachUserId: {}", coachUserId);
@@ -257,9 +263,12 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
             log.warn("未知的场地类型: {}", profile.getCoachAcceptVenueType());
         }
 
+        UserInfoVo userInfoVo = new UserInfoVo();
+        BeanUtils.copyProperties(userInfo, userInfoVo);
+
         // 构建简单信息VO
         CoachItemVo simpleInfo = CoachItemVo.builder()
-                .coachUserInfo(userInfo)
+                .coachUserInfo(userInfoVo)
                 .coachServiceArea(profile.getCoachServiceArea())
                 .coachTeachingYears(profile.getCoachTeachingYears())
                 .coachRatingScore(profile.getCoachRatingScore())
@@ -314,7 +323,9 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
 
         log.info("批量查询用户信息 - userIds: {}", coachUserIds);
 
-        BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
+        RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
+        Assert.rpcResultOk(rpcResult);
+        BatchUserInfoResponse response = rpcResult.getData();
 
         Map<Long, UserInfoVo> userInfoMap = new HashMap<>();
         if (response != null && response.getUsers() != null) {
@@ -338,6 +349,8 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
 
             if (userInfo == null) {
                 log.warn("教练用户信息缺失 - coachUserId: {}", coachUserId);
+            } else {
+                BeanUtils.copyProperties(userInfo, userInfo);
             }
 
             // 解析证书列表（从数据库JSON字段）

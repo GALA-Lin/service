@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.dubbo.user.dto;
 
+import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import lombok.Data;
 
 import java.io.Serial;
@@ -31,9 +32,9 @@ public class UserInfoDto implements Serializable {
     private String nickName;
 
     /**
-     * 性别：MALE/FEMALE/OTHER
+     * 性别
      */
-    private String gender;
+    private GenderEnum gender;
 
     /**
      * 用户网球水平（NTRP）

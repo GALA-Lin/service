@@ -14,6 +14,14 @@ import java.util.List;
 @Mapper
 public interface SocialUserFollowMapper extends BaseMapper<SocialUserFollow> {
 
+    default boolean existsFollow(Long userId, Long targetUserId) {
+        LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
+        query.eq(SocialUserFollow::getUserId, userId)
+                .eq(SocialUserFollow::getFollowUserId, targetUserId)
+                .last("LIMIT 1");
+        return this.selectOne(query) != null;
+    }
+
     /**
      * 分页查询关注列表（按关注时间倒序）
      */

@@ -18,11 +18,11 @@ public interface SocialRelationService {
 
     R<String> unblock(Long userId, Long targetUserId);
 
-    R<PaginationResult<FollowUserVo>> getFollowing(Long userId, Integer page, Integer pageSize, String keyword);
+    R<PaginationResult<FollowUserVo>> getFollowing(Long viewerId, Long targetUserId, Integer page, Integer pageSize, String keyword);
 
-    R<PaginationResult<FollowUserVo>> getFans(Long userId, Integer page, Integer pageSize, String keyword);
+    R<PaginationResult<FollowUserVo>> getFans(Long viewerId, Long targetUserId, Integer page, Integer pageSize, String keyword);
 
-    R<PaginationResult<FollowUserVo>> getMutual(Long userId, Integer page, Integer pageSize, String keyword);
+    R<PaginationResult<FollowUserVo>> getMutual(Long viewerId, Long targetUserId, Integer page, Integer pageSize, String keyword);
 
     R<UserRelationStatsVo> getUserStats(Long targetUserId);
 

@@ -408,7 +408,13 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
         String outRequestNo = message.getOutRequestNo();
 
         Assert.isNotEmpty(orderNo, OrderCode.PARAM_ERROR);
-        Assert.isTrue(outRequestNo != null && !outRequestNo.isBlank(), OrderCode.PARAM_ERROR);
+
+        if (!message.isOrderCancelled()) {
+            Assert.isTrue(outRequestNo!= null  && !outRequestNo.isBlank(), OrderCode.PARAM_ERROR);
+        } else {
+            // 订单已经到了被取消的状态，不需要其他操作
+            return;
+        }
 
         LocalDateTime now = LocalDateTime.now();
 

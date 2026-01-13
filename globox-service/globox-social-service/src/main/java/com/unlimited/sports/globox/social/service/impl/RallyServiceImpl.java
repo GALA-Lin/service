@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.social.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
@@ -463,7 +464,9 @@ public class RallyServiceImpl implements RallyService {
         );
         List<RallyApplicationVo> list = rallyApplicationByRallyId.stream()
                 .map(rallyApplication -> {
-                            UserInfoVo userInfo = userDubboService.getUserInfo(rallyApplication.getApplicantId());
+                    RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(rallyApplication.getApplicantId());
+                    Assert.rpcResultOk(rpcResult);
+                    UserInfoVo userInfo = rpcResult.getData();
                             return RallyApplicationVo.builder()
                                     .id(rallyApplication.getApplicationId())
                                     .rallyPostId(rallyApplication.getRallyPostId())
@@ -525,7 +528,9 @@ public class RallyServiceImpl implements RallyService {
 
         return rallyPostsList.stream()
                 .map(rallyPosts -> {
-                    UserInfoVo userInfo = userDubboService.getUserInfo(rallyPosts.getInitiatorId());
+                    RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(rallyPosts.getInitiatorId());
+                    Assert.rpcResultOk(rpcResult);
+                    UserInfoVo userInfo = rpcResult.getData();
                     return RallyPostsVo.builder()
                             .rallyPostId(rallyPosts.getRallyPostId())
                             .rallyInitiatorId(rallyPosts.getInitiatorId())
@@ -558,8 +563,9 @@ public class RallyServiceImpl implements RallyService {
      * @return 插入结果
      */
     private int initRallyParticipant (RallyPosts rallyPosts, Long rallyApplicantId){
-        UserInfoVo userInfo = userDubboService.getUserInfo(rallyApplicantId);
-
+        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(rallyApplicantId);
+        Assert.rpcResultOk(rpcResult);
+        UserInfoVo userInfo = rpcResult.getData();
         RallyParticipant rallyParticipant = RallyParticipant.builder()
                 .rallyPostId(rallyPosts.getRallyPostId())
                 .participantId(rallyApplicantId)
@@ -585,7 +591,9 @@ public class RallyServiceImpl implements RallyService {
         );
         return rallyParticipantList.stream()
                 .map(participant -> {
-                    UserInfoVo userInfo = userDubboService.getUserInfo(participant.getParticipantId());
+                    RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(participant.getParticipantId());
+                    Assert.rpcResultOk(rpcResult);
+                    UserInfoVo userInfo = rpcResult.getData();
                     return RallyParticipantVo.builder()
                             .participantId(participant.getParticipantId())
                             .avatarUrl(userInfo.getAvatarUrl())

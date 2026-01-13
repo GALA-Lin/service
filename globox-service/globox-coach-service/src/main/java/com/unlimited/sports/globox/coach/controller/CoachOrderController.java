@@ -7,13 +7,22 @@ import com.unlimited.sports.globox.common.utils.Assert;
 import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
 import com.unlimited.sports.globox.dubbo.order.OrderForCoachDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
+import com.unlimited.sports.globox.model.coach.vo.CoachOrderDetailWithUserInfoVo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * @since 2026/1/8 18:46
@@ -27,6 +36,9 @@ public class CoachOrderController {
     @DubboReference(group = "rpc", timeout = 10000)
     private OrderForCoachDubboService orderForCoachDubboService;
 
+    @DubboReference(group = "rpc", timeout = 10000)
+    private UserDubboService userDubboService;
+
     /**
      * 获取教练订单分页列表
      *
@@ -36,7 +48,7 @@ public class CoachOrderController {
      * @return 分页订单列表
      */
     @GetMapping
-    public R<IPage<CoachGetOrderResultDto>> getOrderPage(
+    public R<IPage<CoachOrderDetailWithUserInfoVo>> getOrderPage(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "页码必须大于等于1") Integer pageNum,
             @RequestParam(defaultValue = "10") @Min(value = 1, message = "每页大小必须大于等于1") Integer pageSize) {
@@ -60,8 +72,34 @@ public class CoachOrderController {
 
         log.info("成功获取教练订单列表 - coachUserId: {}, 总记录数: {}",
                 coachUserId, rpcResult.getData().getTotal());
+        IPage<CoachGetOrderResultDto> orderPage = rpcResult.getData();
+        // 2. 提取所有 userId 并去重
+        List<Long> userIds = orderPage.getRecords().stream()
+                .map(CoachGetOrderResultDto::getUserId)
+                .distinct()
+                .collect(Collectors.toList());
 
-        return R.ok(rpcResult.getData());
+        // 3. 批量获取用户信息
+        BatchUserInfoRequest userReq = new BatchUserInfoRequest();
+        userReq.setUserIds(userIds);
+        RpcResult<BatchUserInfoResponse> rpcResult1 = userDubboService.batchGetUserInfo(userReq);
+        BatchUserInfoResponse userResp = rpcResult1.getData();
+        Map<Long, UserInfoVo> userMap = userResp.getUsers().stream()
+                .collect(Collectors.toMap(UserInfoVo::getUserId, vo -> vo, (v1, v2) -> v1));
+
+        // 4. 转换并封装 VO
+        // 3. 转换并封装 VO
+        IPage<CoachOrderDetailWithUserInfoVo> resultPage = orderPage.convert(orderDto -> {
+            CoachOrderDetailWithUserInfoVo vo = new CoachOrderDetailWithUserInfoVo();
+            // 复制订单基础属性
+            BeanUtils.copyProperties(orderDto, vo);
+
+            // 设置用户信息
+            vo.setBuyerInfo(userMap.get(orderDto.getUserId()));
+            return vo;
+        });
+
+        return R.ok(resultPage);
     }
 
     /**
@@ -72,29 +110,44 @@ public class CoachOrderController {
      * @return 订单详情
      */
     @GetMapping("/{orderNo}")
-    public R<CoachGetOrderResultDto> getOrderDetails(
+    public R<CoachOrderDetailWithUserInfoVo> getOrderDetails(
             @PathVariable @NotNull(message = "订单号不能为空") Long orderNo,
             @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("获取订单详情 - orderNo: {}, coachUserId: {}", orderNo, coachUserId);
 
-        // 构建请求参数
+        // 1. 构建请求参数并调用订单服务获取基础订单信息
         CoachGetOrderDetailsRequestDto requestDto = CoachGetOrderDetailsRequestDto.builder()
                 .orderNo(orderNo)
                 .coachId(coachUserId)
                 .build();
 
-        // 调用订单服务RPC接口
-        RpcResult<CoachGetOrderResultDto> rpcResult =
+        RpcResult<CoachGetOrderResultDto> orderRpcResult =
                 orderForCoachDubboService.getOrderDetails(requestDto);
 
-        // 检查RPC调用结果
-        Assert.rpcResultOk(rpcResult);
+        // 检查订单服务RPC调用结果
+        Assert.rpcResultOk(orderRpcResult);
+
+        CoachGetOrderResultDto orderDto = orderRpcResult.getData();
 
         log.info("成功获取订单详情 - orderNo: {}, 订单状态: {}",
-                orderNo, rpcResult.getData().getOrderStatus());
+                orderNo, orderRpcResult.getData().getOrderStatus());
 
-        return R.ok(rpcResult.getData());
+        // 3. 封装为业务 VO
+        CoachOrderDetailWithUserInfoVo vo = new CoachOrderDetailWithUserInfoVo();
+        // 复制订单基础属性 (如 orderNo, totalPrice, statusName 等)
+        BeanUtils.copyProperties(orderDto, vo);
+
+
+        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(orderDto.getUserId());
+        UserInfoVo userInfoVo = rpcResult.getData();
+        // 设置下单人信息
+        vo.setBuyerInfo(userInfoVo);
+
+        log.info("成功获取订单详情 - orderNo: {}, 下单人昵称: {}",
+                orderNo, userInfoVo != null ? userInfoVo.getNickName() : "未知");
+
+        return R.ok(vo);
     }
 
     /**

@@ -37,6 +37,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.service.*;
+import com.unlimited.sports.globox.venue.util.TimeSlotSplitUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -913,32 +914,50 @@ public class BookingServiceImpl implements IBookingService {
             return null;
         }
 
-        // 转换槽位列表
-        List<BookingSlotVo> slots = dto.getSlots().stream()
-                .map(slotDto -> {
-            // 处理"24:00"的情况 有些平台可能以24:00为时间结尾,与我们系统设计不符
-            String startTimeStr = slotDto.getStartTime();
-            String endTimeStr = slotDto.getEndTime();
-            if ("24:00".equals(endTimeStr)) {
-                endTimeStr = "23:59";
+        // 转换槽位列表（将第三方的不规则槽位拆分成30分钟的槽位）
+        List<ThirdPartySlotDto> slotsList = dto.getSlots();
+        List<BookingSlotVo> slots = new ArrayList<>();
+        if (slotsList == null || slotsList.isEmpty()) {
+            log.warn("第三方场地槽位列表为空 - courtId: {}", court.getCourtId());
+            return CourtSlotVo.builder()
+                    .courtId(court.getCourtId())
+                    .courtName(dto.getCourtName() != null ? dto.getCourtName() : court.getName())
+                    .courtType(court.getCourtType())
+                    .courtTypeDesc(CourtType.fromValue(court.getCourtType()).getDescription())
+                    .groundType(court.getGroundType())
+                    .groundTypeDesc(GroundType.fromValue(court.getGroundType()).getDescription())
+                    .slots(Collections.emptyList())
+                    .build();
+        }
+
+        try {
+            for (int i = 0; i < slotsList.size(); i++) {
+                ThirdPartySlotDto slotDto = slotsList.get(i);
+
+                // 处理"24:00"的情况 有些平台可能以24:00为时间结尾,与我们系统设计不符
+                String startTimeStr = slotDto.getStartTime();
+                String endTimeStr = slotDto.getEndTime();
+                if ("24:00".equals(endTimeStr)) {
+                    endTimeStr = "23:59";
+                }
+
+                LocalTime startTime = LocalTime.parse(startTimeStr);
+                LocalTime endTime = LocalTime.parse(endTimeStr);
+
+                // 将第三方槽位拆分成30分钟的槽位
+                List<BookingSlotVo> splitSlots = splitSlotToHalfHourSlots(court.getCourtId(), startTime, endTime, slotDto, templateMap);
+                if (splitSlots != null) {
+                    slots.addAll(splitSlots);
+                }
             }
 
-            LocalTime startTime = LocalTime.parse(startTimeStr);
-            LocalTime endTime = LocalTime.parse(endTimeStr);
-            // 根据courtId + startTime + endTime查找模版
-            String templateKey = buildTemplateKey(court.getCourtId(), startTime, endTime);
-            VenueBookingSlotTemplate template = templateMap.get(templateKey);
+            // 按开始时间排序
+            slots.sort(Comparator.comparing(BookingSlotVo::getStartTime));
+        } catch (Exception e) {
+            log.error("处理槽位异常 - courtId: {}", court.getCourtId(), e);
+        }
 
-            if (template == null) {
-                log.warn("未找到槽位模版 - courtId: {}, startTime: {}, endTime: {}",
-                        court.getCourtId(), startTime, endTime);
-                return null;
-            }
-
-            return convertThirdPartySlotDtoToBookingSlotVo(slotDto, template.getBookingSlotTemplateId());
-        })
-                .filter(Objects::nonNull)  // 过滤掉找不到模版的槽位
-                .collect(Collectors.toList());
+        log.info("槽位拆分完成 - courtId: {}, 拆分后槽位数量: {}", court.getCourtId(), slots.size());
 
         // 构建CourtSlotVo
         return CourtSlotVo.builder()
@@ -953,17 +972,55 @@ public class BookingServiceImpl implements IBookingService {
     }
 
     /**
-     * 将统一的ThirdPartySlotDto转换为BookingSlotVo
+     * 将第三方的不规则槽位拆分成30分钟的槽位
+     *
+     * @param courtId 场地ID
+     * @param startTime 开始时间
+     * @param endTime 结束时间
+     * @param originalSlot 原始第三方槽位DTO
+     * @param templateMap 槽位模板Map
+     * @return 拆分后的槽位列表
+     */
+    private List<BookingSlotVo> splitSlotToHalfHourSlots(Long courtId, LocalTime startTime, LocalTime endTime,
+                                                          ThirdPartySlotDto originalSlot,
+                                                          Map<String, VenueBookingSlotTemplate> templateMap) {
+        List<BookingSlotVo> result = new ArrayList<>();
+
+        // 使用工具类拆分时间槽位（自动处理跨午夜）
+        TimeSlotSplitUtil.splitTimeSlots(startTime, endTime, slot -> {
+            LocalTime currentTime = slot.getStartTime();
+            LocalTime slotEnd = slot.getEndTime();
+
+            // 查找对应的模板
+            String templateKey = buildTemplateKey(courtId, currentTime, slotEnd);
+            VenueBookingSlotTemplate template = templateMap.get(templateKey);
+
+            if (template != null) {
+                // 创建槽位VO（继承原始槽位的状态和价格）
+                BookingSlotVo slotVo = convertThirdPartySlotDtoToBookingSlotVo(
+                        originalSlot,
+                        template.getBookingSlotTemplateId(),
+                        currentTime,
+                        slotEnd
+                );
+                result.add(slotVo);
+            }
+        });
+
+        return result;
+    }
+
+    /**
+     * 将统一的ThirdPartySlotDto转换为BookingSlotVo（带自定义时间）
      *
      * @param slotDto 统一的第三方槽位DTO
      * @param templateId 本地槽位模版ID
+     * @param startTime 自定义开始时间
+     * @param endTime 自定义结束时间
      * @return BookingSlotVo
      */
-    private BookingSlotVo convertThirdPartySlotDtoToBookingSlotVo(ThirdPartySlotDto slotDto, Long templateId) {
-        // 解析时间字符串
-        LocalTime startTime = LocalTime.parse(slotDto.getStartTime());
-        LocalTime endTime = LocalTime.parse(slotDto.getEndTime());
-
+    private BookingSlotVo convertThirdPartySlotDtoToBookingSlotVo(ThirdPartySlotDto slotDto, Long templateId,
+                                                                   LocalTime startTime, LocalTime endTime) {
         // 判断状态
         boolean isAvailable = Boolean.TRUE.equals(slotDto.getAvailable());
         Integer status = isAvailable ? BookingSlotStatus.AVAILABLE.getValue() : BookingSlotStatus.EXPIRED.getValue();

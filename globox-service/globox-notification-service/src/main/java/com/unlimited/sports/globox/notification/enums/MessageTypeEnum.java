@@ -26,9 +26,13 @@ public enum MessageTypeEnum {
     RALLY("rally", Arrays.asList(NotificationModuleEnum.PLAY_MATCHING), "球局消息"),
 
     /**
-     * 系统消息：系统相关（公告、更新、营销）
+     * 系统消息：除探索和球局外的所有消息（场地预约、教练预定、系统公告等）
      */
-    SYSTEM("system", Arrays.asList(NotificationModuleEnum.SYSTEM), "系统消息");
+    SYSTEM("system", Arrays.asList(
+            NotificationModuleEnum.VENUE_BOOKING,
+            NotificationModuleEnum.COACH_BOOKING,
+            NotificationModuleEnum.SYSTEM
+    ), "系统消息");
 
     /**
      * 消息类型代码（用户端）

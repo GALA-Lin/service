@@ -69,7 +69,7 @@ public class PaymentsServiceImpl implements PaymentsService {
     @Autowired
     private WechatPayService wechatPayService;
 
-    @Autowired
+    @Autowired(required = false)
     private WechatPayMoonCourtJsapiService wechatPayMoonCourtJsapiService;
 
     /**

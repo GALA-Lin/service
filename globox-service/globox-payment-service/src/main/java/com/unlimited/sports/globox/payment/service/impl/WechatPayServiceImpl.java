@@ -49,7 +49,7 @@ import static com.wechat.pay.java.core.http.Constant.*;
 @Service
 public class WechatPayServiceImpl implements WechatPayService {
 
-    @Autowired
+    @Autowired(required = false)
     private WechatPayMoonCourtJsapiService wechatPayMoonCourtJsapiService;
 
     @Autowired

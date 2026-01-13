@@ -5,6 +5,9 @@ import com.tencentyun.TLSSigAPIv2;
 import com.unlimited.sports.globox.model.social.entity.TencentCloudImApiEnum;
 import com.unlimited.sports.globox.model.social.entity.TencentCloudImConstantEnum;
 import com.unlimited.sports.globox.model.social.entity.TencentImResult;
+import com.unlimited.sports.globox.service.RedisService;
+import com.unlimited.sports.globox.social.consts.SocialRedisKeyConstants;
+import com.unlimited.sports.globox.social.prop.IMProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomUtils;
 import org.apache.http.client.methods.HttpPost;
@@ -13,8 +16,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import org.json.JSONObject;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -30,35 +32,27 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class TencentCloudImUtil {
-    private static final String HTTPS_URL_PREFIX = "https://console.tim.qq.com/";
-    private static final String APP_MANAGER = "administrator";
-    private static final String REDIS_IM_USER_SIG = "silence:test_im_user_sig:";
- 
-    @Value("${IMConfig.sdkAppId}")
-    private long sdkAppId;
-    @Value("${IMConfig.secretKey}")
-    private String secretKey;
 
-    private final RedisTemplate redisTemplate;
+    @Autowired
+    private IMProperties imProperties;
 
-    public TencentCloudImUtil(RedisTemplate redisTemplate) {
-        this.redisTemplate = redisTemplate;
-    }
+    @Autowired
+    private RedisService redisService;
 
  
     /**
      * 获取腾讯云用户签名
      */
     public String getTxCloudUserSig(String UserId) {
-        String key = REDIS_IM_USER_SIG + UserId;
-        String userSig = (String) redisTemplate.opsForValue().get(key);
+        String key = SocialRedisKeyConstants.REDIS_IM_USER_SIG + UserId;
+        String userSig = redisService.getCacheObject(key, String.class);
         if (StringUtils.isEmpty(userSig)) {
             // 如果Redis中没有，则重新生成
-            TLSSigAPIv2 tlsSigApi = new TLSSigAPIv2(sdkAppId, secretKey);
-            userSig = tlsSigApi.genUserSig(UserId, 86400);
+            TLSSigAPIv2 tlsSigApi = new TLSSigAPIv2(imProperties.getAppId(), imProperties.getSecretKey());
+            userSig = tlsSigApi.genUserSig(UserId, imProperties.getUserSigExpire());
 
             // 将新生成的签名存入Redis，有效期为1天
-            redisTemplate.opsForValue().set(key, userSig, 86400, TimeUnit.SECONDS);
+            redisService.setCacheObject(key, userSig, imProperties.getUserSigExpire(), TimeUnit.SECONDS);
         }
 
         return userSig;
@@ -66,10 +60,11 @@ public class TencentCloudImUtil {
  
     /**
      * 获取腾讯im请求路径
+     * TODO 修改生成 admin 的逻辑 by dk
      */
     private String getHttpsUrl(String imServiceApi, Integer random) {
         return String.format("%s%s?sdkappid=%s&identifier=%s&usersig=%s&random=%s&contenttype=json",
-                HTTPS_URL_PREFIX, imServiceApi, sdkAppId, APP_MANAGER, this.getTxCloudUserSig(APP_MANAGER), random);
+                imProperties.getImServerBaseUrl(), imServiceApi, imProperties.getAppId(), imProperties.getIdentifier(), this.getTxCloudUserSig(imProperties.getIdentifier()), random);
     }
  
     /**

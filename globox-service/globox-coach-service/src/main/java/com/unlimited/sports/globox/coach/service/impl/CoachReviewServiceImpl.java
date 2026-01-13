@@ -8,6 +8,8 @@ import com.unlimited.sports.globox.coach.mapper.CoachReviewsMapper;
 import com.unlimited.sports.globox.coach.service.ICoachReviewService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -22,6 +24,7 @@ import com.unlimited.sports.globox.model.coach.enums.ReviewTypeEnum;
 import com.unlimited.sports.globox.model.coach.vo.CoachReviewVo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -336,7 +339,9 @@ public class CoachReviewServiceImpl implements ICoachReviewService {
 
         BatchUserInfoRequest request = new BatchUserInfoRequest();
         request.setUserIds(userIds);
-        BatchUserInfoResponse response = userDubboService.batchGetUserInfo(request);
+        RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
+        Assert.rpcResultOk(rpcResult);
+        BatchUserInfoResponse response = rpcResult.getData();
 
         if (response == null || response.getUsers() == null) {
             return Collections.emptyMap();

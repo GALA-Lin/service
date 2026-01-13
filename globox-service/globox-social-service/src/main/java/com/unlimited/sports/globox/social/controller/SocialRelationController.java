@@ -96,30 +96,33 @@ public class SocialRelationController {
     @Operation(summary = "关注列表", description = "获取我的关注列表，按关注时间倒序，keyword 仅过滤当前页昵称")
     public R<PaginationResult<FollowUserVo>> getFollowing(
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @RequestParam(value = "targetUserId", required = false) Long targetUserId,
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestParam(value = "keyword", required = false) String keyword) {
-        return socialRelationService.getFollowing(userId, page, pageSize, keyword);
+        return socialRelationService.getFollowing(userId, targetUserId, page, pageSize, keyword);
     }
 
     @GetMapping("/fans")
     @Operation(summary = "粉丝列表", description = "获取我的粉丝列表，按关注时间倒序，keyword 仅过滤当前页昵称")
     public R<PaginationResult<FollowUserVo>> getFans(
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @RequestParam(value = "targetUserId", required = false) Long targetUserId,
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestParam(value = "keyword", required = false) String keyword) {
-        return socialRelationService.getFans(userId, page, pageSize, keyword);
+        return socialRelationService.getFans(userId, targetUserId, page, pageSize, keyword);
     }
 
     @GetMapping("/mutual")
     @Operation(summary = "互关列表", description = "获取我的互相关注列表，按关注时间倒序，keyword 仅过滤当前页昵称")
     public R<PaginationResult<FollowUserVo>> getMutual(
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @RequestParam(value = "targetUserId", required = false) Long targetUserId,
             @RequestParam(value = "page", defaultValue = "1") Integer page,
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
             @RequestParam(value = "keyword", required = false) String keyword) {
-        return socialRelationService.getMutual(userId, page, pageSize, keyword);
+        return socialRelationService.getMutual(userId, targetUserId, page, pageSize, keyword);
     }
 
     @GetMapping("/users/{userId}/stats")

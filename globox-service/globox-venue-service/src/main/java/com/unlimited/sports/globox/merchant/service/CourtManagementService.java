@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.merchant.service;
 
+import com.unlimited.sports.globox.model.merchant.dto.CourtBatchCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
 import com.unlimited.sports.globox.model.merchant.vo.CourtVo;
@@ -20,6 +21,7 @@ public interface CourtManagementService {
      * 创建场地
      */
     CourtVo createCourt(Long merchantId, CourtCreateDto createDTO);
+    List<CourtVo> batchCreateCourts(Long merchantId, CourtBatchCreateDto batchDTO);
 
     /**
      * 更新场地

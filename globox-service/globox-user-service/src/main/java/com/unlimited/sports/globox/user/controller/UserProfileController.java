@@ -72,9 +72,10 @@ public class UserProfileController {
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<UserProfileVo> getUserProfileById(
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long viewerId,
             @Parameter(description = "目标用户ID", required = true)
             @PathVariable Long userId) {
-        return userProfileService.getUserProfile(userId);
+        return userProfileService.getUserProfile(userId, viewerId);
     }
 
     @PutMapping

@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.merchant.service.impl;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.model.merchant.dto.CourtBatchCreateDto;
 import com.unlimited.sports.globox.model.merchant.enums.CourtTypeEnum;
 import com.unlimited.sports.globox.model.merchant.enums.GroundTypeEnum;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
@@ -62,6 +63,43 @@ public class CourtManagementServiceImpl implements CourtManagementService {
 
         log.info("创建场地成功，场地ID：{}，场馆ID：{}", insertedCourt.getCourtId(), createDTO.getVenueId());
         return convertToVO(insertedCourt);
+    }
+
+    /**
+     * @param merchantId
+     * @param batchDTO
+     * @return
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<CourtVo> batchCreateCourts(Long merchantId, CourtBatchCreateDto batchDTO) {
+        Long venueId = batchDTO.getVenueId();
+
+        // 1. 验证场馆归属 (确保安全，防止越权)
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null || !venue.getMerchantId().equals(merchantId)) {
+            throw new GloboxApplicationException("无权操作该场馆");
+        }
+
+        // 2. 遍历并创建
+        List<CourtVo> resultVos = batchDTO.getCourts().stream().map(item -> {
+            Court court = Court.builder()
+                    .venueId(venueId)
+                    .name(item.getName())
+                    .groundType(item.getGroundType())
+                    .courtType(item.getCourtType())
+                    .status(1) // 默认开放
+                    .build();
+
+            courtMapper.insert(court);
+
+            // 重新查询以获取数据库生成的字段（如 ID, createdAt）
+            Court inserted = courtMapper.selectById(court.getCourtId());
+            return convertToVO(inserted);
+        }).collect(Collectors.toList());
+
+        log.info("批量创建场地成功，场馆ID：{}，创建数量：{}", venueId, resultVos.size());
+        return resultVos;
     }
 
     @Override
@@ -192,10 +230,12 @@ public class CourtManagementServiceImpl implements CourtManagementService {
             // 转换场馆基本信息 (复用原有逻辑)
             MerchantVenueBasicInfo basicInfo = convertToVenueBasicVo(venue);
 
+            boolean isVenueClosed = venue.getStatus() != 1;
+
             // 3. 查询该场馆下的所有场地并转换为 VO (复用原有逻辑 convertToVO)
             List<Court> courtEntities = courtMapper.selectByVenueId(venue.getVenueId());
             List<CourtVo> courtVos = courtEntities.stream()
-                    .map(this::convertToVO)
+                    .map(court -> this.convertToVoForList(court, isVenueClosed))
                     .collect(Collectors.toList());
 
             // 4. 组装成嵌套对象
@@ -206,7 +246,7 @@ public class CourtManagementServiceImpl implements CourtManagementService {
                     .region(basicInfo.getRegion())
                     .imageUrls(basicInfo.getImageUrls())
                     .status(basicInfo.getStatus())
-                    .statusDesc(basicInfo.getStatusDesc())
+                    .statusDesc(basicInfo.getStatus() == 1 ? "正常营业" : "暂停营业")
                     .courts(courtVos)
                     .build();
         }).collect(Collectors.toList());
@@ -249,7 +289,6 @@ public class CourtManagementServiceImpl implements CourtManagementService {
                 .collect(Collectors.toList());
     }
 
-    // TODO 与其他服务抽离VO转化 ETA 2026/01/15
 
     private CourtVo convertToVO(Court court) {
         GroundTypeEnum groundType = GroundTypeEnum.getByCode(court.getGroundType());
@@ -265,6 +304,27 @@ public class CourtManagementServiceImpl implements CourtManagementService {
                 .courtTypeName(Optional.ofNullable(courtType).map(CourtTypeEnum::getName).orElse("未知"))
                 .status(court.getStatus())
                 .statusName(court.getStatus() == 1 ? "开放" : "不开放")
+                .createdAt(court.getCreatedAt())
+                .build();
+    }
+
+    private CourtVo convertToVoForList(Court court, boolean isVenueClosed) {
+        GroundTypeEnum groundType = GroundTypeEnum.getByCode(court.getGroundType());
+        CourtTypeEnum courtType = CourtTypeEnum.getByCode(court.getCourtType());
+
+        Integer finalCourtStatus = isVenueClosed ? 0 : court.getStatus();
+        String finalStatusName = isVenueClosed ? "不开放" : (court.getStatus() == 1 ? "开放" : "不开放");
+
+        return CourtVo.builder()
+                .courtId(court.getCourtId())
+                .venueId(court.getVenueId())
+                .courtName(court.getName())
+                .groundType(court.getGroundType())
+                .groundTypeName(Optional.ofNullable(groundType).map(GroundTypeEnum::getName).orElse("未知"))
+                .courtType(court.getCourtType())
+                .courtTypeName(Optional.ofNullable(courtType).map(CourtTypeEnum::getName).orElse("未知"))
+                .status(finalCourtStatus)  // 使用最终状态
+                .statusName(finalStatusName)  // 使用最终状态名称
                 .createdAt(court.getCreatedAt())
                 .build();
     }

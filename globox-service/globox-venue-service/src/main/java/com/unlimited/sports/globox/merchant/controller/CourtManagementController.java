@@ -6,6 +6,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.merchant.mapper.MerchantMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.service.CourtManagementService;
+import com.unlimited.sports.globox.model.merchant.dto.CourtBatchCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
 import com.unlimited.sports.globox.model.merchant.entity.Merchant;
@@ -80,6 +81,26 @@ public class CourtManagementController {
 
         CourtVo court = courtManagementService.createCourt(context.getMerchantId(), createDTO);
         return R.ok(court);
+    }
+
+    /**
+     * 批量创建场地
+     */
+    @PostMapping("/courts/batch-create")
+    public R<List<CourtVo>> batchCreateCourts(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestBody @Validated CourtBatchCreateDto batchDTO) {
+
+        // 1. 认证并获取上下文
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        // 2. 验证场馆访问权限
+        merchantAuthUtil.validateVenueAccess(context, batchDTO.getVenueId());
+
+        // 3. 调用服务层执行批量操作
+        List<CourtVo> result = courtManagementService.batchCreateCourts(context.getMerchantId(), batchDTO);
+        return R.ok(result);
     }
 
     /**

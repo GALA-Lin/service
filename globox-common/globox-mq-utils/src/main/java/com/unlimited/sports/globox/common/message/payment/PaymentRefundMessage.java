@@ -20,4 +20,9 @@ public class PaymentRefundMessage {
      * 第三方退款 NO
      */
     private String outRequestNo;
+
+    /**
+     * 是否因订单被取消，由系统发起的退款
+     */
+    private boolean orderCancelled;
 }

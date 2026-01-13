@@ -135,6 +135,7 @@ public class PaymentSuccessConsumer {
                         .outTradeNo(message.getOutTradeNo())
                         .refundReason("订单已取消，无需支付")
                         .refundAmount(message.getTotalAmount())
+                        .orderCancelled(true)
                         .build();
 
                 mqService.send(

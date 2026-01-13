@@ -43,4 +43,9 @@ public class UserRefundMessage {
      */
     private String refundReason;
 
+    /**
+     * 是否因订单被取消，由系统发起的退款
+     */
+    private boolean orderCancelled = false;
+
 }

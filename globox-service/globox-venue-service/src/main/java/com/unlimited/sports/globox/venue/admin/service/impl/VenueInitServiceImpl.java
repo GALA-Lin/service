@@ -1,6 +1,5 @@
 package com.unlimited.sports.globox.venue.admin.service.impl;
 
-import com.alibaba.nacos.common.utils.CollectionUtils;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.merchant.mapper.*;
@@ -53,7 +52,7 @@ public class VenueInitServiceImpl implements IVenueInitService {
     private VenuePriceTemplatePeriodMapper venuePriceTemplatePeriodMapper;
 
     @Autowired
-    private VenueBusinessHoursMapper venueBusinessHoursMapper;
+    private MerchantVenueBusinessHoursMapper venueBusinessHoursMapper;
 
     @Autowired
     private VenueBookingSlotTemplateMapper slotTemplateMapper;

@@ -16,7 +16,7 @@ import java.util.List;
  * @Description:
  */
 @Mapper
-public interface VenueBusinessHoursMapper extends BaseMapper<VenueBusinessHours> {
+public interface MerchantVenueBusinessHoursMapper extends BaseMapper<VenueBusinessHours> {
     /**
      * 查询场馆的所有营业时间规则
      * @param venueId 场馆ID

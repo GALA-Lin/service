@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.unlimited.sports.globox.merchant.mapper.VenueBusinessHoursMapper">
+<mapper namespace="com.unlimited.sports.globox.merchant.mapper.MerchantVenueBusinessHoursMapper">
 
     <!-- 查询指定时段内不可预订的场馆ID列表
          基于营业时间规则优先级：关闭 > 特殊 > 常规

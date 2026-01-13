@@ -1,7 +1,7 @@
 package com.unlimited.sports.globox.venue.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueBusinessHoursMapper;
+import com.unlimited.sports.globox.merchant.mapper.MerchantVenueBusinessHoursMapper;
 import com.unlimited.sports.globox.model.merchant.entity.VenueBusinessHours;
 import com.unlimited.sports.globox.model.merchant.enums.BusinessHourRuleTypeEnum;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
@@ -19,7 +19,7 @@ public class VenueBusinessHoursService implements IVenueBusinessHoursService {
 
 
     @Autowired
-    private VenueBusinessHoursMapper venueBusinessHoursMapper;
+    private MerchantVenueBusinessHoursMapper venueBusinessHoursMapper;
     /**
      * 获取场馆指定日期的营业时间配置
      * 优先级：特定日期规则 > 常规规则

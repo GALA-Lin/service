@@ -15,10 +15,11 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplateP
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.model.venue.enums.CourtStatus;
 import com.unlimited.sports.globox.model.venue.vo.BookingSlotVo;
-import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
 import com.unlimited.sports.globox.venue.service.IVenueActivityService;
+import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenuePriceService;
+import com.unlimited.sports.globox.venue.service.impl.VenueBusinessHoursService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,12 +47,11 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
     private final MerchantVenueBookingSlotRecordMapper recordMapper;
     private final CourtMapper courtMapper;
     private final VenueMapper venueMapper;
-    private final VenueBusinessHoursMapper businessHoursMapper;
     private final VenuePriceTemplatePeriodMapper priceTemplatePeriodMapper;
+    private final IVenueBusinessHoursService venueBusinessHoursService;
 
     private final IVenuePriceService venuePriceService;
     private final IVenueActivityService venueActivityService;
-    private final VenueActivityMapper venueActivityMapper;
 
     /**
      * 为指定日期生成槽位记录
@@ -272,16 +272,21 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
     @Override
     public List<VenueSlotAvailabilityVo> queryVenueAvailability(Long venueId, LocalDate date,
                                                                 LocalTime startTime, LocalTime endTime) {
+        log.info("查询场馆时段可用性 - venueId: {}, date: {}, timeRange: {} - {}",
+                venueId, date, startTime, endTime);
+
         // 1. 验证场馆
         Venue venue = venueMapper.selectById(venueId);
         if (venue == null) {
             throw new GloboxApplicationException("场馆不存在");
         }
 
-        // 2. 获取营业时间
-        VenueBusinessHours businessHours = getBusinessHours(venueId, date);
+        // 2. 使用统一的方法获取营业时间（与 BookingServiceImpl 保持一致）
+        VenueBusinessHours businessHours = venueBusinessHoursService.getBusinessHoursByDate(venueId, date);
+
+        // 营业时间为 null 或者是关闭日期，直接返回空列表
         if (businessHours == null) {
-            log.warn("场馆未配置营业时间或当天不营业 - venueId: {}, date: {}", venueId, date);
+            log.warn("场馆未配置营业时间 - venueId: {}, date: {}", venueId, date);
             return Collections.emptyList();
         }
 
@@ -303,31 +308,34 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
             return Collections.emptyList();
         }
 
+        // 4. 获取营业时间范围
         LocalTime openTime = businessHours.getOpenTime();
         LocalTime closeTime = businessHours.getCloseTime();
         List<Long> courtIds = courts.stream().map(Court::getCourtId).toList();
 
-        // 4. 批量查询所有场地的槽位模板（使用venue的mapper以支持活动）
+        log.debug("营业时间: {} - {}, 场地数量: {}", openTime, closeTime, courts.size());
+
+        // 5. 批量查询所有场地的槽位模板（在营业时间范围内）
         List<VenueBookingSlotTemplate> allTemplates = templateMapper.MerchantSelectByCourtIdsAndTimeRange(
                 courtIds,
                 openTime,
                 closeTime
         );
 
-        // 5. 批量查询所有场地该日期的槽位记录
+        // 6. 批量查询所有场地该日期的槽位记录
         List<VenueBookingSlotRecord> allRecords = recordMapper.MerchantSelectByCourtIdsAndDate(
                 courtIds,
                 date
         );
 
-        // 6. 构建映射表
+        // 7. 构建映射表
         Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = allTemplates.stream()
                 .collect(Collectors.groupingBy(VenueBookingSlotTemplate::getCourtId));
 
         Map<Long, VenueBookingSlotRecord> recordMap = allRecords.stream()
                 .collect(Collectors.toMap(VenueBookingSlotRecord::getSlotTemplateId, record -> record));
 
-        // 7. 批量获取所有槽位的价格
+        // 8. 批量获取所有槽位的价格
         List<LocalTime> slotStartTimes = allTemplates.stream()
                 .map(VenueBookingSlotTemplate::getStartTime)
                 .distinct()
@@ -344,7 +352,9 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                 slotStartTimes
         );
 
-        // 8. 批量获取场馆在该日期的所有活动
+        log.debug("批量获取价格完成，共{}个时间点", priceMap.size());
+
+        // 9. 批量获取场馆在该日期的所有活动
         List<VenueActivity> allActivities = venueActivityService.getActivitiesByVenueAndDate(
                 venue.getVenueId(),
                 date
@@ -363,7 +373,9 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                 Map.of() :
                 venueActivityService.getActivityLockedSlotsByIds(allActivityIds, date);
 
-        // 9. 为每个场地构建槽位可用性信息
+        log.debug("获取到{}个活动，占用{}个槽位", allActivities.size(), activityLockedSlots.size());
+
+        // 10. 为每个场地构建槽位可用性信息
         List<VenueSlotAvailabilityVo> result = new ArrayList<>();
 
         for (Court court : courts) {
@@ -371,6 +383,7 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                     templatesByCourtId.getOrDefault(court.getCourtId(), Collections.emptyList());
 
             if (courtTemplates.isEmpty()) {
+                log.debug("场地{}没有槽位模板，跳过", court.getCourtId());
                 continue; // 跳过没有槽位模板的场地
             }
 
@@ -396,7 +409,7 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                     .filter(BookingSlotVo::getIsAvailable)
                     .count();
 
-            // 转换为 SlotAvailabilityVo 格式（兼容原接口）
+            // 转换为 SlotAvailabilityVo 格式（兼容商家端接口）
             List<SlotAvailabilityVo> merchantSlots = convertToSlotAvailabilityVo(slots);
 
             // 构建场地级VO
@@ -412,13 +425,12 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
             result.add(courtVo);
         }
 
-        log.info("场馆ID: {} 日期: {} 查询到 {} 个场地的时段信息", venueId, date, result.size());
+        log.info("场馆ID: {} 日期: {} 查询到 {} 个场地的时段信息，总槽位数: {}",
+                venueId, date, result.size(),
+                result.stream().mapToInt(VenueSlotAvailabilityVo::getTotalCount).sum());
+
         return result;
     }
-
-    /**
-     * 构建 BookingSlotVo（复用用户端逻辑）
-     */
     private BookingSlotVo buildBookingSlotVo(
             VenueBookingSlotTemplate template,
             Map<Long, VenueBookingSlotRecord> recordMap,
@@ -542,7 +554,6 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
         if (courtType == null) {
             return "未知";
         }
-        // 这里根据实际的枚举来映射，示例：
         return switch (courtType) {
             case 1 -> "红土";
             case 2 -> "硬地";
@@ -555,30 +566,8 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
      * 获取营业时间
      */
     private VenueBusinessHours getBusinessHours(Long venueId, LocalDate date) {
-        int dayOfWeek = date.getDayOfWeek().getValue();
-        List<VenueBusinessHours> rules = businessHoursMapper.selectByVenueIdAndDate(venueId, date, dayOfWeek);
-
-        if (rules.isEmpty()) {
-            return getDefaultBusinessHours(venueId);
-        }
-
-        // 优先级：关闭日期 > 特殊日期 > 常规规则
-        for (VenueBusinessHours rule : rules) {
-            if (BusinessHourRuleTypeEnum.CLOSED_DATE.getCode().equals(rule.getRuleType())) {
-                return null;
-            }
-        }
-
-        for (VenueBusinessHours rule : rules) {
-            if (BusinessHourRuleTypeEnum.SPECIAL_DATE.getCode().equals(rule.getRuleType())) {
-                return rule;
-            }
-        }
-
-        return rules.stream()
-                .filter(r -> BusinessHourRuleTypeEnum.REGULAR.getCode().equals(r.getRuleType()))
-                .findFirst()
-                .orElse(getDefaultBusinessHours(venueId));
+        // 直接使用 VenueBusinessHoursService 的方法，保持逻辑一致
+        return venueBusinessHoursService.getBusinessHoursByDate(venueId, date);
     }
 
     /**

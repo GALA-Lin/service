@@ -1,6 +1,8 @@
 package com.unlimited.sports.globox.coach.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.unlimited.sports.globox.model.coach.dto.*;
+import com.unlimited.sports.globox.model.coach.entity.CoachSlotRecord;
 import com.unlimited.sports.globox.model.coach.vo.*;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,7 +15,7 @@ import java.util.Map;
  * 教练时段管理服务接口
  * 核心设计:按需生成记录,节约存储空间
  */
-public interface ICoachSlotService {
+public interface ICoachSlotService  extends IService<CoachSlotRecord> {
 
     /**
      * 初始化时段模板(不生成记录)

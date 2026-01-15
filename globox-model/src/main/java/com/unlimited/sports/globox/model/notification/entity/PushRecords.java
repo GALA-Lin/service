@@ -98,10 +98,10 @@ public class PushRecords  implements Serializable {
     private String action;
 
     /**
-     * 自定义扩展数据（JSON格式）
+     * 自定义扩展数据（JSON格式字符串）
      */
-    @TableField(value = "custom_data", typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> customData;
+    @TableField("custom_data")
+    private String customData;
 
     /**
      * 推送状态：0=待发送, 1=已发送, 2=已送达, 3=失败, 4=已过滤

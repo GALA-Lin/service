@@ -377,6 +377,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .userId(order.getBuyerId())
                         .operatorType(operatorType)
                         .recordIds(recordIds)
+                        .isActivity(order.getActivity())
                         .bookingDate(bookingDate)
                         .build();
 
@@ -392,7 +393,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                             OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
                             unlockMsg);
                 } else {
-                    throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
+                    // 忽略未知来源
                 }
             }
         });
@@ -541,15 +542,13 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
             newOrderStatus = OrderStatusEnum.PARTIALLY_REFUNDED;
         }
 
-        // 10) 更新订单状态（幂等：只有状态变化才写）
+
+        // 10) 更新订单状态
         if (newOrderStatus != oldOrderStatus) {
-            ordersMapper.update(
-                    null,
-                    Wrappers.<Orders>lambdaUpdate()
-                            .eq(Orders::getOrderNo, orderNo)
-                            .set(Orders::getOrderStatus, newOrderStatus)
-                            .set(Orders::getRefundApplyId, refundApplyId)
-            );
+            order.setOrderStatus(newOrderStatus);
+            order.setRefundApplyId(refundApplyId);
+            ordersMapper.updateById(order);
+
         }
 
         // 11) 写订单级日志

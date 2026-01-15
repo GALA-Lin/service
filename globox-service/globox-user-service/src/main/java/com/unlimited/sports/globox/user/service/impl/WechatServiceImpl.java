@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.user.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.model.auth.vo.WechatUserInfo;
@@ -115,6 +116,7 @@ public class WechatServiceImpl implements WechatService {
     @Override
     public WechatUserInfo getOpenIdAndUnionId(String code, String clientType) {
         // 1) 基础校验
+        log.info("wechat log code :{}",code);
         if (!StringUtils.hasText(code)) {
             log.error("【微信服务】授权码为空");
             throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
@@ -140,13 +142,24 @@ public class WechatServiceImpl implements WechatService {
         String appSecret = config.getAppSecret();
 
         // 4) 构建请求
-        String url = String.format("%s?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code",
-                apiUrl, appId, appSecret, code);
+        String url;
+        ClientType clientTypeEnum = ClientType.fromValue(clientType);
+        if (clientTypeEnum.equals(ClientType.APP)) {
+            url = String.format("%s?appid=%s&secret=%s&code=%s&grant_type=authorization_code",
+                    apiUrl, appId, appSecret, code);
+        } else {
+            url = String.format("%s?appid=%s&secret=%s&js_code=%s&grant_type=authorization_code",
+                    apiUrl, appId, appSecret, code);
+        }
+
+
+        log.info("url:{}", url);
 
         try {
             if (restTemplate == null) {
                 restTemplate = new RestTemplate();
             }
+
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
 
             String responseBody = response.getBody();

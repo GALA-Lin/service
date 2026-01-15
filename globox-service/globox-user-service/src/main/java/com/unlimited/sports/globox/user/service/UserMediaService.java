@@ -4,6 +4,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
+import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -43,11 +44,11 @@ public interface UserMediaService {
     R<FileUploadVo> uploadMediaImage(MultipartFile file);
 
     /**
-     * 上传媒体视频
+     * 上传媒体视频（自动生成封面）
      *
      * @param file 视频文件
-     * @return 上传结果
+     * @return 上传结果（包含封面URL）
      */
-    R<FileUploadVo> uploadMediaVideo(MultipartFile file);
+    R<VideoUploadVo> uploadMediaVideo(MultipartFile file);
 }
 

@@ -110,22 +110,25 @@ public class NotificationQueryServiceImpl implements INotificationQueryService {
 
     @Override
     public PaginationResult<NotificationMessageVO> getMessages(GetMessagesRequest request, Long userId) {
+        log.info("request{}",request);
         // 根据消息类型获取模块代码
         MessageTypeEnum messageType = MessageTypeEnum.fromCode(request.getMessageType());
         if (messageType == null) {
             throw new IllegalArgumentException("未知的消息类型: " + request.getMessageType());
         }
 
+        List<Integer> moduleCodes = messageType.getModuleCodes();
+        log.info("[消息查询] userId={}, messageType={}, moduleCodes={}", userId, request.getMessageType(), moduleCodes);
+
         // 构建查询条件
         LambdaQueryWrapper<PushRecords> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PushRecords::getUserId, userId)
-                .in(PushRecords::getNotificationModule, messageType.getModuleCodes())
+                .in(PushRecords::getNotificationModule, moduleCodes)
                 .orderByDesc(PushRecords::getCreatedAt);
 
         // 分页查询
         Page<PushRecords> page = new Page<>(request.getPageNum(), request.getPageSize());
         IPage<PushRecords> pageResult = pushRecordsService.page(page, wrapper);
-
         // 转换为 VO
         List<NotificationMessageVO> voList = pageResult.getRecords().stream()
                 .map(NotificationMessageVO::fromEntity)

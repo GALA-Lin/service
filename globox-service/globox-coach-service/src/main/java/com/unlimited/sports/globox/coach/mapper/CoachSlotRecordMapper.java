@@ -63,29 +63,44 @@ public interface CoachSlotRecordMapper extends BaseMapper<CoachSlotRecord> {
     );
 
     /**
-     * 原子性地更新时段状态为锁定（只有当前状态为AVAILABLE时才能更新）
-     * 返回受影响的行数，0表示该时段已被其他用户占用
+     * 原子性更新锁定状态（仅当可用时）
+     * 使用CAS机制，防止超售
+     *
+     * 状态说明：
+     * 0=AVAILABLE(可用), 1=LOCKED(锁定), 2=UNAVAILABLE(不可预约), 3=CUSTOM_EVENT(自定义日程)
      *
      * @param recordId 记录ID
-     * @param newStatus 新状态
-     * @param userId 操作人ID
+     * @param status 目标状态（通常为1=LOCKED）
+     * @param userId 用户ID
      * @param lockedUntil 锁定截止时间
-     * @return 受影响的行数
+     * @return 更新的行数，0表示更新失败（记录已被占用或不是可用状态）
      */
     @Update("UPDATE coach_slot_record " +
-            "SET status = #{newStatus}, " +
+            "SET status = #{status}, " +
             "    locked_by_user_id = #{userId}, " +
             "    locked_until = #{lockedUntil}, " +
-            "    locked_type = 1, " +
-            "    operator_id = #{userId}, " +
-            "    operator_source = 2, " +
+            "    locked_type = 1, " +  // 1=用户下单锁定
             "    updated_at = NOW() " +
             "WHERE coach_slot_record_id = #{recordId} " +
-            "AND (status = 1 OR (status = 1 AND locked_by_user_id = #{userId}))")
-    int updateLockIfAvailable(
-            @Param("recordId") Long recordId,
-            @Param("newStatus") Integer newStatus,
-            @Param("userId") Long userId,
-            @Param("lockedUntil") LocalDateTime lockedUntil
-    );
+            "AND status = 0")  // 只有状态为0(AVAILABLE)才能更新
+    int updateLockIfAvailable(@Param("recordId") Long recordId,
+                              @Param("status") Integer status,
+                              @Param("userId") Long userId,
+                              @Param("lockedUntil") LocalDateTime lockedUntil);
+
+    /**
+     * 批量解锁过期的时段
+     *
+     * @param now 当前时间
+     * @return 更新的行数
+     */
+    @Update("UPDATE coach_slot_record " +
+            "SET status = 0, " +  // 0=AVAILABLE
+            "    locked_by_user_id = NULL, " +
+            "    locked_until = NULL, " +
+            "    locked_type = NULL, " +
+            "    updated_at = NOW() " +
+            "WHERE status = 1 " +  // 1=LOCKED
+            "AND locked_until < #{now}")
+    int unlockExpiredSlots(@Param("now") LocalDateTime now);
 }

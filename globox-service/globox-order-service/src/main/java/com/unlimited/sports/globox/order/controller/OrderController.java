@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.order.controller;
 
+import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.order.dto.*;
@@ -10,6 +11,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +21,7 @@ import javax.validation.constraints.NotNull;
 /**
  * 订单相关接口 - 控制层
  */
+@Slf4j
 @Validated
 @RestController
 @RequestMapping("/orders")
@@ -83,9 +86,12 @@ public class OrderController {
     @GetMapping
     @Operation(summary = "获取订单列表", description = "分页获取当前用户的订单列表")
     public R<PaginationResult<GetOrderVo>> getOrderPage(
-            @Validated @Parameter(description = "订单分页查询参数") GetOrderPageDto pageDto) {
+            @Validated @Parameter(description = "订单分页查询参数") GetOrderPageDto pageDto,
+            @RequestHeader(value = RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID,required = false) String openId) {
 
-        PaginationResult<GetOrderVo> resultList = orderService.getOrderPage(pageDto);
+        log.info("openid:{}", openId);
+
+        PaginationResult<GetOrderVo> resultList = orderService.getOrderPage(pageDto, openId);
         return R.ok(resultList);
     }
 

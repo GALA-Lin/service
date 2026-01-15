@@ -20,8 +20,10 @@ import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapter;
 import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapterFactory;
 import com.unlimited.sports.globox.venue.mapper.VenueThirdPartyConfigMapper;
 import com.unlimited.sports.globox.venue.mapper.ThirdPartyPlatformMapper;
+import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConfig;
 import com.unlimited.sports.globox.model.venue.entity.venues.ThirdPartyPlatform;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.venue.adapter.dto.ThirdPartyCourtSlotDto;
 import com.unlimited.sports.globox.venue.adapter.dto.ThirdPartySlotDto;
 import com.unlimited.sports.globox.common.constants.SourcePlatformConsts;
@@ -37,6 +39,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.service.*;
+import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.util.TimeSlotSplitUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -92,6 +95,9 @@ public class BookingServiceImpl implements IBookingService {
 
     @Autowired
     private VenueThirdPartyConfigMapper venueThirdPartyConfigMapper;
+
+    @Autowired
+    private VenueActivityParticipantMapper venueActivityParticipantMapper;
 
     @Autowired
     private ThirdPartyPlatformMapper thirdPartyPlatformMapper;
@@ -219,8 +225,22 @@ public class BookingServiceImpl implements IBookingService {
                 Map.of() :
                 venueActivityService.getActivityLockedSlotsByIds(allActivityIds, bookingDate);
 
+        // 批量查询用户报名的活动（活动ID集合，只查询未取消的记录）
+        Set<Long> userRegisteredActivityIds = Collections.emptySet();
+        if (dto.getUserId() != null && !allActivityIds.isEmpty()) {
+            List<VenueActivityParticipant> participants = venueActivityParticipantMapper.selectList(
+                    new LambdaQueryWrapper<VenueActivityParticipant>()
+                            .eq(VenueActivityParticipant::getUserId, dto.getUserId())
+                            .in(VenueActivityParticipant::getActivityId, allActivityIds)
+                            .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+            );
+            userRegisteredActivityIds = participants.stream()
+                    .map(VenueActivityParticipant::getActivityId)
+                    .collect(Collectors.toSet());
+        }
 
         // 构建场地槽位结果，过滤掉没有槽位模板的场地
+        Set<Long> finalUserRegisteredActivityIds = userRegisteredActivityIds;
         return courts.stream()
                 .map(court -> CourtSlotVo.buildVo(
                         court,
@@ -229,7 +249,8 @@ public class BookingServiceImpl implements IBookingService {
                         priceMap,
                         activityMap,
                         activityLockedSlots,
-                        dto.getUserId()
+                        dto.getUserId(),
+                        finalUserRegisteredActivityIds
                 ))
                 .filter(courtSlotVo -> !courtSlotVo.getSlots().isEmpty())  // 过滤掉没有槽位的场地
                 .collect(Collectors.toList());
@@ -484,7 +505,7 @@ public class BookingServiceImpl implements IBookingService {
     public ActivityPreviewContext validateAndPrepareActivityContext(Long activityId) {
         // 查询活动详情
         VenueActivity activity = venueActivityMapper.selectById(activityId);
-        if (activity == null) {
+        if (activity == null || VenueActivityStatusEnum.CANCELLED.getValue().equals(activity.getStatus())) {
             log.warn("活动不存在 - activityId={}", activityId);
             throw new GloboxApplicationException(VenueCode.ACTIVITY_NOT_EXIST);
         }

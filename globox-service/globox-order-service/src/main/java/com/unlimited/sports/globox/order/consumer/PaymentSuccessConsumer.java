@@ -202,12 +202,14 @@ public class PaymentSuccessConsumer {
             throw new GloboxApplicationException(OrderCode.ORDER_ITEM_NOT_EXIST);
         }
 
+        OrderPaidMessage paidMessage = OrderPaidMessage.builder()
+                .orderNo(orderNo)
+                .userId(order.getBuyerId())
+                .venueId(order.getSellerId())
+                .build();
         // 8) 发送订单支付成功消息给商家
         if (order.getSellerType() == SellerTypeEnum.VENUE) {
-            OrderPaidMessage paidMessage = OrderPaidMessage.builder()
-                    .orderNo(orderNo)
-                    .userId(order.getBuyerId())
-                    .build();
+
 
             OrderActivities orderActivities = orderActivitiesMapper.selectOne(
                     Wrappers.<OrderActivities>lambdaQuery()
@@ -232,8 +234,18 @@ public class PaymentSuccessConsumer {
                     paidMessage);
 
         } else if (order.getSellerType().equals(SellerTypeEnum.COACH)) {
-            // 9.2) 发送订单确认消息给教练 TODO ETA 等待约教练模块完成
+            // 9.2) 发送订单确认消息给教练
 
+            paidMessage.setIsActivity(false);
+            paidMessage.setRecordIds(
+                    orderItems.stream()
+                            .map(OrderItems::getRecordId)
+                            .toList());
+
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
+                    OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
+                    paidMessage);
         }
 
         // 找出最晚时间

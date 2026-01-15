@@ -25,7 +25,7 @@ public class PlanetCardVo {
     @Schema(description = "球风标签列表")
     private List<StyleTagVo> styleTags;
 
-    @Schema(description = "球龄", example = "5")
+    @Schema(description = "球龄年数（动态计算）", example = "2")
     private Integer sportsYears;
 
     @Schema(description = "持拍手", example = "RIGHT")
@@ -34,8 +34,11 @@ public class PlanetCardVo {
     @Schema(description = "主力拍型号名称", example = "Pure Drive 98")
     private String mainRacketModelName;
 
-    @Schema(description = "常驻区域", example = "Beijing Chaoyang")
+    @Schema(description = "常驻区域 code（region.code）", example = "510104")
     private String homeDistrict;
+
+    @Schema(description = "常驻区域名称", example = "成都市武侯区")
+    private String homeDistrictName;
 
     @Schema(description = "力量", example = "80")
     private Integer power;

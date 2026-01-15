@@ -7,14 +7,17 @@ import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
+import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueListDto;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
 import com.unlimited.sports.globox.model.venue.enums.CourtCountFilter;
 import com.unlimited.sports.globox.model.venue.enums.CourtStatus;
 import com.unlimited.sports.globox.model.venue.enums.CourtType;
 import com.unlimited.sports.globox.model.venue.enums.GroundType;
 import com.unlimited.sports.globox.model.venue.vo.VenueItemVo;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
+import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueSearchService;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +60,9 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
 
     @Autowired
     private IVenueBusinessHoursService venueBusinessHoursService;
+
+    @Autowired
+    private VenuePriceTemplatePeriodMapper venuePriceTemplatePeriodMapper;
 
     @Override
     public PaginationResult<VenueItemVo> searchVenues(GetVenueListDto dto) {
@@ -126,6 +132,19 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
             log.info("总计不可预订的场馆数量：{}", unavailableVenueIds.size());
         }
 
+        // 预处理：查询符合价格范围的场馆ID列表
+        Set<Long> priceQualifiedVenueIds = null;
+        if (dto.getMinPrice() != null || dto.getMaxPrice() != null) {
+            List<Long> priceQualifiedList = getPriceQualifiedVenueIds(dto.getMinPrice(), dto.getMaxPrice());
+            if (priceQualifiedList != null && !priceQualifiedList.isEmpty()) {
+                priceQualifiedVenueIds = new HashSet<>(priceQualifiedList);
+                log.info("价格范围过滤的符合条件场馆数量：{}", priceQualifiedVenueIds.size());
+            } else {
+                log.info("价格范围{}~{}无匹配场馆", dto.getMinPrice(), dto.getMaxPrice());
+                return PaginationResult.build(Collections.emptyList(), 0L, dto.getPage(), dto.getPageSize());
+            }
+        }
+
         // 解析场地片数筛选
         Integer minCourtCount = null;
         Integer maxCourtCount = null;
@@ -147,12 +166,11 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         List<Long> facilityVenueIdsList = facilityVenueIds != null ? new ArrayList<>(facilityVenueIds) : null;
         List<Long> courtTypeVenueIdsList = courtTypeVenueIds != null ? new ArrayList<>(courtTypeVenueIds) : null;
         List<Long> unavailableVenueIdsList = unavailableVenueIds.isEmpty() ? null : new ArrayList<>(unavailableVenueIds);
+        List<Long> priceQualifiedVenueIdsList = priceQualifiedVenueIds != null ? new ArrayList<>(priceQualifiedVenueIds) : null;
 
         // 使用XML方法在数据库层面进行所有过滤、排序和计算距离
         List<Map<String, Object>> searchResults = venueMapper.searchVenues(
                 dto.getKeyword(),
-                dto.getMinPrice(),
-                dto.getMaxPrice(),
                 minCourtCount,
                 maxCourtCount,
                 dto.getLatitude(),
@@ -163,6 +181,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 facilityVenueIdsList,
                 courtTypeVenueIdsList,
                 unavailableVenueIdsList,
+                priceQualifiedVenueIdsList,
                 offset,
                 dto.getPageSize()
         );
@@ -170,8 +189,6 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         // 查询总数
         long total = venueMapper.countSearchVenues(
                 dto.getKeyword(),
-                dto.getMinPrice(),
-                dto.getMaxPrice(),
                 minCourtCount,
                 maxCourtCount,
                 dto.getLatitude(),
@@ -179,10 +196,15 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 dto.getMaxDistance(),
                 facilityVenueIdsList,
                 courtTypeVenueIdsList,
-                unavailableVenueIdsList
+                unavailableVenueIdsList,
+                priceQualifiedVenueIdsList
         );
 
         log.info("搜索结果总数：{}", total);
+
+        if ("price".equals(dto.getSortBy())) {
+            sortSearchResultsByPrice(searchResults, dto.getSortOrder());
+        }
 
         // 转换为VO
         List<VenueItemVo> venueItemVos = convertToVo(searchResults);
@@ -234,16 +256,19 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                     ? ((Number) result.get("courtCount")).intValue()
                     : 0;
 
-            // 价格和评分
-            BigDecimal minPrice = result.get("minPrice") != null
-                    ? new BigDecimal(result.get("minPrice").toString())
-                    : BigDecimal.ZERO;
+            // 评分
             BigDecimal avgRating = result.get("avgRating") != null
                     ? new BigDecimal(result.get("avgRating").toString())
                     : BigDecimal.ZERO;
             Integer ratingCount = result.get("ratingCount") != null
                     ? ((Number) result.get("ratingCount")).intValue()
                     : 0;
+
+            // 最低价格（从templateId动态计算）
+            Long templateId = result.get("templateId") != null
+                    ? ((Number) result.get("templateId")).longValue()
+                    : null;
+            BigDecimal minPrice = calculateMinPrice(templateId);
 
             // 获取设施列表
             List<String> facilities = facilityMap.getOrDefault(venueId, Collections.emptyList());
@@ -338,5 +363,114 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         }
         String[] urls = imageUrls.split(";");
         return urls.length > 0 ? urls[0] : defaultVenueListCoverImage;
+    }
+
+    /**
+     * 预处理：查询符合价格范围的场馆ID列表
+     * 从价格模板中检查是否存在符合用户价格范围的价格
+     * 只要存在任何一种价格类型（工作日/周末/节假日）符合条件，就认为场馆符合
+     *
+     * @param minPrice 最低价格（null则不限制）
+     * @param maxPrice 最高价格（null则不限制）
+     * @return 符合条件的场馆ID列表
+     */
+    private List<Long> getPriceQualifiedVenueIds(BigDecimal minPrice, BigDecimal maxPrice) {
+        // 查询所有启用场馆及其价格模板
+        List<Venue> allVenues = venueMapper.selectList(new LambdaQueryWrapper<Venue>()
+                .eq(Venue::getStatus, 1));  // 只查询启用的场馆
+
+        List<Long> qualifiedVenueIds = new ArrayList<>();
+
+        for (Venue venue : allVenues) {
+            if (venue.getTemplateId() == null) {
+                // 没有配置价格模板的场馆不符合条件
+                continue;
+            }
+
+            // 查询该场馆的所有价格时段
+            List<VenuePriceTemplatePeriod> periods = venuePriceTemplatePeriodMapper.selectByTemplateId(venue.getTemplateId());
+
+            if (periods == null || periods.isEmpty()) {
+                continue;
+            }
+
+            // 检查是否存在任何价格符合用户的价格范围
+            boolean hasPriceInRange = periods.stream().anyMatch(period -> {
+                List<BigDecimal> prices = new ArrayList<>();
+                if (period.getWeekdayPrice() != null) {
+                    prices.add(period.getWeekdayPrice());
+                }
+                if (period.getWeekendPrice() != null) {
+                    prices.add(period.getWeekendPrice());
+                }
+                if (period.getHolidayPrice() != null) {
+                    prices.add(period.getHolidayPrice());
+                }
+
+                // 检查是否存在价格符合范围
+                return prices.stream().anyMatch(price -> {
+                    boolean meetsMin = minPrice == null || price.compareTo(minPrice) >= 0;
+                    boolean meetsMax = maxPrice == null || price.compareTo(maxPrice) <= 0;
+                    return meetsMin && meetsMax;
+                });
+            });
+
+            if (hasPriceInRange) {
+                qualifiedVenueIds.add(venue.getVenueId());
+            }
+        }
+
+        return qualifiedVenueIds;
+    }
+
+    /**
+     * 对搜索结果按价格排序
+     *
+     * @param searchResults 数据库查询的原始结果
+     * @param sortOrder 排序顺序：1=升序, 2=降序
+     */
+    private void sortSearchResultsByPrice(List<Map<String, Object>> searchResults, Integer sortOrder) {
+        searchResults.sort((r1, r2) -> {
+            Long templateId1 = r1.get("templateId") != null ? ((Number) r1.get("templateId")).longValue() : null;
+            Long templateId2 = r2.get("templateId") != null ? ((Number) r2.get("templateId")).longValue() : null;
+
+            BigDecimal price1 = calculateMinPrice(templateId1);
+            BigDecimal price2 = calculateMinPrice(templateId2);
+
+            // sortOrder: 1=升序(ASC), 2=降序(DESC)
+            if (sortOrder != null && sortOrder == 2) {
+                return price2.compareTo(price1);  // 降序
+            } else {
+                return price1.compareTo(price2);  // 升序（默认）
+            }
+        });
+    }
+
+    /**
+     * 计算场馆最低价格
+     * 从价格模板中获取所有价格类型（工作日、周末、节假日），取最小值
+     * 如果查不到价格则默认999
+     *
+     * @param templateId 价格模板ID
+     * @return 最低价格
+     */
+    private BigDecimal calculateMinPrice(Long templateId) {
+        if (templateId == null) {
+            return new BigDecimal("999");
+        }
+
+        List<VenuePriceTemplatePeriod> periods = venuePriceTemplatePeriodMapper.selectByTemplateId(templateId);
+
+        if (periods == null || periods.isEmpty()) {
+            return new BigDecimal("999");
+        }
+
+        return periods.stream()
+                .flatMap(period -> java.util.Arrays.stream(
+                        new BigDecimal[]{period.getWeekdayPrice(), period.getWeekendPrice(), period.getHolidayPrice()}
+                ))
+                .filter(Objects::nonNull)
+                .min(BigDecimal::compareTo)
+                .orElse(new BigDecimal("999"));
     }
 }

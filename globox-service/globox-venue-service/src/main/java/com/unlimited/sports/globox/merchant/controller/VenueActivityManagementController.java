@@ -7,7 +7,9 @@ import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
 
@@ -35,19 +37,20 @@ public class VenueActivityManagementController {
      * @param dto        创建活动请求
      * @return 活动ID
      */
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public R<Long> createActivity(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @Valid @RequestBody CreateActivityDto dto) {
+            @RequestPart("dto") @Valid CreateActivityDto dto, // 接收 JSON 配置
+            @RequestPart(value = "images", required = false) MultipartFile[] images // 接收可选图片文件
+    ) {
+        log.info("商家创建活动(带图片) - activityName: {}, 图片数量: {}",
+                dto.getActivityName(), images != null ? images.length : 0);
 
-        log.info("商家创建活动 - employeeId: {}, role: {}, activityName: {}", employeeId, roleStr, dto.getActivityName());
-
-        // 验证权限并获取上下文
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-        Long activityId = activityManagementService.createActivity(dto, context);
 
-        log.info("活动创建成功 - activityId: {}", activityId);
+        // 调用 Service，传入图片文件
+        Long activityId = activityManagementService.createActivity(dto, images, context);
 
         return R.ok(activityId);
     }

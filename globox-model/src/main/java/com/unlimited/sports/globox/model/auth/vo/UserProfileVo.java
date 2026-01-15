@@ -40,7 +40,7 @@ public class UserProfileVo {
     @Schema(description = "性别", example = "MALE")
     private String gender;
 
-    @Schema(description = "球龄", example = "5")
+    @Schema(description = "球龄年数（动态计算）", example = "2")
     private Integer sportsYears;
 
     @Schema(description = "NTRP", example = "4.5")
@@ -49,8 +49,11 @@ public class UserProfileVo {
     @Schema(description = "持拍手", example = "RIGHT")
     private String preferredHand;
 
-    @Schema(description = "常驻区域", example = "Beijing Chaoyang")
+    @Schema(description = "常驻区域 code（region.code）", example = "510104")
     private String homeDistrict;
+
+    @Schema(description = "常驻区域名称", example = "成都市武侯区")
+    private String homeDistrictName;
 
     @Schema(description = "力量", example = "80")
     private Integer power;
@@ -70,7 +73,7 @@ public class UserProfileVo {
     @Schema(description = "心理", example = "90")
     private Integer mental;
 
-    @Schema(description = "球拍列表")
+    @Schema(description = "球拍列表（包含是否主力拍）")
     private List<UserRacketVo> rackets;
 
     @Schema(description = "球风标签列表")

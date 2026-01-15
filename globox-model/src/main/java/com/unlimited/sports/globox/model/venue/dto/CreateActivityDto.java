@@ -34,6 +34,11 @@ public class CreateActivityDto {
     private String activityName;
 
     /**
+     * 活动图片URL列表（可选）
+     */
+    private List<String> imageUrls;
+
+    /**
      * 活动日期（不能是过去的日期）
      */
     @NotNull(message = "活动日期不能为空")

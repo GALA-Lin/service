@@ -37,13 +37,6 @@ public enum NotificationModuleEnum {
      * 系统模块
      */
     SYSTEM(5, "SYSTEM", "系统模块"),
-
-
-    /**
-     * 订单模块
-     */
-    ORDER(6, "ORDER","订单模块"),
-
     ;
 
     @EnumValue

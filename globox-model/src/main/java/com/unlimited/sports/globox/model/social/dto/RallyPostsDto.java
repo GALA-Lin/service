@@ -13,7 +13,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -86,11 +88,13 @@ public class RallyPostsDto {
     /**
      * 活动类型: 0=不限 1=单打 2=双打
      */
+    @Min(value = 0, message = "数据不合法")
     private int rallyActivityType = RallyActivityTypeEnum.UNLIMITED.getCode();
 
     /**
      * 性别限制: 0=不限 1=仅男生 2=仅女生
      */
+    @Min(value = 0, message = "数据不合法")
     private int rallyGenderLimit = RallyGenderLimitEnum.NO_LIMIT.getCode();
 
     /**

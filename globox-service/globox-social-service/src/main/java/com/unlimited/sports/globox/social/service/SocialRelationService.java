@@ -30,7 +30,13 @@ public interface SocialRelationService {
      * 检查是否存在任意方向的拉黑关系
      */
     boolean isBlocked(Long viewerId, Long targetUserId);
+
+    /**
+     * 获取我拉黑的用户列表
+     */
+    R<PaginationResult<com.unlimited.sports.globox.model.social.vo.BlockUserVo>> getBlockedUsers(Long userId, Integer page, Integer pageSize, String keyword);
 }
+
 
 
 

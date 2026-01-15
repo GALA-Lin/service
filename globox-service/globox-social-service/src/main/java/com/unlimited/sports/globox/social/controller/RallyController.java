@@ -73,7 +73,7 @@ public class RallyController {
      * @return 创建结果
      */
     @PostMapping("/create")
-    public R createRally(@RequestBody RallyPostsDto rallyPostsDto,
+    public R createRally(@RequestBody @Valid RallyPostsDto rallyPostsDto,
                          @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long rallyApplicantId) {
         if (rallyApplicantId == null){
             log.error("请求头中缺少{}",HEADER_USER_ID);

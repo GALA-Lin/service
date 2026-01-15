@@ -66,7 +66,7 @@ public interface RallyPostsMapper extends BaseMapper<RallyPosts> {
     int myActivitiesCount(@Param("userId")Long userId);
 
 
-Long countRallyPostsList(@Param("area") List<String> area,
+    Long countRallyPostsList(@Param("area") List<String> area,
                          @Param("timeRange") Integer timeRange,
                          @Param("genderLimit") Integer genderLimit,
                          @Param("ntrpMin") Double ntrpMin,

@@ -6,9 +6,12 @@ import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.dubbo.user.dto.UserInfoDto;
+import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
+import com.unlimited.sports.globox.model.auth.entity.AuthIdentity;
 import com.unlimited.sports.globox.user.service.UserProfileService;
+import com.unlimited.sports.globox.user.mapper.AuthIdentityMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +41,9 @@ public class UserDubboServiceImpl implements UserDubboService {
 
     @Autowired
     private UserProfileService userProfileService;
+
+    @Autowired
+    private AuthIdentityMapper authIdentityMapper;
 
     @Override
     public RpcResult<UserInfoVo> getUserInfo(Long userId) {
@@ -111,5 +117,51 @@ public class UserDubboServiceImpl implements UserDubboService {
         response.setUsers(userInfoList);
         response.setUserCount(responseCount);
         return RpcResult.ok(response);
+    }
+
+    @Override
+    public RpcResult<UserPhoneDto> getUserPhone(Long userId) {
+        log.info("【RPC调用】查询用户手机号, userId={}", userId);
+        AuthIdentity identity = authIdentityMapper.selectOne(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<AuthIdentity>lambdaQuery()
+                        .eq(AuthIdentity::getUserId, userId)
+                        .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
+                        .eq(AuthIdentity::getVerified, true)
+        );
+        if (identity == null) {
+            return RpcResult.ok(null);
+        }
+        return RpcResult.ok(UserPhoneDto.builder()
+                .userId(userId)
+                .phone(identity.getIdentifier())
+                .build());
+    }
+
+    @Override
+    public RpcResult<List<UserPhoneDto>> batchGetUserPhone(List<Long> userIds) {
+        if (CollectionUtils.isEmpty(userIds)) {
+            return RpcResult.ok(Collections.emptyList());
+        }
+        List<Long> distinctIds = userIds.stream()
+                .filter(id -> id != null)
+                .distinct()
+                .limit(50)
+                .collect(Collectors.toList());
+        List<AuthIdentity> identities = authIdentityMapper.selectList(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<AuthIdentity>lambdaQuery()
+                        .in(AuthIdentity::getUserId, distinctIds)
+                        .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
+                        .eq(AuthIdentity::getVerified, true)
+        );
+        if (CollectionUtils.isEmpty(identities)) {
+            return RpcResult.ok(Collections.emptyList());
+        }
+        List<UserPhoneDto> result = identities.stream()
+                .map(i -> UserPhoneDto.builder()
+                        .userId(i.getUserId())
+                        .phone(i.getIdentifier())
+                        .build())
+                .collect(Collectors.toList());
+        return RpcResult.ok(result);
     }
 }

@@ -7,6 +7,8 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
+import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.venue.service.IVenueActivityParticipantService;
@@ -36,15 +38,16 @@ public class VenueActivityParticipantServiceImpl extends ServiceImpl<VenueActivi
 
         // 查询活动详情
         VenueActivity activity = activityMapper.selectById(activityId);
-        if (activity == null) {
+        if (activity == null || VenueActivityStatusEnum.CANCELLED.getValue().equals(activity.getStatus())) {
             throw new GloboxApplicationException(VenueCode.ACTIVITY_NOT_EXIST);
         }
 
-        // 检查是否已经报名（快速失败路径）
+        // 检查是否已经报名（只检查未取消的记录）
         VenueActivityParticipant existing = this.getOne(
                 new LambdaQueryWrapper<VenueActivityParticipant>()
                         .eq(VenueActivityParticipant::getActivityId, activityId)
                         .eq(VenueActivityParticipant::getUserId, userId)
+                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
         );
         if (existing != null) {
             throw new GloboxApplicationException(VenueCode.ACTIVITY_ALREADY_REGISTERED);
@@ -78,6 +81,7 @@ public class VenueActivityParticipantServiceImpl extends ServiceImpl<VenueActivi
         VenueActivityParticipant participant = VenueActivityParticipant.builder()
                 .activityId(activityId)
                 .userId(userId)
+                .deleteVersion(ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
                 .build();
 
         this.save(participant);

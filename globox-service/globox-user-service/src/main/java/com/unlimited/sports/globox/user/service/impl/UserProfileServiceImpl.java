@@ -9,6 +9,8 @@ import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusDto;
+import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserRacketRequest;
@@ -52,7 +54,9 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import java.time.Year;
 
 /**
  * 用户资料服务实现类
@@ -65,6 +69,7 @@ import java.util.stream.Collectors;
 public class UserProfileServiceImpl implements UserProfileService {
 
     private static final int MAX_BATCH_SIZE = 50;
+    private static final int SPORTS_YEAR_THRESHOLD = 1900;
 
     @Value("${user.profile.default-avatar-url:}")
     private String defaultAvatarUrl;
@@ -95,6 +100,9 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @DubboReference(group = "rpc")
     private SocialRelationDubboService socialRelationDubboService;
+
+    @DubboReference(group = "rpc")
+    private RegionDubboService regionDubboService;
 
     @Override
     public UserProfile getUserProfileById(Long userId) {
@@ -171,14 +179,42 @@ public class UserProfileServiceImpl implements UserProfileService {
                     .eq(RacketDict::getLevel, RacketDict.Level.MODEL);
             List<RacketDict> racketDicts = racketDictMapper.selectList(dictQuery);
 
-            Map<Long, String> modelNameMap = racketDicts.stream()
-                    .collect(Collectors.toMap(RacketDict::getRacketId, RacketDict::getName));
+            Map<Long, RacketDict> modelMap = racketDicts.stream()
+                    .collect(Collectors.toMap(RacketDict::getRacketId, r -> r));
 
+            // 查系列、品牌，构建全名
+            List<Long> seriesIds = racketDicts.stream()
+                    .map(RacketDict::getParentId)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .collect(Collectors.toList());
+            Map<Long, RacketDict> seriesMap = Collections.emptyMap();
+            Map<Long, RacketDict> brandMap = Collections.emptyMap();
+            if (!CollectionUtils.isEmpty(seriesIds)) {
+                List<RacketDict> seriesList = racketDictMapper.selectBatchIds(seriesIds);
+                seriesMap = seriesList.stream().collect(Collectors.toMap(RacketDict::getRacketId, r -> r));
+                List<Long> brandIds = seriesList.stream()
+                        .map(RacketDict::getParentId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .collect(Collectors.toList());
+                if (!CollectionUtils.isEmpty(brandIds)) {
+                    List<RacketDict> brandList = racketDictMapper.selectBatchIds(brandIds);
+                    brandMap = brandList.stream().collect(Collectors.toMap(RacketDict::getRacketId, r -> r));
+                }
+            }
+
+            Map<Long, RacketDict> finalSeriesMap = seriesMap;
+            Map<Long, RacketDict> finalBrandMap = brandMap;
             racketVos = userRackets.stream()
                     .map(ur -> {
                         UserRacketVo vo = new UserRacketVo();
                         vo.setRacketModelId(ur.getRacketModelId());
-                        vo.setRacketModelName(modelNameMap.getOrDefault(ur.getRacketModelId(), ""));
+                        RacketDict model = modelMap.get(ur.getRacketModelId());
+                        if (model != null) {
+                            vo.setRacketModelName(model.getName());
+                            vo.setRacketModelFullName(buildFullRacketName(model, finalSeriesMap, finalBrandMap));
+                        }
                         vo.setIsPrimary(ur.getIsPrimary());
                         return vo;
                     })
@@ -216,10 +252,12 @@ public class UserProfileServiceImpl implements UserProfileService {
         BeanUtils.copyProperties(profile, vo);
         vo.setGender(profile.getGender() != null ? profile.getGender().name() : null);
         vo.setPreferredHand(profile.getPreferredHand() != null ? profile.getPreferredHand().name() : null);
+        vo.setSportsYears(resolveSportsYears(profile.getSportsYears()));
         vo.setRackets(racketVos);
         vo.setStyleTags(styleTagVos);
         vo.setIsFollowed(false);
         vo.setIsMutual(false);
+        vo.setHomeDistrictName(getRegionNameByCode(profile.getHomeDistrict()));
         if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
             vo.setAvatarUrl(defaultAvatarUrl);
         }
@@ -289,13 +327,18 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 2. 先校验球拍列表（如果提供）
         List<UserRacketRequest> distinctRackets = null;
         if (request.getRackets() != null) {
-            // 2.1 去重（按 racketModelId 去重）
+            // 2.1 过滤无效条目并去重（按 racketModelId 去重）
             Map<Long, UserRacketRequest> distinctRacketMap = new HashMap<>();
+            int invalidCount = 0;
             for (UserRacketRequest r : request.getRackets()) {
                 if (r.getRacketModelId() == null) {
-                    throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+                    invalidCount++;
+                    continue; // 忽略无效条目，不阻止其他字段更新
                 }
                 distinctRacketMap.put(r.getRacketModelId(), r);
+            }
+            if (invalidCount > 0) {
+                log.warn("用户资料更新：球拍列表中有 {} 个无效条目被忽略：userId={}", invalidCount, userId);
             }
             distinctRackets = new ArrayList<>(distinctRacketMap.values());
 
@@ -305,7 +348,7 @@ public class UserProfileServiceImpl implements UserProfileService {
                 deleteQuery.eq(UserRacket::getUserId, userId);
                 userRacketMapper.delete(deleteQuery);
             } else {
-                // 2.3 校验球拍型号是否存在且为MODEL级别
+                // 2.3 校验球拍型号是否存在且为MODEL级别（过滤无效的，而不是全部失败）
                 List<Long> modelIds = distinctRackets.stream()
                         .map(UserRacketRequest::getRacketModelId)
                         .collect(Collectors.toList());
@@ -314,28 +357,42 @@ public class UserProfileServiceImpl implements UserProfileService {
                 dictQuery.in(RacketDict::getRacketId, modelIds);
                 List<RacketDict> racketDicts = racketDictMapper.selectList(dictQuery);
 
-                if (racketDicts.size() != modelIds.size()) {
-                    throw new GloboxApplicationException(UserAuthCode.INVALID_RACKET_ID);
+                // 构建有效的球拍ID集合（存在、MODEL级别、ACTIVE状态）
+                Map<Long, RacketDict> validRacketMap = racketDicts.stream()
+                        .filter(dict -> dict.getLevel() == RacketDict.Level.MODEL)
+                        .filter(dict -> dict.getStatus() == RacketDict.RacketStatus.ACTIVE)
+                        .collect(Collectors.toMap(RacketDict::getRacketId, dict -> dict));
+
+                // 过滤出有效的球拍条目
+                List<UserRacketRequest> validRackets = distinctRackets.stream()
+                        .filter(r -> validRacketMap.containsKey(r.getRacketModelId()))
+                        .collect(Collectors.toList());
+
+                int filteredCount = distinctRackets.size() - validRackets.size();
+                if (filteredCount > 0) {
+                    log.warn("用户资料更新：球拍列表中有 {} 个无效球拍被过滤：userId={}", filteredCount, userId);
                 }
 
-                boolean hasInvalidLevel = racketDicts.stream()
-                        .anyMatch(dict -> dict.getLevel() != RacketDict.Level.MODEL);
-                if (hasInvalidLevel) {
-                    throw new GloboxApplicationException(UserAuthCode.INVALID_RACKET_LEVEL);
-                }
+                distinctRackets = validRackets;
 
-                boolean hasInactive = racketDicts.stream()
-                        .anyMatch(dict -> dict.getStatus() != RacketDict.RacketStatus.ACTIVE);
-                if (hasInactive) {
-                    throw new GloboxApplicationException(UserAuthCode.INACTIVE_RACKET_MODEL);
-                }
-
-                // 2.4 主力拍唯一性校验
-                long primaryCount = distinctRackets.stream()
-                        .filter(r -> Boolean.TRUE.equals(r.getIsPrimary()))
-                        .count();
-                if (primaryCount > 1) {
-                    throw new GloboxApplicationException(UserAuthCode.MULTIPLE_PRIMARY_RACKET);
+                // 2.4 主力拍唯一性校验（如果有多个，只保留第一个）
+                if (!CollectionUtils.isEmpty(distinctRackets)) {
+                    long primaryCount = distinctRackets.stream()
+                            .filter(r -> Boolean.TRUE.equals(r.getIsPrimary()))
+                            .count();
+                    if (primaryCount > 1) {
+                        log.warn("用户资料更新：多个主力拍，只保留第一个：userId={}", userId);
+                        boolean[] foundPrimary = {false};
+                        distinctRackets.forEach(r -> {
+                            if (Boolean.TRUE.equals(r.getIsPrimary())) {
+                                if (foundPrimary[0]) {
+                                    r.setIsPrimary(false); // 后续的主力拍改为非主力
+                                } else {
+                                    foundPrimary[0] = true;
+                                }
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -343,9 +400,10 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 3. 先校验标签列表（如果提供）
         List<Long> distinctTagIds = null;
         if (request.getTagIds() != null) {
-            // 3.1 去重
-            if (request.getTagIds().stream().anyMatch(id -> id == null)) {
-                throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+            // 3.1 过滤 null 并去重
+            long nullCount = request.getTagIds().stream().filter(id -> id == null).count();
+            if (nullCount > 0) {
+                log.warn("用户资料更新：标签列表中有 {} 个 null 被忽略：userId={}", nullCount, userId);
             }
             distinctTagIds = request.getTagIds().stream()
                     .filter(id -> id != null)
@@ -358,15 +416,23 @@ public class UserProfileServiceImpl implements UserProfileService {
                 deleteTagQuery.eq(UserStyleTag::getUserId, userId);
                 userStyleTagMapper.delete(deleteTagQuery);
             } else {
-                // 3.3 校验标签是否存在且为ACTIVE状态
+                // 3.3 校验标签是否存在且为ACTIVE状态（过滤无效的，而不是全部失败）
                 LambdaQueryWrapper<StyleTag> tagQuery = new LambdaQueryWrapper<>();
                 tagQuery.in(StyleTag::getTagId, distinctTagIds)
                         .eq(StyleTag::getStatus, StyleTag.Status.ACTIVE);
                 List<StyleTag> validTags = styleTagMapper.selectList(tagQuery);
 
-                if (validTags.size() != distinctTagIds.size()) {
-                    throw new GloboxApplicationException(UserAuthCode.INVALID_STYLE_TAG);
+                // 只保留有效的标签ID
+                List<Long> validTagIds = validTags.stream()
+                        .map(StyleTag::getTagId)
+                        .collect(Collectors.toList());
+
+                int filteredCount = distinctTagIds.size() - validTagIds.size();
+                if (filteredCount > 0) {
+                    log.warn("用户资料更新：标签列表中有 {} 个无效标签被过滤：userId={}", filteredCount, userId);
                 }
+
+                distinctTagIds = validTagIds;
             }
         }
 
@@ -391,14 +457,21 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (StringUtils.hasText(request.getGender())) {
             GenderEnum genderEnum = GenderEnum.fromValue(request.getGender());
             if (genderEnum == null) {
-                throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+                log.warn("用户资料更新：无效的性别值被忽略：userId={}, gender={}", userId, request.getGender());
+            } else {
+                profile.setGender(genderEnum);
+                needUpdate = true;
             }
-            profile.setGender(genderEnum);
-            needUpdate = true;
         }
-        if (request.getSportsYears() != null) {
-            profile.setSportsYears(request.getSportsYears());
-            needUpdate = true;
+        Integer sportsYearsNumber = parseSportsYears(request.getSportsYears());
+        if (sportsYearsNumber != null) {
+            Integer startYear = convertYearsToStartYear(sportsYearsNumber);
+            if (startYear == null) {
+                log.warn("用户资料更新：无效的球龄年数被忽略：userId={}, sportsYears={}", userId, request.getSportsYears());
+            } else {
+                profile.setSportsYears(startYear);
+                needUpdate = true;
+            }
         }
         if (request.getNtrp() != null) {
             profile.setNtrp(request.getNtrp());
@@ -409,12 +482,16 @@ public class UserProfileServiceImpl implements UserProfileService {
                 profile.setPreferredHand(UserProfile.PreferredHand.valueOf(request.getPreferredHand()));
                 needUpdate = true;
             } catch (IllegalArgumentException e) {
-                throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+                log.warn("用户资料更新：无效的持拍手值被忽略：userId={}, preferredHand={}", userId, request.getPreferredHand());
             }
         }
         if (StringUtils.hasText(request.getHomeDistrict())) {
-            profile.setHomeDistrict(request.getHomeDistrict());
-            needUpdate = true;
+            if (!isRegionCodeValid(request.getHomeDistrict())) {
+                log.warn("用户资料更新：无效的常驻区域被忽略：userId={}, homeDistrict={}", userId, request.getHomeDistrict());
+            } else {
+                profile.setHomeDistrict(request.getHomeDistrict());
+                needUpdate = true;
+            }
         }
         if (request.getPower() != null) {
             profile.setPower(request.getPower());
@@ -594,10 +671,11 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setSignature(profile.getSignature());
         vo.setNtrp(profile.getNtrp());
         vo.setStyleTags(styleTagVos);
-        vo.setSportsYears(profile.getSportsYears());
+        vo.setSportsYears(resolveSportsYears(profile.getSportsYears()));
         vo.setPreferredHand(profile.getPreferredHand() != null ? profile.getPreferredHand().name() : null);
         vo.setMainRacketModelName(mainRacketModelName);
         vo.setHomeDistrict(profile.getHomeDistrict());
+        vo.setHomeDistrictName(getRegionNameByCode(profile.getHomeDistrict()));
         vo.setPower(profile.getPower());
         vo.setSpeed(profile.getSpeed());
         vo.setServe(profile.getServe());
@@ -654,6 +732,76 @@ public class UserProfileServiceImpl implements UserProfileService {
         }
 
         return rootNodes;
+    }
+
+    private Integer resolveSportsYears(Integer storedValue) {
+        if (storedValue == null) {
+            return null;
+        }
+        int currentYear = Year.now().getValue();
+        if (storedValue >= SPORTS_YEAR_THRESHOLD && storedValue <= currentYear) {
+            return currentYear - storedValue + 1;
+        }
+        return storedValue;
+    }
+
+    private Integer convertYearsToStartYear(Integer years) {
+        if (years == null || years <= 0) {
+            return null;
+        }
+        int currentYear = Year.now().getValue();
+        int startYear = currentYear - years + 1;
+        if (startYear < SPORTS_YEAR_THRESHOLD) {
+            return null;
+        }
+        return startYear;
+    }
+
+    private Integer parseSportsYears(String yearsStr) {
+        if (!StringUtils.hasText(yearsStr)) {
+            return null;
+        }
+        String trimmed = yearsStr.trim();
+        try {
+            return Integer.parseInt(trimmed);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private boolean isRegionCodeValid(String code) {
+        RpcResult<RegionDto> result = regionDubboService.getRegionByCode(code);
+        return result != null && result.isSuccess() && result.getData() != null;
+    }
+
+    private String getRegionNameByCode(String code) {
+        if (!StringUtils.hasText(code)) {
+            return null;
+        }
+        RpcResult<RegionDto> result = regionDubboService.getRegionByCode(code);
+        if (result == null || !result.isSuccess() || result.getData() == null) {
+            return null;
+        }
+        return result.getData().getName();
+    }
+
+    private String buildFullRacketName(RacketDict model,
+                                       Map<Long, RacketDict> seriesMap,
+                                       Map<Long, RacketDict> brandMap) {
+        String modelName = model.getName();
+        RacketDict series = model.getParentId() == null ? null : seriesMap.get(model.getParentId());
+        RacketDict brand = (series != null && series.getParentId() != null) ? brandMap.get(series.getParentId()) : null;
+        StringBuilder sb = new StringBuilder();
+        if (brand != null) {
+            sb.append(brand.getName()).append(" ");
+        }
+        if (series != null) {
+            sb.append(series.getName()).append(" ");
+        }
+        if (modelName != null) {
+            sb.append(modelName);
+        }
+        return sb.toString().trim();
     }
 
     @Override

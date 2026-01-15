@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.user.controller;
 
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
@@ -12,14 +13,19 @@ import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.UserProfileVo;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
+import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import com.unlimited.sports.globox.user.service.UserProfileService;
 import com.unlimited.sports.globox.user.service.UserMediaService;
+import com.unlimited.sports.globox.common.enums.RegionCityEnum;
+import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Arrays;
 
 /**
  * 用户资料控制器
@@ -49,6 +56,9 @@ public class UserProfileController {
 
     @Autowired
     private UserMediaService userMediaService;
+
+    @DubboReference(group = "rpc")
+    private RegionDubboService regionDubboService;
 
     @GetMapping
     @Operation(summary = "查询用户资料", description = "获取当前用户的完整资料（含球拍+标签）")
@@ -79,7 +89,7 @@ public class UserProfileController {
     }
 
     @PutMapping
-    @Operation(summary = "更新用户资料", description = "更新当前用户的资料，只更新非空字段。球拍和标签列表采用完全替换策略（传入空列表会清空）")
+    @Operation(summary = "更新用户资料", description = "更新当前用户的资料，只更新非空字段。球拍/标签列表采用完全替换策略（传入空列表会清空）。球拍列表最多一个主力拍")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "更新成功"),
             @ApiResponse(responseCode = "2010", description = "用户不存在"),
@@ -101,7 +111,7 @@ public class UserProfileController {
     }
 
     @GetMapping("/options")
-    @Operation(summary = "获取资料可选项", description = "获取球拍字典和球风标签选项（仅返回ACTIVE状态）")
+    @Operation(summary = "获取球拍资料可选项", description = "获取球拍字典和球风标签选项（仅返回ACTIVE状态）")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "查询成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
@@ -239,7 +249,7 @@ public class UserProfileController {
     }
 
     @PostMapping("/media/video/upload")
-    @Operation(summary = "上传媒体视频", description = "上传用户展示墙视频，支持 mp4/mov 格式，最大 100MB。上传成功后需要调用 PUT /user/profile/media 接口，将返回的 url 写入媒体列表。注意：视频需要前端生成封面并上传，coverUrl 由前端保证")
+    @Operation(summary = "上传媒体视频", description = "上传用户展示墙视频，支持 mp4/mov 格式，最大 100MB。上传成功后自动生成封面URL（使用腾讯云COS截图功能），返回结果包含 url 和 coverUrl。上传成功后需要调用 PUT /user/profile/media 接口，将返回的 url 和 coverUrl 写入媒体列表")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "上传成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token"),
@@ -249,7 +259,7 @@ public class UserProfileController {
             @ApiResponse(responseCode = "2052", description = "文件类型不支持"),
             @ApiResponse(responseCode = "2053", description = "文件上传失败")
     })
-    public R<FileUploadVo> uploadMediaVideo(
+    public R<VideoUploadVo> uploadMediaVideo(
             @Parameter(description = "视频文件（mp4/mov，最大100MB）", required = true)
             @RequestParam("file") MultipartFile file) {
         return userMediaService.uploadMediaVideo(file);
@@ -261,6 +271,32 @@ public class UserProfileController {
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @RequestParam("file") MultipartFile file) {
         return userProfileService.uploadStarCardPortrait(userId, file);
+    }
+
+    @GetMapping("/regions/districts")
+    @Operation(summary = "按城市code获取区县列表", description = "常驻地区选择：传城市code（RegionCityEnum.code），返回区县code和名称")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2040", description = "参数无效")
+    })
+    public R<List<RegionDto>> listDistricts(
+            @Parameter(description = "城市code（RegionCityEnum.code，例如 510100）", required = true, example = "510100")
+            @RequestParam("cityCode") Integer cityCode) {
+        RegionCityEnum cityEnum = toEnum(cityCode);
+        if (cityEnum == null) {
+            return R.error(UserAuthCode.INVALID_PARAM);
+        }
+        return R.ok(regionDubboService.listDistrictsByCity(cityEnum).getData());
+    }
+
+    private RegionCityEnum toEnum(Integer code) {
+        if (code == null) {
+            return null;
+        }
+        return Arrays.stream(RegionCityEnum.values())
+                .filter(e -> e.getCode().equals(code))
+                .findFirst()
+                .orElse(null);
     }
 
 }

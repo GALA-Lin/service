@@ -322,11 +322,23 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                 closeTime
         );
 
-        // 6. 批量查询所有场地该日期的槽位记录
+        // 6. 批量查询所有场地该日期的槽位记录（只查询在营业时间内的槽位）
+        // 先获取所有在营业时间内的模板ID
+        List<Long> templateIds = allTemplates.stream()
+                .map(VenueBookingSlotTemplate::getBookingSlotTemplateId)
+                .toList();
+
+        // 查询对应的记录
         List<VenueBookingSlotRecord> allRecords = recordMapper.MerchantSelectByCourtIdsAndDate(
-                courtIds,
-                date
-        );
+                        courtIds,
+                        date
+                ).stream()
+                // 过滤掉不在营业时间内的槽位记录
+                .filter(record -> templateIds.contains(record.getSlotTemplateId()))
+                .toList();
+
+        log.debug("营业时间内的槽位模板数: {}, 对应的记录数: {}", allTemplates.size(), allRecords.size());
+
 
         // 7. 构建映射表
         Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = allTemplates.stream()
@@ -501,6 +513,7 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                 .price(price)
                 .isMyBooking(false) // 商家端不需要此字段
                 .activityName(activity != null ? activity.getActivityName() : null)
+                .imageUrls(activity != null ? activity.getImageUrls() : null)
                 .currentParticipants(activity != null ? activity.getCurrentParticipants() : null)
                 .maxParticipants(activity != null ? activity.getMaxParticipants() : null)
                 .build();
@@ -523,6 +536,7 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                         // 活动相关字段
                         .slotType(slot.getSlotType())
                         .activityName(slot.getActivityName())
+                        .imageUrls(slot.getImageUrls()) // 映射图片URL
                         .currentParticipants(slot.getCurrentParticipants())
                         .maxParticipants(slot.getMaxParticipants())
                         .build())

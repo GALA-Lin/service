@@ -57,6 +57,8 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
     @Autowired
     private MQService mqService;
+    @Autowired
+    private OrderActivitiesMapper orderActivitiesMapper;
 
     /**
      * 服务提供方取消未支付订单
@@ -79,11 +81,6 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
         // 订单必须存在
         if (ObjectUtils.isEmpty(order)) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
-        }
-
-        // 只能取消场馆订单
-        if (order.getSellerType() != sellerType) {
             return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
         }
 
@@ -162,6 +159,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                             .userId(order.getBuyerId())
                             .operatorType(OperatorTypeEnum.MERCHANT)
                             .recordIds(recordIds)
+                            .isActivity(order.getActivity())
                             .bookingDate(bookingDate)
                             .build();
 
@@ -265,7 +263,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      * @return 返回一个RpcResult对象，包含商家批准退款的结果信息，包括订单状态、退款申请状态等
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerApproveRefundResultDto> sellerApproveRefund(Long orderNo, Long sellerId, Long refundApplyId, SellerTypeEnum sellerType, BigDecimal refundPercentage) {
         LocalDateTime now = LocalDateTime.now();
@@ -280,10 +278,6 @@ public class OrderDubboServiceImpl implements OrderDubboService {
         }
         if (!order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING)) {
             return RpcResult.error(OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
-        }
-        // 商家只能取消场地订单和场地活动订单
-        if (order.getSellerType() != SellerTypeEnum.VENUE) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
         }
 
         // 2) 锁退款申请（必须属于该订单）
@@ -386,7 +380,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      * @return 返回一个RpcResult对象，包含服务提供方拒绝退款的结果信息，包括订单状态、退款申请状态等
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerRejectRefundResultDto> rejectRefund(Long orderNo, Long refundApplyId, Long sellerId, Long operatorId, SellerTypeEnum sellerType, String remark) {
         LocalDateTime now = LocalDateTime.now();
@@ -398,9 +392,6 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         .eq(Orders::getSellerId, sellerId)
                         .last("FOR UPDATE"));
         if (ObjectUtils.isEmpty(order)) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
-        }
-        if (order.getSellerType() != SellerTypeEnum.VENUE) {
             return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
         }
         if (!order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING)) {

@@ -79,6 +79,7 @@ public class ChatController {
             }
             PaginationResult<ConversationVo> result =
                 conversationService.getConversationVoList(userId, page, pageSize);
+            log.info("用户：{},获取用户会话列表:{}", userId, result);
             return R.ok(result);
         } catch (Exception e) {
             log.error("获取会话列表失败", e);

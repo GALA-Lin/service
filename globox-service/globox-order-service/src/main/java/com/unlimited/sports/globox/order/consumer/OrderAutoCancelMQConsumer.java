@@ -16,6 +16,7 @@ import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
 import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.lock.RedisLock;
+import com.unlimited.sports.globox.order.mapper.OrderActivitiesMapper;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +51,9 @@ public class OrderAutoCancelMQConsumer {
 
     @Autowired
     private MQService mqService;
+
+    @Autowired
+    private OrderActivitiesMapper orderActivitiesMapper;
 
     /**
      * 延迟关闭未支付订单
@@ -108,6 +112,7 @@ public class OrderAutoCancelMQConsumer {
                 .userId(message.getUserId())
                 .operatorType(OperatorTypeEnum.SYSTEM)
                 .recordIds(message.getRecordIds())
+                .isActivity(order.getActivity())
                 .bookingDate(message.getBookingDate())
                 .build();
 
@@ -130,12 +135,12 @@ public class OrderAutoCancelMQConsumer {
                 .put("sellerName", order.getSellerName())
                 .build();
 
-        notificationSender.sendNotification(
-                order.getBuyerId(),
-                NotificationEventEnum.ORDER_AUTO_CANCELLED,
-                order.getId(),
-                autoCancelNotificationMessage
-        );
+//        notificationSender.sendNotification(
+//                order.getBuyerId(),
+//                NotificationEventEnum.ORDER_AUTO_CANCELLED,
+//                order.getId(),
+//                autoCancelNotificationMessage
+//        );
 
         log.info("[订单自动关闭] 成功关闭 orderNo={}", orderNo);
     }

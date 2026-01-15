@@ -34,9 +34,9 @@ public class CoachPricingRequestDto implements Serializable {
 
 
     /**
-     * 预约的时段记录ID列表（支持连续多个时段）
+     * 预约的时段模板/记录ID列表（支持连续多个时段）
      */
-    @NotNull(message = "时段记录ID列表不能为空")
+    @NotNull(message = "时段模板/记录ID列表不能为空")
     private List<Long> slotIds;
 
     /**

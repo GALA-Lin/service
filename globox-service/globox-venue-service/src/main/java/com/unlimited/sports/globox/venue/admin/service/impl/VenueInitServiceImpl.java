@@ -12,6 +12,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConf
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivitySlotLock;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
+import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
 import com.unlimited.sports.globox.venue.admin.dto.CreateVenueInitDto;
 import com.unlimited.sports.globox.venue.admin.dto.CreateActivityDto;
 import com.unlimited.sports.globox.venue.admin.service.IVenueInitService;
@@ -141,12 +142,6 @@ public class VenueInitServiceImpl implements IVenueInitService {
                                     List<String> imageUrls) {
         CreateVenueInitDto.VenueBasicInfoDto basicInfo = dto.getVenueBasicInfo();
 
-        // 计算最低价格
-        BigDecimal minPrice = dto.getPriceConfig().getPeriods().stream()
-                .map(CreateVenueInitDto.PricePeriodDto::getWeekdayPrice)
-                .min(BigDecimal::compareTo)
-                .orElse(BigDecimal.ZERO);
-
         Venue venue = new Venue();
         venue.setMerchantId(merchantId);
         venue.setName(basicInfo.getName());
@@ -159,7 +154,6 @@ public class VenueInitServiceImpl implements IVenueInitService {
         venue.setMaxAdvanceDays(basicInfo.getMaxAdvanceDays());
         venue.setSlotVisibilityTime(LocalTime.parse(basicInfo.getSlotVisibilityTime()));
         venue.setVenueType(dto.getVenueType() != null ? dto.getVenueType() : 1);  // 使用DTO中的venueType，默认为1（自有场馆）
-        venue.setMinPrice(minPrice);
         venue.setStatus(1);  // 正常状态
         venue.setAvgRating(null);  // 初始无评分
         venue.setRatingCount(0);  // 初始评分数为0
@@ -343,6 +337,7 @@ public class VenueInitServiceImpl implements IVenueInitService {
                 .organizerId(dto.getOrganizerId())
                 .organizerType(dto.getOrganizerType())
                 .minNtrpLevel(dto.getMinNtrpLevel())
+                .status(VenueActivityStatusEnum.NORMAL.getValue())
                 .build();
 
         venueActivityMapper.insert(activity);

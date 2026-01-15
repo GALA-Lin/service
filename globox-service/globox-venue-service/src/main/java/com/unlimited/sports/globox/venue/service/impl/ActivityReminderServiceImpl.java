@@ -6,6 +6,8 @@ import com.unlimited.sports.globox.common.message.venue.ActivityReminderMessage;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
+import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.venue.service.IActivityReminderService;
@@ -48,11 +50,12 @@ public class ActivityReminderServiceImpl implements IActivityReminderService {
         }
 
         try {
-            // 查询参与者记录
+            // 查询参与者记录（只查询未取消的）
             VenueActivityParticipant participant = participantMapper.selectOne(
                     Wrappers.lambdaQuery(VenueActivityParticipant.class)
                             .eq(VenueActivityParticipant::getActivityId, activityId)
                             .eq(VenueActivityParticipant::getUserId, userId)
+                            .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
             );
 
             if (participant == null) {
@@ -62,7 +65,7 @@ public class ActivityReminderServiceImpl implements IActivityReminderService {
 
             // 查询活动信息
             VenueActivity activity = activityMapper.selectById(activityId);
-            if (activity == null) {
+            if (activity == null || VenueActivityStatusEnum.CANCELLED.getValue().equals(activity.getStatus())) {
                 log.warn("[活动提醒] 活动不存在 - activityId={}", activityId);
                 return;
             }

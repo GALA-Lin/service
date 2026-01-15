@@ -598,7 +598,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                         Assert.rpcResultOk(rpcResult);
                         UserInfoVo fromUser = rpcResult.getData();
 
-                        RpcResult<UserInfoVo> rpcResult2 = userDubboService.getUserInfo(messageEntity.getFromUserId());
+                        RpcResult<UserInfoVo> rpcResult2 = userDubboService.getUserInfo(messageEntity.getToUserId());
                         Assert.rpcResultOk(rpcResult2);
                         UserInfoVo toUser = rpcResult2.getData();
                         return MessageVo.builder()

@@ -29,7 +29,12 @@ public enum MerchantErrorCode implements ResultCode {
     /**
      * 匹配到退款比例为0的规则（超过退款时间）
      */
-    REFUND_RATIO_ZERO(6005, "超过退款时间无法退款，请阅读退款详情");
+    REFUND_RATIO_ZERO(6005, "超过退款时间无法退款，请阅读退款详情"),
+
+    MERCHANT_VENUE_NOT_EXIST(6006, "商户下不存在场馆"),
+    ;
+
+
 
     private final Integer code;
     private final String message;

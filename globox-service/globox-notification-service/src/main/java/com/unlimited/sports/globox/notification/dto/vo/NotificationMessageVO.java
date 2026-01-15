@@ -8,6 +8,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import com.alibaba.fastjson2.JSON;
+import lombok.extern.slf4j.Slf4j;
+
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -18,6 +21,7 @@ import java.util.Map;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Slf4j
 public class NotificationMessageVO {
 
     /**
@@ -89,6 +93,17 @@ public class NotificationMessageVO {
     public static NotificationMessageVO fromEntity(PushRecords record) {
         MessageTypeEnum messageType = MessageTypeEnum.fromModuleCode(record.getNotificationModule());
 
+        // 将 customData 从 JSON 字符串解析为 Map
+        Map<String, Object> customDataMap = null;
+        if (record.getCustomData() != null && !record.getCustomData().isEmpty()) {
+            try {
+                customDataMap = JSON.parseObject(record.getCustomData(), Map.class);
+            } catch (Exception e) {
+                log.error("json map解析失败");
+                customDataMap = null;
+            }
+        }
+
         return NotificationMessageVO.builder()
                 .recordId(record.getRecordId())
                 .notificationId(record.getNotificationId())
@@ -99,7 +114,7 @@ public class NotificationMessageVO {
                 .title(record.getTitle())
                 .content(record.getContent())
                 .action(record.getAction())
-                .customData(record.getCustomData())
+                .customData(customDataMap)
                 .isRead(record.getIsRead() != null && record.getIsRead() == 1)
                 .createdAt(record.getCreatedAt())
                 .build();

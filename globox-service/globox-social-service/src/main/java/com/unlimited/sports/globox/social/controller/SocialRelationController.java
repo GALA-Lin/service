@@ -4,6 +4,7 @@ import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.social.vo.FollowUserVo;
+import com.unlimited.sports.globox.model.social.vo.BlockUserVo;
 import com.unlimited.sports.globox.model.social.vo.UserRelationStatsVo;
 import com.unlimited.sports.globox.social.service.SocialRelationService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -132,7 +133,18 @@ public class SocialRelationController {
             @PathVariable("userId") Long targetUserId) {
         return socialRelationService.getUserStats(targetUserId);
     }
+
+    @GetMapping("/blocks")
+    @Operation(summary = "我已拉黑的用户列表", description = "获取我拉黑的用户，按拉黑时间倒序，支持关键词过滤当前页昵称")
+    public R<PaginationResult<BlockUserVo>> getBlockedUsers(
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @RequestParam(value = "keyword", required = false) String keyword) {
+        return socialRelationService.getBlockedUsers(userId, page, pageSize, keyword);
+    }
 }
+
 
 
 

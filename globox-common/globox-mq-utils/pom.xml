@@ -29,8 +29,9 @@
         </dependency>
 
         <dependency>
-            <groupId>org.redisson</groupId>
-            <artifactId>redisson-spring-boot-starter</artifactId>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-redis-utils</artifactId>
+            <version>1.0</version>
         </dependency>
 
         <dependency>

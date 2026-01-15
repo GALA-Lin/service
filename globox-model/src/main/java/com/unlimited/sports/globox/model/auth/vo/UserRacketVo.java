@@ -16,6 +16,9 @@ public class UserRacketVo {
     @Schema(description = "球拍型号名称", example = "Pure Drive 98")
     private String racketModelName;
 
+    @Schema(description = "球拍全名（品牌+系列+型号）", example = "Babolat Pure Drive 98")
+    private String racketModelFullName;
+
     @Schema(description = "是否主力拍", example = "true")
     private Boolean isPrimary;
 }

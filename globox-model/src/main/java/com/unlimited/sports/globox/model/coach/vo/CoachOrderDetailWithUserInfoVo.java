@@ -144,6 +144,8 @@ public class CoachOrderDetailWithUserInfoVo implements Serializable {
     @NotNull
     private List<CoachRecordDto> records;
 
+    private Long refundApplyId;
+
 
     /**
      * 下单人基本信息

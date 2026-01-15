@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.dubbo.merchant;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
 
+import java.util.List;
+
 /**
  * 商家模块 - dubbo 接口
  *
@@ -29,4 +31,11 @@ public interface MerchantDubboService {
      * @return 返回包含场地名称、电话、所在区域、地址、距离（单位：米）、设施列表和场地快照列表的结果对象
      */
     RpcResult<VenueSnapshotResultDto> getVenueSnapshot(VenueSnapshotRequestDto dto);
+
+
+    /**
+     * 获取揽月的 场馆 id 列表
+     * @return 揽月场馆 id 列表
+     */
+    RpcResult<List<Long>> getMoonCourtIdList();
 }

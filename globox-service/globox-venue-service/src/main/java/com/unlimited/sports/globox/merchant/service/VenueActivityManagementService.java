@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.merchant.service;
 
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 活动管理Service接口
@@ -15,5 +16,4 @@ public interface VenueActivityManagementService {
      * @param context 商家认证上下文（包含角色、商家ID、员工ID等信息）
      * @return 活动ID
      */
-    Long createActivity(CreateActivityDto dto, MerchantAuthContext context);
-}
+    Long createActivity(CreateActivityDto dto, MultipartFile[] images, MerchantAuthContext context);}

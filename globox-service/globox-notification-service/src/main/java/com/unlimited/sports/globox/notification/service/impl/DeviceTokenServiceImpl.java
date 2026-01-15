@@ -170,7 +170,7 @@ public class DeviceTokenServiceImpl implements IDeviceTokenService {
         if (template.getActionTarget() != null) {
             action = TemplateRenderer.render(template.getActionTarget(), variables);
         }
-
+        String variablesJsonStr = JSON.toJSONString(variables);
         // 收集有效的设备Token
         List<String> deviceTokens = otherDevices.stream()
                 .map(DevicePushToken::getDeviceToken)
@@ -227,7 +227,7 @@ public class DeviceTokenServiceImpl implements IDeviceTokenService {
                         .title(renderedTitle)
                         .content(renderedContent)
                         .action(action)
-                        .customData(variables)
+                        .customData(variablesJsonStr)
                         .status(taskId != null ? PushStatusEnum.SENT : PushStatusEnum.FAILED)
                         .tencentTaskId(taskId)
                         .sentAt(taskId != null ? LocalDateTime.now() : null)

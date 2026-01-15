@@ -1,18 +1,20 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.unlimited.sports.globox.common.enums.RegionCityEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.dto.RallyPostsDto;
 import com.unlimited.sports.globox.model.social.dto.RallyQueryDto;
 import com.unlimited.sports.globox.model.social.dto.UpdateRallyDto;
 import com.unlimited.sports.globox.model.social.entity.*;
 import com.unlimited.sports.globox.model.social.vo.*;
-import com.unlimited.sports.globox.social.mapper.FilterRegionMapper;
 import com.unlimited.sports.globox.social.mapper.RallyApplicationMapper;
 import com.unlimited.sports.globox.social.mapper.RallyParticipantMapper;
 import com.unlimited.sports.globox.social.mapper.RallyPostsMapper;
@@ -51,8 +53,8 @@ public class RallyServiceImpl implements RallyService {
     @Autowired
     private RallyApplicationMapper rallyApplicationMapper;
 
-    @Autowired
-    private FilterRegionMapper filterRegionMapper;
+    @DubboReference(group = "rpc")
+    private RegionDubboService regionDubboService;
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -69,7 +71,7 @@ public class RallyServiceImpl implements RallyService {
         String area = rallyQueryDto.getArea();
         log.info("获筛选地址 - area: ·················{}", area);
         List<String> split = null;
-        if (area != null && area.length() > 0){
+        if (area != null && !area.isEmpty()){
             split = List.of(area.split(","));
         }
         log.info("获筛选地址 - split: ·················{}", split);
@@ -495,9 +497,11 @@ public class RallyServiceImpl implements RallyService {
 
 
     private RallyQueryVo getRallyQueryList() {
-        List<FilterRegion> filterRegions = filterRegionMapper.selectList(null);
-        List<String> regionsList =new ArrayList<>();
-        filterRegions.forEach(filterRegion -> regionsList.add(filterRegion.getFilterRegionName()));
+        // TODO 目前只查询成都市
+        RpcResult<List<RegionDto>> listRpcResult = regionDubboService.listDistrictsByCity(RegionCityEnum.CHENG_DU);
+        Assert.rpcResultOk(listRpcResult);
+        List<RegionDto> regionList = listRpcResult.getData();
+        List<String> regionsList = regionList.stream().map(RegionDto::getName).toList();
 
         List<String> timeRangeList = new ArrayList<>();
         for (TimeRangeType value : TimeRangeType.values()) {
@@ -598,7 +602,7 @@ public class RallyServiceImpl implements RallyService {
                             .participantId(participant.getParticipantId())
                             .avatarUrl(userInfo.getAvatarUrl())
                             .nickName(userInfo.getNickName())
-                            .userNtrp(participant.getUserNtrp())
+                            .userNtrp(userInfo.getUserNtrpLevel())
                             .joinedAt(participant.getJoinedAt())
                             .isInitiator(participant.getIsInitiator()==1)
                             .build();

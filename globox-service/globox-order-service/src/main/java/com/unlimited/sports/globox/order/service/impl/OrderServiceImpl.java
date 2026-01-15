@@ -16,7 +16,6 @@ import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.IdGenerator;
-import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
 import com.unlimited.sports.globox.dubbo.coach.dto.*;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
@@ -45,7 +44,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -97,9 +95,6 @@ public class OrderServiceImpl implements OrderService {
     @Lazy
     @Autowired
     private OrderServiceImpl thisService;
-
-    @Autowired
-    private JsonUtils jsonUtils;
 
 
     /**
@@ -302,6 +297,7 @@ public class OrderServiceImpl implements OrderService {
                 .paymentStatus(OrdersPaymentStatusEnum.UNPAID)
                 .paymentType(PaymentTypeEnum.NONE)
                 .refundApplyId(null)
+                .activity(false)
                 .baseAmount(baseAmount)
                 .extraAmount(extraTotal)
                 .subtotal(baseAmount.add(extraTotal))
@@ -370,6 +366,7 @@ public class OrderServiceImpl implements OrderService {
                             UnlockSlotMessage message = UnlockSlotMessage.builder()
                                     .userId(userId)
                                     .operatorType(OperatorTypeEnum.SYSTEM)
+                                    .isActivity(order.getActivity())
                                     .bookingDate(resultDto.getBookingDate())
                                     .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
                                     .build();
@@ -511,6 +508,7 @@ public class OrderServiceImpl implements OrderService {
                 .paymentStatus(OrdersPaymentStatusEnum.UNPAID)
                 .paymentType(PaymentTypeEnum.NONE)
                 .refundApplyId(null)
+                .activity(isActivity)
                 .baseAmount(baseAmount)
                 .extraAmount(extraTotal)
                 .subtotal(baseAmount.add(extraTotal))
@@ -520,6 +518,8 @@ public class OrderServiceImpl implements OrderService {
                 .cancelledAt(null)
                 .completedAt(null)
                 .build();
+
+
 
         order.setCreatedAt(createdAt);
 
@@ -588,6 +588,7 @@ public class OrderServiceImpl implements OrderService {
                             UnlockSlotMessage message = new UnlockSlotMessage();
                             UnlockSlotMessage.builder()
                                     .userId(userId)
+                                    .isActivity(isActivity)
                                     .operatorType(OperatorTypeEnum.SYSTEM)
                                     .bookingDate(result.getBookingDate())
                                     .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
@@ -612,7 +613,7 @@ public class OrderServiceImpl implements OrderService {
      * @return 订单列表
      */
     @Override
-    public PaginationResult<GetOrderVo> getOrderPage(GetOrderPageDto pageDto) {
+    public PaginationResult<GetOrderVo> getOrderPage(GetOrderPageDto pageDto, String openId) {
 
         Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
@@ -623,10 +624,16 @@ public class OrderServiceImpl implements OrderService {
                 pageDto.getPageSize());
 
         // 2. 分页查询订单主表
+        RpcResult<List<Long>> rpcResult = merchantDubboService.getMoonCourtIdList();
+        Assert.rpcResultOk(rpcResult);
+        List<Long> mooncourtIdList = rpcResult.getData();
+
         IPage<Orders> orderPage = ordersMapper.selectPage(
                 page,
                 Wrappers.<Orders>lambdaQuery()
                         .eq(Orders::getBuyerId, userId)
+                        .eq(!ObjectUtils.isEmpty(openId), Orders::getSellerType, SellerTypeEnum.VENUE)
+                        .in(!ObjectUtils.isEmpty(openId), Orders::getSellerId, mooncourtIdList)
                         .in(!ObjectUtils.isEmpty(pageDto.getOrderStatus()), Orders::getOrderStatus, pageDto.getOrderStatus())
                         .orderByDesc(Orders::getId));
 
@@ -653,6 +660,14 @@ public class OrderServiceImpl implements OrderService {
 
         // 6. 组装 VO
         List<GetOrderVo> voList = orderPage.getRecords().stream()
+                .filter(item -> {
+                    if (openId != null && openId.isBlank()) {
+                        // 过滤教练订单
+                        log.info("条件判断：{}",item.getSellerType().equals(SellerTypeEnum.VENUE));
+                        return item.getSellerType().equals(SellerTypeEnum.VENUE);
+                    }
+                    return true;
+                })
                 .map(order -> {
 
                     List<OrderItems> orderItems =
@@ -989,6 +1004,7 @@ public class OrderServiceImpl implements OrderService {
                 .userId(userId)
                 .operatorType(OperatorTypeEnum.USER)
                 .recordIds(recordIds)
+                .isActivity(order.getActivity())
                 .bookingDate(bookingDate)
                 .build();
 

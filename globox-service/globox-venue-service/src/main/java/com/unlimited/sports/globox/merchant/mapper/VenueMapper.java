@@ -39,12 +39,11 @@ public interface VenueMapper extends BaseMapper<Venue> {
 
     /**
      * 搜索场馆（V2版本 - 数据库层面过滤和排序）
-     * 支持多条件筛选：关键词、价格、场地数量、距离等
+     * 支持多条件筛选：关键词、场地数量、距离等
+     * 价格过滤已在Java层面预处理，通过priceQualifiedVenueIds传入
      */
     List<Map<String, Object>> searchVenues(
             @Param("keyword") String keyword,
-            @Param("minPrice") BigDecimal minPrice,
-            @Param("maxPrice") BigDecimal maxPrice,
             @Param("minCourtCount") Integer minCourtCount,
             @Param("maxCourtCount") Integer maxCourtCount,
             @Param("userLat") Double userLat,
@@ -55,6 +54,7 @@ public interface VenueMapper extends BaseMapper<Venue> {
             @Param("facilityVenueIds") List<Long> facilityVenueIds,
             @Param("courtTypeVenueIds") List<Long> courtTypeVenueIds,
             @Param("unavailableVenueIds") List<Long> unavailableVenueIds,
+            @Param("priceQualifiedVenueIds") List<Long> priceQualifiedVenueIds,
             @Param("offset") int offset,
             @Param("pageSize") int pageSize
     );
@@ -63,11 +63,10 @@ public interface VenueMapper extends BaseMapper<Venue> {
 
     /**
      * 统计搜索场馆总数
+     * 价格过滤已在Java层面预处理，通过priceQualifiedVenueIds传入
      */
     long countSearchVenues(
             @Param("keyword") String keyword,
-            @Param("minPrice") BigDecimal minPrice,
-            @Param("maxPrice") BigDecimal maxPrice,
             @Param("minCourtCount") Integer minCourtCount,
             @Param("maxCourtCount") Integer maxCourtCount,
             @Param("userLat") Double userLat,
@@ -75,7 +74,8 @@ public interface VenueMapper extends BaseMapper<Venue> {
             @Param("maxDistance") Double maxDistance,
             @Param("facilityVenueIds") List<Long> facilityVenueIds,
             @Param("courtTypeVenueIds") List<Long> courtTypeVenueIds,
-            @Param("unavailableVenueIds") List<Long> unavailableVenueIds
+            @Param("unavailableVenueIds") List<Long> unavailableVenueIds,
+            @Param("priceQualifiedVenueIds") List<Long> priceQualifiedVenueIds
     );
 
     /**

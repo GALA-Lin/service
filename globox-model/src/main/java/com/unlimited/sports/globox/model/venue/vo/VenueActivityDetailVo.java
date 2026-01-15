@@ -80,6 +80,12 @@ public class VenueActivityDetailVo {
      */
     private Integer maxParticipants;
 
+
+    /**
+     * 活动状态
+     */
+    @NonNull
+    private Integer status;
     /**
      * 已报名参与者列表
      */

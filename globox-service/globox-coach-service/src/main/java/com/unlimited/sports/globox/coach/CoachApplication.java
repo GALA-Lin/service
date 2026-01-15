@@ -16,7 +16,5 @@ public class CoachApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(CoachApplication.class, args);
-
-
     }
 }

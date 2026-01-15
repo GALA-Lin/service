@@ -68,7 +68,7 @@ public class CoachSlotRecord implements Serializable {
     private Integer status;
 
     /**
-     * 关联的订单ID（status=3时）
+     * 关联的订单ID
      */
     @TableField(value = "coach_booking_id")
     private Long coachBookingId;

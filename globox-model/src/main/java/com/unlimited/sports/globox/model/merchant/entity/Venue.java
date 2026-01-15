@@ -93,12 +93,6 @@ public class Venue implements Serializable {
     private String facilities;
 
     /**
-     * 场馆最低预订价格（冗余字段）
-     */
-    @TableField("min_price")
-    private BigDecimal minPrice;
-
-    /**
      * 场馆平均评分（冗余字段）
      */
     @TableField("avg_rating")

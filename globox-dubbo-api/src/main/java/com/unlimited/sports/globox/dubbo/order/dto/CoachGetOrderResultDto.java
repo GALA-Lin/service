@@ -126,6 +126,8 @@ public class CoachGetOrderResultDto implements Serializable {
     @NotNull
     private LocalDateTime createdAt;
 
+    private Long refundApplyId;
+
     /**
      * 订单时段列表
      */

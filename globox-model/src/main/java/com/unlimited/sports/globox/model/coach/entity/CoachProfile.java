@@ -100,6 +100,9 @@ public class CoachProfile implements Serializable {
     @TableField(value = "coach_remote_service_area")
     private String coachRemoteServiceArea;
 
+    @TableField(value = "coach_min_hours")
+    private Integer coachMinHours;
+
     /**
      * 远距离区域最低授课时长（小时），默认2小时
      */

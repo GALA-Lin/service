@@ -16,6 +16,9 @@ public enum CoachErrorCodeEnum implements ResultCode {
     PARAM_USER_ID_EMPTY(4002, "用户ID不能为空"),
     PARAM_SLOT_ID_EMPTY(4003, "时段记录ID不能为空"),
     PARAM_BOOKING_DATE_EMPTY(4004, "预约日期不能为空"),
+    COACH_CANNOT_BOOK_SELF(4005,"您不能预约自己的课程"),
+    MIN_HOURS_NOT_MET(4006, "未满足最低课时要求"),
+    REMOTE_AREA_MIN_HOURS_NOT_MET(4007, "远距离区域未满足最低课时要求"),
 
     COACH_INFO_NOT_EXIST(4010, "教练信息不存在"),
     COACH_BASE_INFO_GET_FAILED(4011, "无法获取教练基本信息"),

@@ -346,7 +346,7 @@ public class NotificationServiceImpl implements INotificationService {
                 .title(title)
                 .content(content)
                 .action(action)
-                .customData(customData)
+                .customData(customData != null ? JSON.toJSONString(customData) : null)
                 .status(status)
                 .tencentTaskId(taskId)
                 .createdAt(LocalDateTime.now())

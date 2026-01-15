@@ -103,6 +103,11 @@ public class Orders extends BaseEntity implements Serializable {
     private PaymentTypeEnum paymentType;
 
     /**
+     * 是否活动订单
+     */
+    private Boolean activity;
+
+    /**
      * 折扣金额（后续业务拓展）
      */
     private BigDecimal discountAmount;

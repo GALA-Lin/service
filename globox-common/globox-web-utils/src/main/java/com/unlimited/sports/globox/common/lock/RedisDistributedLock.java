@@ -1,9 +1,11 @@
 package com.unlimited.sports.globox.common.lock;
 
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -14,10 +16,9 @@ import java.util.concurrent.TimeUnit;
  * 支持MultiLock批量加锁，避免死锁
  */
 @Slf4j
-@Component
+@Setter
 public class RedisDistributedLock {
 
-    @Autowired
     private RedissonClient redissonClient;
 
     /**

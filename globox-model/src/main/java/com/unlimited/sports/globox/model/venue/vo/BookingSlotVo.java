@@ -12,7 +12,9 @@ import lombok.NonNull;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 预订槽位VO
@@ -84,6 +86,11 @@ public class BookingSlotVo {
      * 活动名称（如"羽毛球畅打"）
      */
     private String activityName;
+
+    /**
+     * 活动图片
+     */
+    private List<String> imageUrls;
 
     /**
      * 参与者最低NTRP水平要求（范围1.0-7.0）
@@ -158,7 +165,10 @@ public class BookingSlotVo {
     /**
      * 构建活动槽位VO
      */
-    public static BookingSlotVo buildActivitySlot(VenueActivity activity) {
+    public static BookingSlotVo buildActivitySlot(VenueActivity activity, Set<Long> userRegisteredActivityIds) {
+        // 判断用户是否报名了该活动
+        Boolean isMyBooking = userRegisteredActivityIds != null && userRegisteredActivityIds.contains(activity.getActivityId());
+
         return BookingSlotVo.builder()
                 .bookingSlotId(activity.getActivityId())
                 .slotType(SlotTypeEnum.ACTIVITY.getCode())
@@ -169,6 +179,7 @@ public class BookingSlotVo {
                 .currentParticipants(activity.getCurrentParticipants())
                 .maxParticipants(activity.getMaxParticipants())
                 .unitPrice(activity.getUnitPrice())
+                .isMyBooking(isMyBooking)
                 .build();
     }
 }

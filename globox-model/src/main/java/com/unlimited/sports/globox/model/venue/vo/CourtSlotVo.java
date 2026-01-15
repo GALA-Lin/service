@@ -56,7 +56,8 @@ public class CourtSlotVo {
             Map<LocalTime, BigDecimal> priceMap,
             Map<Long, VenueActivity> activityMap,
             Map<Long, Long> activityLockedSlots,
-            Long userId) {
+            Long userId,
+            Set<Long> userRegisteredActivityIds) {
 
         // 根据模板生成槽位VO，同一活动只在第一个槽位处显示（使用活动的完整时间段）
         Set<Long> processedActivityIds = new HashSet<>();
@@ -70,7 +71,7 @@ public class CourtSlotVo {
                         if (processedActivityIds.add(activityId)) {
                             VenueActivity activity = activityMap.get(activityId);
                             if (activity != null) {
-                                return Stream.of(BookingSlotVo.buildActivitySlot(activity));
+                                return Stream.of(BookingSlotVo.buildActivitySlot(activity, userRegisteredActivityIds));
                             }
                         }
                         // 不添加到结果

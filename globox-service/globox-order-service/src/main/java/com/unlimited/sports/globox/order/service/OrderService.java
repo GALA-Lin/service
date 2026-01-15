@@ -51,7 +51,7 @@ public interface OrderService {
      *
      * @return 订单列表
      */
-    PaginationResult<GetOrderVo> getOrderPage(GetOrderPageDto pageDto);
+    PaginationResult<GetOrderVo> getOrderPage(GetOrderPageDto pageDto, String openId);
 
 
     /**

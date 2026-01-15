@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivitySlotLock;
+import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivitySlotLockMapper;
 import com.unlimited.sports.globox.venue.service.IVenueActivityService;
@@ -56,7 +57,7 @@ public class VenueActivityServiceImpl extends ServiceImpl<VenueActivityMapper, V
     }
 
     /**
-     * 查询指定场馆指定日期的所有活动（包括所有状态）
+     * 查询指定场馆指定日期的所有活动(正常状态）
      * 用于批量获取活动信息
      */
     @Override
@@ -64,7 +65,11 @@ public class VenueActivityServiceImpl extends ServiceImpl<VenueActivityMapper, V
         if (venueId == null || activityDate == null) {
             return new ArrayList<>();
         }
+        List<VenueActivity> venueActivities = venueActivityMapper.selectList(new LambdaQueryWrapper<VenueActivity>()
+                .eq(VenueActivity::getVenueId, venueId)
+                .eq(VenueActivity::getActivityDate, activityDate)
+                .eq(VenueActivity::getStatus, VenueActivityStatusEnum.NORMAL.getValue()));
 
-        return venueActivityMapper.selectByVenueAndDate(venueId, activityDate);
+        return venueActivities == null ? List.of() : venueActivities;
     }
 }

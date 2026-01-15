@@ -6,13 +6,15 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.io.Serializable;
+
 /**
  * @since 2026/1/2 14:35
  *
  */
 @Getter
 @AllArgsConstructor
-public enum GenderEnum {
+public enum GenderEnum implements Serializable {
     FEMALE(0, "FEMALE", "女"),
     MALE(1, "MALE", "男"),
     OTHER(2, "OTHER", "其他");

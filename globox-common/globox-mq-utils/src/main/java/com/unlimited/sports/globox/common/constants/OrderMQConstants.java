@@ -206,6 +206,36 @@ public class OrderMQConstants {
 
 
     /**
+     * 订单通知教练：订单已变为已支付状态事件
+     */
+    // 主交换机 & 主路由 & 主队列
+    public static final String EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH =
+            "exchange.topic.order.payment-confirmed.notify-coach";
+    public static final String ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH =
+            "routing.order.payment-confirmed.notify-coach";
+    public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH =
+            "queue.order.payment-confirmed.notify-coach.coach";
+
+    // Retry Queue（TTL）
+    public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY =
+            "queue.order.payment-confirmed.notify-coach.coach.retry";
+
+    // Retry-DLX：主队列失败后进入重试队列
+    public static final String EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY_DLX =
+            "exchange.topic.order.payment-confirmed.notify-coach.retry.dlx";
+    public static final String ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY =
+            "routing.order.payment-confirmed.notify-coach.retry";
+
+    // Final-DLX：超过最大次数进入最终 DLQ
+    public static final String EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_FINAL_DLX =
+            "exchange.topic.order.payment-confirmed.notify-coach.final.dlx";
+    public static final String ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_FINAL =
+            "routing.order.payment-confirmed.notify-coach.final";
+    public static final String QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_DLQ =
+            "queue.order.payment-confirmed.notify-coach.coach.dlq";
+
+
+    /**
      * 订单 -> 支付：申请退款事件（Refund Apply）
      * 说明：
      * - 主队列：支付模块消费，执行退款处理逻辑

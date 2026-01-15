@@ -2,12 +2,21 @@ package com.unlimited.sports.globox.model.social.vo;
 
 import com.unlimited.sports.globox.model.social.entity.ConversationTypeEnum;
 import com.unlimited.sports.globox.model.social.entity.MessageTypeEnum;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 @Data
-public class ConversationVo {
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ConversationVo implements Serializable {
+    @Serial
     private static final long serialVersionUID = 1L;
 
     /**

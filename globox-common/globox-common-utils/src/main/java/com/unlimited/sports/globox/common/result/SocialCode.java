@@ -50,7 +50,8 @@ public enum SocialCode implements ResultCode {
     FOLLOW_DISABLED_BY_BLOCK(3032, "拉黑状态下无法关注"),
 
     IMPORT_USER_TO_IM_FAILED(3033, "用户注册即时通讯系统失败"),
-    RELATION_RPC_FAILED(3034, "关注关系RPC调用失败");
+    RELATION_RPC_FAILED(3034, "关注关系RPC调用失败"),
+    USER_NOT_FOUND(3035, "用户不存在");
 
     private final Integer code;
     private final String message;

@@ -15,6 +15,7 @@ import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.entity.SocialNote;
 import com.unlimited.sports.globox.model.social.entity.SocialUserBlock;
 import com.unlimited.sports.globox.model.social.entity.SocialUserFollow;
+import com.unlimited.sports.globox.model.social.vo.BlockUserVo;
 import com.unlimited.sports.globox.model.social.vo.FollowUserVo;
 import com.unlimited.sports.globox.model.social.vo.UserRelationStatsVo;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
@@ -61,7 +62,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
     @Transactional(rollbackFor = Exception.class)
     public R<String> follow(Long userId, Long targetUserId) {
         if (userId == null || targetUserId == null) {
-            return R.error(SocialCode.NOTE_NOT_FOUND);
+            return R.error(SocialCode.USER_NOT_FOUND);
         }
         if (userId.equals(targetUserId)) {
             throw new GloboxApplicationException(SocialCode.FOLLOW_SELF_NOT_ALLOWED);
@@ -94,7 +95,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
     @Transactional(rollbackFor = Exception.class)
     public R<String> unfollow(Long userId, Long targetUserId) {
         if (userId == null || targetUserId == null) {
-            return R.error(SocialCode.NOTE_NOT_FOUND);
+            return R.error(SocialCode.USER_NOT_FOUND);
         }
         LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserFollow::getUserId, userId)
@@ -107,7 +108,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
     @Transactional(rollbackFor = Exception.class)
     public R<String> block(Long userId, Long targetUserId) {
         if (userId == null || targetUserId == null) {
-            return R.error(SocialCode.NOTE_NOT_FOUND);
+            return R.error(SocialCode.USER_NOT_FOUND);
         }
         if (userId.equals(targetUserId)) {
             throw new GloboxApplicationException(SocialCode.FOLLOW_SELF_NOT_ALLOWED);
@@ -305,6 +306,67 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         int pageSize = relations instanceof Page ? (int) ((Page<?>) relations).getSize() : voList.size();
         return PaginationResult.build(voList, total, currentPage, pageSize);
     }
+
+    @Override
+    public R<PaginationResult<BlockUserVo>> getBlockedUsers(Long userId, Integer page, Integer pageSize, String keyword) {
+        if (userId == null) {
+            return R.error(SocialCode.USER_NOT_FOUND);
+        }
+        int p = (page == null || page < 1) ? 1 : page;
+        int ps = (pageSize == null || pageSize < 1) ? DEFAULT_PAGE_SIZE : Math.min(pageSize, MAX_PAGE_SIZE);
+
+        Page<SocialUserBlock> mpPage = new Page<>(p, ps);
+        LambdaQueryWrapper<SocialUserBlock> query = new LambdaQueryWrapper<>();
+        query.eq(SocialUserBlock::getUserId, userId)
+                .orderByDesc(SocialUserBlock::getCreatedAt);
+        socialUserBlockMapper.selectPage(mpPage, query);
+
+        List<SocialUserBlock> blocks = mpPage.getRecords();
+        List<BlockUserVo> voList = new ArrayList<>();
+        if (!CollectionUtils.isEmpty(blocks)) {
+            List<Long> targetIds = blocks.stream()
+                    .map(SocialUserBlock::getBlockedUserId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            Map<Long, UserInfoVo> userInfoMap = batchGetUserInfoMap(targetIds);
+
+            for (SocialUserBlock b : blocks) {
+                UserInfoVo info = userInfoMap.get(b.getBlockedUserId());
+                if (StringUtils.hasText(keyword) && info != null && !info.getNickName().contains(keyword)) {
+                    continue;
+                }
+                BlockUserVo vo = new BlockUserVo();
+                vo.setUserId(b.getBlockedUserId());
+                vo.setBlockedAt(b.getCreatedAt());
+                if (info != null) {
+                    vo.setNickName(info.getNickName());
+                    vo.setAvatarUrl(info.getAvatarUrl());
+                }
+                voList.add(vo);
+            }
+        }
+
+        boolean hasMore = mpPage.getCurrent() * mpPage.getSize() < mpPage.getTotal();
+        PaginationResult<BlockUserVo> result = PaginationResult.build(voList, mpPage.getTotal(), p, ps);
+        return R.ok(result);
+    }
+
+    private Map<Long, UserInfoVo> batchGetUserInfoMap(List<Long> userIds) {
+        if (CollectionUtils.isEmpty(userIds)) {
+            return new HashMap<>();
+        }
+        BatchUserInfoRequest req = new BatchUserInfoRequest();
+        req.setUserIds(userIds);
+        RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(req);
+        Assert.rpcResultOk(rpcResult);
+        BatchUserInfoResponse resp = rpcResult.getData();
+        if (resp == null || CollectionUtils.isEmpty(resp.getUsers())) {
+            return new HashMap<>();
+        }
+        return resp.getUsers().stream()
+                .collect(Collectors.toMap(UserInfoVo::getUserId, u -> u, (a, b) -> a));
+    }
+
 }
 
 

@@ -6,6 +6,7 @@ import lombok.NonNull;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.List;
 
 /**
  * 时段可用性视图
@@ -88,6 +89,11 @@ public class SlotAvailabilityVo {
      * 活动名称
      */
     private String activityName;
+
+    /**
+     * 活动图片
+     */
+    private List<String> imageUrls;
 
     /**
      * 当前参与人数

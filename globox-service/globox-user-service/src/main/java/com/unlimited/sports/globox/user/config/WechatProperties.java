@@ -53,7 +53,7 @@ public class WechatProperties {
         /**
          * 微信API URL
          */
-        private String apiUrl = "https://api.weixin.qq.com/sns/jscode2session";
+        private String apiUrl = "https://api.weixin.qq.com/sns/oauth2/access_token";
 
         /**
          * 原生App AppId

@@ -24,12 +24,14 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelati
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueReview;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
-import com.unlimited.sports.globox.model.venue.enums.CourtType;
-import com.unlimited.sports.globox.model.venue.enums.ReviewType;
+import com.unlimited.sports.globox.model.venue.enums.*;
 import com.unlimited.sports.globox.venue.constants.ReviewConstants;
 import com.unlimited.sports.globox.venue.mapper.venues.VenueReviewMapper;
+import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
+import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
 import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
@@ -37,10 +39,6 @@ import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
 import com.unlimited.sports.globox.model.venue.vo.ActivityParticipantVo;
-import com.unlimited.sports.globox.model.venue.enums.CourtCountFilter;
-import com.unlimited.sports.globox.model.venue.enums.DistanceFilter;
-import com.unlimited.sports.globox.model.venue.enums.FacilityType;
-import com.unlimited.sports.globox.model.venue.enums.GroundType;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -87,6 +85,10 @@ public class VenueServiceImpl implements IVenueService {
 
     @Autowired
     private IVenueBusinessHoursService venueBusinessHoursService;
+
+    @Autowired
+    private VenuePriceTemplatePeriodMapper venuePriceTemplatePeriodMapper;
+
     @Override
     public VenueDetailVo getVenueDetail(Long venueId) {
         Venue venue = venueMapper.selectById(venueId);
@@ -125,6 +127,10 @@ public class VenueServiceImpl implements IVenueService {
         List<String> courtTypesDesc = courtTypes.stream()
                 .map(type -> CourtType.fromValue(type).getDescription())
                 .toList();
+
+        // 动态计算最低价格
+        BigDecimal minPrice = calculateMinPrice(venue.getTemplateId());
+
         return VenueDetailVo.builder()
                 .venueId(venue.getVenueId())
                 .name(venue.getName())
@@ -140,7 +146,7 @@ public class VenueServiceImpl implements IVenueService {
                 .facilities(facilities)
                 .defaultOpenTime(defaultOpenTime)
                 .defaultCloseTime(defaultCloseTime)
-                .minPrice(venue.getMinPrice())
+                .minPrice(minPrice)
                 .build();
     }
 
@@ -414,10 +420,11 @@ public class VenueServiceImpl implements IVenueService {
             throw new GloboxApplicationException(VenueCode.VENUE_NOT_EXIST);
         }
 
-        // 查询活动参与者
+        // 查询活动参与者（只查询未取消的）
         List<VenueActivityParticipant> participants = venueActivityParticipantMapper.selectList(
                 new LambdaQueryWrapper<VenueActivityParticipant>()
                         .eq(VenueActivityParticipant::getActivityId, activityId)
+                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
         );
 
         // 获取所有参与者的用户ID
@@ -472,6 +479,7 @@ public class VenueServiceImpl implements IVenueService {
                 .currentParticipants(activity.getCurrentParticipants())
                 .maxParticipants(activity.getMaxParticipants())
                 .participants(participantVos)
+                .status(activity.getStatus())
                 .build();
     }
 
@@ -483,18 +491,53 @@ public class VenueServiceImpl implements IVenueService {
             return new HashMap<>();
         }
 
-        // 直接使用 SQL 查询统计结果
-        List<Map<String, Object>> countResults = venueActivityParticipantMapper.selectUserParticipationCount(userIds);
+        // 查询所有未取消的参与记录
+        List<VenueActivityParticipant> participants = venueActivityParticipantMapper.selectList(
+                new LambdaQueryWrapper<VenueActivityParticipant>()
+                        .in(VenueActivityParticipant::getUserId, userIds)
+                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+        );
 
-        // 将查询结果转换为 Map
+        // 按userId分组统计count
         Map<Long, Integer> participationCountMap = new HashMap<>();
-        for (Map<String, Object> result : countResults) {
-            Long userId = ((Number) result.get("userId")).longValue();
-            Integer count = ((Number) result.get("count")).intValue();
-            participationCountMap.put(userId, count);
+        for (VenueActivityParticipant participant : participants) {
+            Long userId = participant.getUserId();
+            participationCountMap.put(userId, participationCountMap.getOrDefault(userId, 0) + 1);
         }
 
         return participationCountMap;
+    }
+
+    /**
+     * 动态计算场馆最低价格
+     * 从价格模板中获取所有价格类型（工作日、周末、节假日），取最小值
+     * 如果查不到价格则默认999
+     *
+     * @param templateId 价格模板ID
+     * @return 最低价格
+     */
+    private BigDecimal calculateMinPrice(Long templateId) {
+        if (templateId == null) {
+            return new BigDecimal("999");
+        }
+
+        List<VenuePriceTemplatePeriod> periods = venuePriceTemplatePeriodMapper.selectList(
+                new LambdaQueryWrapper<VenuePriceTemplatePeriod>()
+                        .eq(VenuePriceTemplatePeriod::getTemplateId, templateId)
+                        .eq(VenuePriceTemplatePeriod::getIsEnabled, 1)
+        );
+
+        if (periods == null || periods.isEmpty()) {
+            return new BigDecimal("999");
+        }
+
+        return periods.stream()
+                .flatMap(period -> java.util.Arrays.stream(
+                        new BigDecimal[]{period.getWeekdayPrice(), period.getWeekendPrice(), period.getHolidayPrice()}
+                ))
+                .filter(price -> price != null)
+                .min(BigDecimal::compareTo)
+                .orElse(new BigDecimal("999"));
     }
 
 }

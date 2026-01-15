@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
@@ -147,6 +148,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             Assert.isTrue(reqItemIds.size() == allItemCount, OrderCode.COACH_ONLY_REFUND_ALL);
         }
 
+        // 是否可自动退款
         boolean autoRefund;
         // 商家订单需要查询退款规则
         BigDecimal refundPercentage;
@@ -183,10 +185,20 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 autoRefund = true;
             }
 
-
-        } else {
-            refundPercentage = new BigDecimal(100);
+        } else if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
+            // TODO 功能待启动 如果教练订单没有确认，那么直接退款
+//            if (order.getOrderStatus().equals(OrderStatusEnum.PAID)) {
+//                autoRefund = true;
+//                refundPercentage = new BigDecimal("100");
+//            } else {
+//                refundPercentage = BigDecimal.ZERO;
+//                autoRefund = false;
+//            }
+            // 关闭自动退款，走审批流程
+            refundPercentage = new BigDecimal("100");
             autoRefund = false;
+        } else {
+            throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
         }
 
         // 校验这些 item 当前是否可发起退款：必须是 NONE

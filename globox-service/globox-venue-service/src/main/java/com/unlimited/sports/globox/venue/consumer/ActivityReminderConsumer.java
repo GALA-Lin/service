@@ -13,6 +13,8 @@ import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
+import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -84,24 +86,25 @@ public class ActivityReminderConsumer {
         }
 
         try {
-            // 通过SQL查询验证：参与者ID匹配、userId匹配、registrationTime匹配
+            // 通过SQL查询验证：参与者ID匹配、userId匹配、registrationTime匹配、未被取消
             VenueActivityParticipant participant = participantMapper.selectOne(
                     Wrappers.lambdaQuery(VenueActivityParticipant.class)
                             .eq(VenueActivityParticipant::getParticipantId, participantId)
                             .eq(VenueActivityParticipant::getUserId, userId)
                             .eq(VenueActivityParticipant::getCreatedAt, registrationTime)
+                            .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
             );
 
-            // 验证参与者记录仍然存在
+            // 验证参与者记录仍然存在且未被取消
             if (participant == null) {
-                log.info("[活动提醒] 参与者记录已取消，跳过通知 - userId={}, participantId={}",
+                log.info("[活动提醒] 参与者记录已取消或不存在，跳过通知 - userId={}, participantId={}",
                         userId, participantId);
                 return;
             }
 
             // 查询活动信息
             VenueActivity activity = activityMapper.selectById(participant.getActivityId());
-            if (activity == null) {
+            if (activity == null || VenueActivityStatusEnum.CANCELLED.getValue().equals(activity.getStatus())) {
                 log.warn("[活动提醒] 活动不存在 - activityId={}", participant.getActivityId());
                 return;
             }

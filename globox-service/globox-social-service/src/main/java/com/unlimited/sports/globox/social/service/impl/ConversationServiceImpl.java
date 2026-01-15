@@ -20,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static java.util.Collections.emptyList;
 
@@ -44,52 +46,63 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
 
     @Override
     public PaginationResult<ConversationVo> getConversationVoList(Long userId, Integer page, Integer pageSize) {
-        try {
-            // 计算分页偏移量
-            int offset = (page - 1) * pageSize;
-            List<Conversation> pagedConversations = conversationMapper.selectByUserIdWithPagination(userId, offset, pageSize);
+        // 计算分页偏移量
+        int offset = (page - 1) * pageSize;
+        List<Conversation> pagedConversations =
+                conversationMapper.selectByUserIdWithPagination(userId, offset, pageSize);
 
-            List<ConversationVo> conversationVoList = pagedConversations.stream()
-                    .filter(conversation -> {
-                        // 检查用户是否是会话的参与者
-                        return conversation.getSenderUserId().equals(userId) ||
-                                conversation.getReceiveUserId().equals(userId);
-                    })
-                    .map(conversation -> {
-                        ConversationVo vo = new ConversationVo();
-                        vo.setConversationId(String.valueOf(conversation.getConversationId()));
-                        vo.setConversationType(conversation.getConversationType());
-                        vo.setReceiveUserId(choice(userId,conversation));
-                        vo.setConversationNameReceiver(getUserInfoVo(userId, conversation).getNickName());
-                        vo.setConversationAvatarReceiver(getUserInfoVo(userId, conversation).getAvatarUrl());
-                        vo.setUnreadCountSender(conversation.getUnreadCountSender());
-                        vo.setUnreadCountReceiver(conversation.getUnreadCountReceiver());
-                        vo.setIsBlocked(conversation.getIsBlocked());
-                        vo.setIsPinnedSender(conversation.getIsPinnedSender());
-                        vo.setIsPinnedReceiver(conversation.getIsPinnedReceiver());
-                        vo.setIsDeletedSender(conversation.getIsDeletedSender());
-                        vo.setIsDeletedReceiver(conversation.getIsDeletedReceiver());
-                        vo.setLastMessageId(conversation.getLastMessageId());
-                        vo.setLastMessageContent(conversation.getLastMessageContent());
-                        vo.setLastMessageType(conversation.getLastMessageType());
-                        vo.setLastMessageAt(conversation.getLastMessageAt());
-                        vo.setCreatedAt(conversation.getCreatedAt());
-                        vo.setUpdatedAt(conversation.getUpdatedAt());
-                        return vo;
-                    })
-                    .collect(Collectors.toList());
-            // 查询总数
-            Long total = conversationMapper.countByUserId(userId);
-            return PaginationResult.build(
-                    pagedConversations != null ? conversationVoList : emptyList(),
-                    total != null ? total : 0L,
-                    page != null ? page : 1,
-                    pageSize != null ? pageSize : 50
-            );
-        } catch (Exception e) {
-            log.error("查询会话列表失败", e);
-            throw new RuntimeException("查询会话列表失败: " + e.getMessage());
-        }
+        List<ConversationVo> conversationVoList = pagedConversations.stream()
+                // 保险起见，仍然校验是否参与该会话
+                .filter(conversation ->
+                        Objects.equals(conversation.getSenderUserId(), userId)
+                                || Objects.equals(conversation.getReceiveUserId(), userId)
+                )
+                .flatMap(conversation -> {
+                    try {
+                        UserInfoVo userInfoVo = getUserInfoVo(userId, conversation);
+                        ConversationVo vo = ConversationVo.builder()
+                            .conversationId(String.valueOf(conversation.getConversationId()))
+                            .conversationType(conversation.getConversationType())
+                            .receiveUserId(choice(userId, conversation))
+                            .conversationNameReceiver(userInfoVo.getNickName())
+                            .conversationAvatarReceiver(userInfoVo.getAvatarUrl())
+                            .unreadCountSender(conversation.getUnreadCountSender())
+                            .unreadCountReceiver(conversation.getUnreadCountReceiver())
+                            .isBlocked(conversation.getIsBlocked())
+                            .isPinnedSender(conversation.getIsPinnedSender())
+                            .isPinnedReceiver(conversation.getIsPinnedReceiver())
+                            .isDeletedSender(conversation.getIsDeletedSender())
+                            .isDeletedReceiver(conversation.getIsDeletedReceiver())
+                            .lastMessageId(conversation.getLastMessageId())
+                            .lastMessageContent(conversation.getLastMessageContent())
+                            .lastMessageType(conversation.getLastMessageType())
+                            .lastMessageAt(conversation.getLastMessageAt())
+                            .createdAt(conversation.getCreatedAt())
+                            .updatedAt(conversation.getUpdatedAt())
+                            .build();
+
+                        return Stream.of(vo);
+                    } catch (Exception e) {
+                        log.error(
+                                "构建 ConversationVo 失败，conversationId={}, userId={}",
+                                conversation.getConversationId(),
+                                userId,
+                                e
+                        );
+                        return Stream.empty();
+                    }
+                })
+                .collect(Collectors.toList());
+
+        // 总数查询不影响 item 构建
+        Long total = conversationMapper.countByUserId(userId);
+
+        return PaginationResult.build(
+                conversationVoList,
+                total != null ? total : 0L,
+                page,
+                pageSize
+        );
     }
 
     @Override
@@ -130,7 +143,6 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
 
             // 会话不存在，创建新会话
             log.info("会话不存在，开始创建新会话: userId={}, friendId={}", userId, friendId);
-
 
             RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(friendId);
             Assert.rpcResultOk(rpcResult);
@@ -568,7 +580,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(conversation.getReceiveUserId());
             return rpcResult.getData();
         }
-        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(conversation.getReceiveUserId());
+        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(conversation.getSenderUserId());
         return rpcResult.getData();
     }
 }

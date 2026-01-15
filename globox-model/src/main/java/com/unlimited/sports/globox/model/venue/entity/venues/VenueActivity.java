@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.model.venue.entity.venues;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 
 /**
  * 场馆活动表
@@ -19,7 +21,7 @@ import java.time.LocalTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("venue_activity")
+@TableName(value = "venue_activity", autoResultMap = true)
 public class VenueActivity {
 
     /**
@@ -53,6 +55,12 @@ public class VenueActivity {
      * 活动名称
      */
     private String activityName;
+
+    /**
+     * 活动图片
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> imageUrls;
 
     /**
      * 活动日期
@@ -128,6 +136,11 @@ public class VenueActivity {
      */
     private String activityConfig;
 
+
+    /**
+     * 活动状态 1 -- 正常 2 -- 已被取消
+     */
+    private Integer status;
     /**
      * 创建时间
      */

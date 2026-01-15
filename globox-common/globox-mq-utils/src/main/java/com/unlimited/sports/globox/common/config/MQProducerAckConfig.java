@@ -4,6 +4,7 @@ import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.VenueMQConstants;
 import com.unlimited.sports.globox.common.model.MQRetryCorrelationData;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
+import com.unlimited.sports.globox.service.RedisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.ReturnedMessage;
@@ -33,7 +34,8 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
     private RabbitTemplate rabbitTemplate;
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+//    private StringRedisTemplate redisTemplate;
+    private RedisService redisService;
 
     @Autowired
     private JsonUtils jsonUtils;
@@ -100,7 +102,8 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
                 exchange,
                 returned.getRoutingKey());
 
-        String strJson = redisTemplate.opsForValue().get(id);
+
+        String strJson = redisService.getCacheObject(id, String.class);
         if (ObjectUtils.isEmpty(strJson)) {
             log.error("msgId:{} 在 Redis 中不存在，无法重试", id);
             // TODO 写 DB / 告警
@@ -134,12 +137,11 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
         MQRetryCorrelationData.increaseRetryCount();
 
         // 更新redis中的缓存
-        redisTemplate.opsForValue().set(
+        redisService.setCacheObject(
                 MQRetryCorrelationData.getId(),
-                jsonUtils.objectToJson(MQRetryCorrelationData),
-                10,
-                TimeUnit.MINUTES
-        );
+                MQRetryCorrelationData,
+                10L,
+                TimeUnit.MINUTES);
 
         // 重试发送消息
         if (MQRetryCorrelationData.isDelay()) {

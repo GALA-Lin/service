@@ -16,13 +16,4 @@ public interface VenueActivityMapper extends BaseMapper<VenueActivity> {
 
 
 
-    /**
-     * 查询指定场馆指定日期的活动列表
-     */
-    List<VenueActivity> selectByVenueAndDate(
-            @Param("venueId") Long venueId,
-            @Param("activityDate") LocalDate activityDate
-    );
-
-
 }

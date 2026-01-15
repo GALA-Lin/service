@@ -53,8 +53,8 @@ public class VenueController {
      * @param dto 查询条件（keyword, sortBy, minPrice, maxPrice等）
      * @return 场馆列表和筛选选项
      */
-    @GetMapping
-    public R<VenueListResponse> getVenueList(@Valid GetVenueListDto dto) {
+    @PostMapping
+    public R<VenueListResponse> getVenueList(@Valid @RequestBody GetVenueListDto dto) {
         // 获取场馆搜索结果
         PaginationResult<VenueItemVo> venues = venueSearchService.searchVenues(dto);
 
@@ -172,13 +172,12 @@ public class VenueController {
 
     /**
      * 计算价格范围
-     * 从场馆列表中提取最小价格和最大价格
+     * 从场馆列表中提取最小价格和最大价格供前端参考
      *
      * @param venues 场馆列表
      * @return 价格范围
      */
     private VenueListResponse.PriceRange calculatePriceRange(List<VenueItemVo> venues) {
-        // 如果列表为空或没有有效价格，返回默认范围
         if (venues == null || venues.isEmpty()) {
             return VenueListResponse.PriceRange.builder()
                     .minPrice(DEFAULT_PRICE_MIN)
@@ -186,12 +185,10 @@ public class VenueController {
                     .build();
         }
 
-        // 从场馆列表中提取所有有效的minPrice
         List<BigDecimal> prices = venues.stream()
                 .map(VenueItemVo::getMinPrice)
                 .toList();
 
-        // 如果没有有效价格，返回默认范围
         if (prices.isEmpty()) {
             return VenueListResponse.PriceRange.builder()
                     .minPrice(DEFAULT_PRICE_MIN)
@@ -199,7 +196,6 @@ public class VenueController {
                     .build();
         }
 
-        // 计算实际的最小值和最大值
         BigDecimal minPrice = prices.stream()
                 .min(BigDecimal::compareTo)
                 .orElse(DEFAULT_PRICE_MIN);

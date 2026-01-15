@@ -27,6 +27,7 @@ public class GetOrderDetailsDto {
     @Schema(description = "订单号（可选，通常以路径参数为准）",
             example = "202512180001",
             requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    @NotNull(message = "订单号不能为空")
     private Long orderNo;
 
     /**

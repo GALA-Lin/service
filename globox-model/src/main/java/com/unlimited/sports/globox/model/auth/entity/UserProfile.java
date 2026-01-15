@@ -60,8 +60,10 @@ public class UserProfile {
     
     /**
      * 球龄
+     * TODO: 目前存的是起始年份(由传入年数换算)，字段名与含义不一致，后续需要新增专用字段或迁移
      */
     private Integer sportsYears;
+
     
     /**
      * 网球水平

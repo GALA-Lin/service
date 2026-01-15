@@ -1,19 +1,7 @@
 package com.unlimited.sports.globox.user.service;
 
 import com.unlimited.sports.globox.common.result.R;
-import com.unlimited.sports.globox.model.auth.dto.LoginResponse;
-import com.unlimited.sports.globox.model.auth.dto.PasswordLoginRequest;
-import com.unlimited.sports.globox.model.auth.dto.PhoneLoginRequest;
-import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
-import com.unlimited.sports.globox.model.auth.dto.ResetPasswordRequest;
-import com.unlimited.sports.globox.model.auth.dto.SendCaptchaRequest;
-import com.unlimited.sports.globox.model.auth.dto.SetPasswordRequest;
-import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
-import com.unlimited.sports.globox.model.auth.dto.ThirdPartyLoginResponse;
-import com.unlimited.sports.globox.model.auth.dto.WechatBindPhoneRequest;
-import com.unlimited.sports.globox.model.auth.dto.WechatLoginRequest;
-import com.unlimited.sports.globox.model.auth.dto.WechatLoginResponse;
-import com.unlimited.sports.globox.model.auth.dto.WechatPhoneLoginRequest;
+import com.unlimited.sports.globox.model.auth.dto.*;
 
 /**
  * 认证服务接口
@@ -102,5 +90,9 @@ public interface AuthService {
      * @return 登录响应（新的 Token、用户信息）
      */
     R<LoginResponse> refreshToken(TokenRefreshRequest request);
+
+
+    R<WechatLoginResponse> createWechatUserAndLogin(String identifier, String openid,
+                                                    DeviceInfo deviceInfo, String clientType);
 }
 

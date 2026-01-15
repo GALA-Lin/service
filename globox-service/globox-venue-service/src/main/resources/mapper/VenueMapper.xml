@@ -13,7 +13,7 @@
             v.latitude,
             v.longitude,
             v.image_urls as imageUrls,
-            v.min_price as minPrice,
+            v.template_id as templateId,
             v.avg_rating as avgRating,
             v.rating_count as ratingCount,
             COUNT(DISTINCT c.court_id) as courtCount,
@@ -28,12 +28,6 @@
                 AND (v.name LIKE CONCAT('%', #{keyword}, '%')
                      OR v.address LIKE CONCAT('%', #{keyword}, '%')
                      OR v.region LIKE CONCAT('%', #{keyword}, '%'))
-            </if>
-            <if test="minPrice != null">
-                AND v.min_price >= #{minPrice}
-            </if>
-            <if test="maxPrice != null">
-                AND v.min_price &lt;= #{maxPrice}
             </if>
             <if test="facilityVenueIds != null and facilityVenueIds.size() > 0">
                 AND v.venue_id IN
@@ -53,6 +47,12 @@
                     #{id}
                 </foreach>
             </if>
+            <if test="priceQualifiedVenueIds != null and priceQualifiedVenueIds.size() > 0">
+                AND v.venue_id IN
+                <foreach collection="priceQualifiedVenueIds" item="id" open="(" separator="," close=")">
+                    #{id}
+                </foreach>
+            </if>
         GROUP BY v.venue_id
         HAVING 1=1
             <if test="minCourtCount != null">
@@ -68,16 +68,6 @@
             </if>
         ORDER BY
             <choose>
-                <when test="sortBy == 'price'">
-                    <choose>
-                        <when test="sortOrder == 1">
-                            v.min_price ASC, distance ASC
-                        </when>
-                        <otherwise>
-                            v.min_price DESC, distance ASC
-                        </otherwise>
-                    </choose>
-                </when>
                 <when test="sortBy == 'courtCount'">
                     <choose>
                         <when test="sortOrder == 1">
@@ -89,12 +79,13 @@
                     </choose>
                 </when>
                 <otherwise>
+                    <!-- 默认按距离排序 -->
                     <choose>
                         <when test="sortOrder == 1">
-                            distance ASC, v.min_price ASC
+                            distance ASC
                         </when>
                         <otherwise>
-                            distance DESC, v.min_price ASC
+                            distance DESC
                         </otherwise>
                     </choose>
                 </otherwise>
@@ -103,6 +94,7 @@
     </select>
 
     <!-- 场馆搜索计数 V2 版本：使用子查询处理GROUP BY/HAVING -->
+    <!-- 注：价格过滤已在Java层面预处理，通过priceQualifiedVenueIds传入 -->
     <select id="countSearchVenues" resultType="long">
         SELECT COUNT(*) FROM (
             SELECT v.venue_id, v.latitude, v.longitude
@@ -114,12 +106,6 @@
                     AND (v.name LIKE CONCAT('%', #{keyword}, '%')
                          OR v.address LIKE CONCAT('%', #{keyword}, '%')
                          OR v.region LIKE CONCAT('%', #{keyword}, '%'))
-                </if>
-                <if test="minPrice != null">
-                    AND v.min_price >= #{minPrice}
-                </if>
-                <if test="maxPrice != null">
-                    AND v.min_price &lt;= #{maxPrice}
                 </if>
                 <if test="facilityVenueIds != null and facilityVenueIds.size() > 0">
                     AND v.venue_id IN
@@ -136,6 +122,12 @@
                 <if test="unavailableVenueIds != null and unavailableVenueIds.size() > 0">
                     AND v.venue_id NOT IN
                     <foreach collection="unavailableVenueIds" item="id" open="(" separator="," close=")">
+                        #{id}
+                    </foreach>
+                </if>
+                <if test="priceQualifiedVenueIds != null and priceQualifiedVenueIds.size() > 0">
+                    AND v.venue_id IN
+                    <foreach collection="priceQualifiedVenueIds" item="id" open="(" separator="," close=")">
                         #{id}
                     </foreach>
                 </if>

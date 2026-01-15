@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.venue.dubbo;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.result.MerchantErrorCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
@@ -25,9 +26,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.redisson.api.RLock;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -55,6 +58,8 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     @Autowired
     private IVenueActivityParticipantService participantService;
 
+    @Value("${merchant.mooncourt.id}")
+    private Long mooncourtId;
 
     @Autowired
     private IBookingService bookingService;
@@ -238,6 +243,19 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     }
 
 
+    /**
+     * 获取揽月的场馆 id 列表
+     * @return
+     */
+    @Override
+    public RpcResult<List<Long>> getMoonCourtIdList() {
+        List<Venue> venues = venueMapper.selectVenuesByMerchantId(mooncourtId);
+        if (ObjectUtils.isEmpty(venues)) {
+            return RpcResult.error(MerchantErrorCode.MERCHANT_VENUE_NOT_EXIST);
+        }
+        List<Long> resultList = venues.stream().map(Venue::getVenueId).toList();
+        return RpcResult.ok(resultList);
+    }
 
 
     /**

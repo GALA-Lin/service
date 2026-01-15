@@ -41,7 +41,7 @@ public enum UserAuthCode implements ResultCode {
     WECHAT_CODE_EXPIRED(2034, "微信授权code已过期"),
     TEMP_TOKEN_EXPIRED(2035, "临时凭证已过期，请重新授权"),
     
-    // 用户资料相关 2040-2049
+    // 用户资料相关 2040-2059
     INVALID_PARAM(2040, "参数无效"),
     INVALID_RACKET_ID(2041, "球拍型号不存在"),
     MULTIPLE_PRIMARY_RACKET(2042, "只能设置一个主力拍"),
@@ -51,6 +51,7 @@ public enum UserAuthCode implements ResultCode {
     MEDIA_SORT_DUPLICATE(2046, "排序值不能重复"),
     INVALID_RACKET_LEVEL(2047, "球拍层级无效，必须为MODEL"),
     INACTIVE_RACKET_MODEL(2048, "球拍型号已下架或不可用"),
+    INVALID_REGION(2057, "地区无效或不存在"),
 
     MISSING_USER_ID_HEADER(2049, "缺少用户ID请求头"),
     MISSING_UPLOAD_FILE(2050, "缺少上传文件"),

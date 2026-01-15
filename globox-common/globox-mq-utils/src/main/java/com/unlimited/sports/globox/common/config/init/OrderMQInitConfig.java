@@ -45,7 +45,7 @@ public class OrderMQInitConfig {
     private int merchantConfirmRetryInterval;
 
     /**
-     * 商家确认订单消息 重试间隔
+     * 通知商家订单已付款 重试间隔
      * 默认 1000 ms
      */
     @Value( "${mq.consumer.retry.merchant-order-paid.retry-interval:1000}")
@@ -57,6 +57,20 @@ public class OrderMQInitConfig {
      */
     @Value("${mq.retry.refund-apply-to-payment.interval-ms:1000}")
     private int refundApplyRetryInterval;
+
+    /**
+     * 自动完成订单 重试间隔
+     * 默认 10000 ms
+     */
+    @Value("${mq.consumer.retry.auto-complete.retry-interval:10000}")
+    private Integer autoCompleteRetryInterval;
+
+    /**
+     * 教练确认消息 重试间隔
+     * 默认 1000 ms
+     */
+    @Value( "${mq.consumer.retry.merchant-confirm-order.retry-interval:1000}")
+    private Integer coachConfirmRetryInterval;
 
     /**
      * 订单未支付自动关闭（Auto Cancel）
@@ -138,13 +152,6 @@ public class OrderMQInitConfig {
                 .with(OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL_FINAL);
     }
 
-
-
-    /**
-     * 重试间隔（TTL），例如 10s / 30s（单位：ms）
-     */
-    @Value("${order.mq.auto-complete.retry-interval:10000}")
-    private Integer autoCompleteRetryInterval;
 
     // 主交换机（Delayed Exchange）
     @Bean
@@ -446,7 +453,7 @@ public class OrderMQInitConfig {
                 .to(orderConfirmNotifyMerchantFinalDlxExchange())
                 .with(OrderMQConstants.ROUTING_ORDER_CONFIRM_NOTIFY_MERCHANT_FINAL);
     }
-
+    
 
     /**
      * 订单通知商家 订单已变为已支付状态事件
@@ -528,6 +535,87 @@ public class OrderMQInitConfig {
                 .with(OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL);
     }
 
+
+    /**
+     * 通知教练：订单已支付事件消息
+     */
+    @Bean
+    public TopicExchange orderPaymentConfirmedNotifyCoachExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
+                true,
+                false);
+    }
+
+    @Bean
+    public TopicExchange orderPaymentConfirmedNotifyCoachRetryDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY_DLX,
+                true,
+                false);
+    }
+
+    @Bean
+    public TopicExchange orderPaymentConfirmedNotifyCoachFinalDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_FINAL_DLX,
+                true,
+                false);
+    }
+
+    @Bean
+    public Queue orderPaymentConfirmedNotifyCoachQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH)
+                .withArgument("x-dead-letter-exchange",
+                        OrderMQConstants.EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY_DLX)
+                .withArgument("x-dead-letter-routing-key",
+                        OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Queue orderPaymentConfirmedNotifyCoachRetryQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY)
+                .withArgument("x-message-ttl", coachConfirmRetryInterval)
+                .withArgument("x-dead-letter-exchange",
+                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH)
+                .withArgument("x-dead-letter-routing-key",
+                        OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH)
+                .build();
+    }
+
+    @Bean
+    public Queue orderPaymentConfirmedNotifyCoachDlq() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Binding bindOrderPaymentConfirmedNotifyCoachQueue() {
+        return BindingBuilder
+                .bind(orderPaymentConfirmedNotifyCoachQueue())
+                .to(orderPaymentConfirmedNotifyCoachExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH);
+    }
+
+    @Bean
+    public Binding bindOrderPaymentConfirmedNotifyCoachRetryQueue() {
+        return BindingBuilder
+                .bind(orderPaymentConfirmedNotifyCoachRetryQueue())
+                .to(orderPaymentConfirmedNotifyCoachRetryDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_RETRY);
+    }
+
+    @Bean
+    public Binding bindOrderPaymentConfirmedNotifyCoachDlq() {
+        return BindingBuilder
+                .bind(orderPaymentConfirmedNotifyCoachDlq())
+                .to(orderPaymentConfirmedNotifyCoachFinalDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH_FINAL);
+    }
 
 
 

@@ -10,6 +10,7 @@ import com.unlimited.sports.globox.model.auth.dto.UserMediaRequest;
 import com.unlimited.sports.globox.model.auth.entity.UserMedia;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
+import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import com.unlimited.sports.globox.user.mapper.UserMediaMapper;
 import com.unlimited.sports.globox.user.service.FileUploadService;
 import com.unlimited.sports.globox.user.service.UserMediaService;
@@ -39,6 +40,7 @@ public class UserMediaServiceImpl implements UserMediaService {
 
     private static final int MAX_MEDIA_COUNT = 12; // 最大媒体数量（图+视频合计）
     private static final int MAX_VIDEO_COUNT = 5;  // 最大视频数量
+    private static final String DEFAULT_VIDEO_COVER_QUERY = "ci-process=snapshot&time=0&format=jpg";
 
     @Autowired
     private UserMediaMapper userMediaMapper;
@@ -194,27 +196,50 @@ public class UserMediaServiceImpl implements UserMediaService {
     }
 
     @Override
-    public R<FileUploadVo> uploadMediaVideo(MultipartFile file) {
+    public R<VideoUploadVo> uploadMediaVideo(MultipartFile file) {
         try {
             // 调用文件上传服务上传视频
             String fileUrl = fileUploadService.uploadFile(file, FileTypeEnum.USER_MEDIA_VIDEO);
 
+            // 自动生成视频封面URL
+            String coverUrl = buildVideoCoverUrl(fileUrl);
+
             // 构建返回结果
-            FileUploadVo vo = new FileUploadVo(
+            VideoUploadVo vo = new VideoUploadVo(
                     fileUrl,
                     file.getOriginalFilename(),
-                    file.getSize()
+                    file.getSize(),
+                    coverUrl
             );
 
-            log.info("媒体视频上传成功: fileUrl={}", fileUrl);
+            log.info("媒体视频上传成功: fileUrl={}, coverUrl={}", fileUrl, coverUrl);
             return R.ok(vo);
         } catch (GloboxApplicationException e) {
             log.error("媒体视频上传失败: {}", e.getMessage());
             return R.error(e);
         } catch (Exception e) {
             log.error("媒体视频上传异常", e);
-            return R.<FileUploadVo>error(UserAuthCode.UPLOAD_FILE_FAILED).message("视频上传失败");
+            return R.<VideoUploadVo>error(UserAuthCode.UPLOAD_FILE_FAILED).message("视频上传失败");
         }
+    }
+
+    /**
+     * 构建视频封面URL（使用腾讯云COS的截图功能）
+     *
+     * @param videoUrl 视频URL
+     * @return 封面URL
+     */
+    private String buildVideoCoverUrl(String videoUrl) {
+        if (!StringUtils.hasText(videoUrl)) {
+            return null;
+        }
+        // 如果URL已经包含ci-process参数，直接返回
+        if (videoUrl.contains("ci-process=")) {
+            return videoUrl;
+        }
+        // 在视频URL后追加腾讯云COS的截图参数
+        String separator = videoUrl.contains("?") ? "&" : "?";
+        return videoUrl + separator + DEFAULT_VIDEO_COVER_QUERY;
     }
 }
 

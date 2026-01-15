@@ -1,9 +1,11 @@
 package com.unlimited.sports.globox.merchant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisDistributedLock;
 import com.unlimited.sports.globox.common.result.VenueCode;
+import com.unlimited.sports.globox.cos.vo.BatchUploadResultVo;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
 import com.unlimited.sports.globox.merchant.mapper.MerchantMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
@@ -20,12 +22,14 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivitySlotLock;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.model.venue.enums.OrganizerTypeEnum;
+import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
 import com.unlimited.sports.globox.venue.constants.BookingCacheConstants;
 import com.unlimited.sports.globox.venue.mapper.ActivityTypeMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivitySlotLockMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
+import com.unlimited.sports.globox.venue.service.IFileUploadService;
 import com.unlimited.sports.globox.venue.service.IVenueActivitySlotLockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,10 +38,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -70,10 +76,24 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
     @Lazy
     private VenueActivityManagementServiceImpl self;
 
+    @Autowired
+    private IFileUploadService fileUploadService;
+
     @Override
-    public Long createActivity(CreateActivityDto dto, MerchantAuthContext context) {
-        log.info("创建活动 - employeeId: {}, role: {}, activityName: {}, slotTemplateIds: {}",
+    public Long createActivity(CreateActivityDto dto, MultipartFile[] images, MerchantAuthContext context) {        log.info("创建活动 - employeeId: {}, role: {}, activityName: {}, slotTemplateIds: {}",
                 context.getEmployeeId(), context.getRole(), dto.getActivityName(), dto.getSlotTemplateIds());
+
+        // 1. 处理可选的图片上传（在事务之外处理网络请求）
+        if (images != null && images.length > 0) {
+            log.info("开始上传活动图片，数量：{}", images.length);
+            // 使用 FileTypeEnum.VENUE_IMAGE 或新增 ACTIVITY_IMAGE 类型
+            BatchUploadResultVo uploadResult = fileUploadService.batchUploadFiles(images, FileTypeEnum.VENUE_IMAGE);
+
+            if (uploadResult.getSuccessCount() > 0) {
+                // 将上传成功的 URL 设置到 DTO 中
+                dto.setImageUrls(uploadResult.getSuccessUrls());
+            }
+        }
 
         // 根据MerchantAuthContext的role确定组织者类型和名称
         String organizerName;
@@ -239,6 +259,8 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                 .contactPhone(dto.getContactPhone())
                 .minNtrpLevel(dto.getMinNtrpLevel())
                 .activityConfig(dto.getActivityConfig())
+                .status(VenueActivityStatusEnum.NORMAL.getValue())
+                .imageUrls(dto.getImageUrls() != null ? Collections.singletonList(String.join(",", dto.getImageUrls())) : null) // 示例：转为逗号分隔字符串
                 .build();
 
         // 插入活动数据

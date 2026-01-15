@@ -84,14 +84,6 @@ public enum NotificationEventEnum {
     SYSTEM_PORTRAIT_MATTING_COMPLETED(NotificationModuleEnum.SYSTEM, NotificationRoleEnum.SYSTEM_USER, "SYSTEM_PORTRAIT_MATTING_COMPLETED", "球星卡肖像处理完成"),
 
 
-    /**
-     * 订单模块
-     */
-    ORDER_AUTO_CANCELLED(NotificationModuleEnum.ORDER, NotificationRoleEnum.ORDER_CREATOR,"ORDER_AUTO_CANCELLED", "订单自动取消"),
-
-
-
-
 
 
 

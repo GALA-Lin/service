@@ -10,9 +10,9 @@ import lombok.Data;
 @Schema(description = "用户球拍请求项")
 public class UserRacketRequest {
 
-    @Schema(description = "球拍型号ID", example = "1001")
+    @Schema(description = "球拍型号ID（型号级别）", example = "1001")
     private Long racketModelId;
 
-    @Schema(description = "是否主力拍", example = "true")
+    @Schema(description = "是否主力拍（最多一个为 true）", example = "true")
     private Boolean isPrimary;
 }

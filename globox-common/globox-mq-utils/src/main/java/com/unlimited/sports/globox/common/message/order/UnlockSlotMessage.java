@@ -21,5 +21,6 @@ public class UnlockSlotMessage implements Serializable {
     private Long userId;
     private List<Long> recordIds;
     private LocalDate bookingDate;
+    private boolean isActivity;
     private OperatorTypeEnum operatorType;
 }

@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 
 /**
@@ -16,7 +17,7 @@ import java.math.BigDecimal;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserRefundMessage {
+public class UserRefundMessage implements Serializable {
 
     /**
      * 订单编号
@@ -47,5 +48,10 @@ public class UserRefundMessage {
      * 是否因订单被取消，由系统发起的退款
      */
     private boolean orderCancelled = false;
+
+    /**
+     * 是否整单退款
+     */
+    private boolean fullRefund;
 
 }

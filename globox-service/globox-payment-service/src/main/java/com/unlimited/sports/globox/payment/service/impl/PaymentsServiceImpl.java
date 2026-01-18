@@ -66,7 +66,7 @@ public class PaymentsServiceImpl implements PaymentsService {
     @Autowired
     private AlipayService alipayService;
 
-    @Autowired
+    @Autowired(required = false)
     private WechatPayService wechatPayService;
 
     @Autowired(required = false)
@@ -250,14 +250,14 @@ public class PaymentsServiceImpl implements PaymentsService {
 
         BigDecimal remain = payments.getTotalAmount().subtract(currentRefundAmount);
 
-        if (remain.compareTo(BigDecimal.ZERO) == 0) {
-            payments.setPaymentStatus(PaymentStatusEnum.CLOSED);
-        } else if (remain.compareTo(BigDecimal.ZERO) > 0) {
-            payments.setPaymentStatus(PaymentStatusEnum.PARTIALLY_REFUNDED);
-        } else {
+        if (remain.compareTo(BigDecimal.ZERO) < 0) {
             log.error("申请退款的金额大于订单可退金额，payments:{}", jsonUtils.objectToJson(payments));
             return false;
+
         }
+
+        // 是否整单退款
+        payments.setPaymentStatus(message.isFullRefund() ? PaymentStatusEnum.CLOSED : PaymentStatusEnum.PARTIALLY_REFUNDED);
 
         thisService.updatePayment(payments);
 
@@ -270,7 +270,9 @@ public class PaymentsServiceImpl implements PaymentsService {
             if (payments.getThirdPartyJsapi() != null) {
                 // 三方小程序退款
                 if (payments.getThirdPartyJsapi().equals(ThirdPartyJsapiEnum.MOON_COURT)) {
-                    success = wechatPayMoonCourtJsapiService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+                    success = wechatPayMoonCourtJsapiService.refund(payments,
+                            message.getRefundAmount(),
+                            message.getRefundReason());
                 } else {
                     throw new GloboxApplicationException(PaymentsCode.THIRD_PARTY_TYPE_NOT_EXIST);
                 }

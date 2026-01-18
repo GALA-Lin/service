@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 @Data
 @Component
-@Profile("beta")
+@Profile("!dev")
 @ConfigurationProperties(prefix = "wechat-pay.mooncourt")
 public class WechatPayMoonCourtProperties {
 

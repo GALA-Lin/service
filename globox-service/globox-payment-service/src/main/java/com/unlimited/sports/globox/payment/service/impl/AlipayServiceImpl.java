@@ -30,6 +30,7 @@ import com.unlimited.sports.globox.payment.prop.AlipayProperties;
 import com.unlimited.sports.globox.payment.service.AlipayService;
 import com.unlimited.sports.globox.payment.service.PaymentsService;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
+import com.unlimited.sports.globox.service.RedisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -53,7 +54,7 @@ public class AlipayServiceImpl implements AlipayService {
     private AlipayClient alipayClient;
 
     @Autowired
-    private RedisTemplate<Object, Object> redisTemplate;
+    private RedisService redisService;
 
     @Autowired
     private AlipayProperties aliPayProperties;
@@ -141,7 +142,8 @@ public class AlipayServiceImpl implements AlipayService {
         }
 
         // 5) 添加标识
-        Boolean flag = redisTemplate.opsForValue().setIfAbsent(notifyId, notifyId, 1461, TimeUnit.MINUTES);
+
+        Boolean flag = redisService.setCacheObjectIfAbsent(notifyId, notifyId, 1461L, TimeUnit.MINUTES);
         if (Boolean.TRUE.equals(flag)) {
             // 6) 设置支付状态信息
             String tradeNo = paramsMap.get("trade_no");

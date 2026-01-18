@@ -1,4 +1,4 @@
-package com.unlimited.sports.globox.order.lock;
+package com.unlimited.sports.globox.common.lock;
 
 import java.lang.annotation.*;
 import java.util.concurrent.TimeUnit;

@@ -73,10 +73,6 @@ public class ChatController {
             @RequestParam(defaultValue = "1") Integer page,
             @RequestParam(defaultValue = "50") Integer pageSize) {
         try {
-            if (userId == null) {
-                log.error("请求头中缺少{}",HEADER_USER_ID);
-                throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-            }
             PaginationResult<ConversationVo> result =
                 conversationService.getConversationVoList(userId, page, pageSize);
             log.info("用户：{},获取用户会话列表:{}", userId, result);
@@ -300,6 +296,8 @@ public class ChatController {
             return R.error(ApplicationCode.FAIL);
         }
     }
+
+
     /**
      * 批量发送消息
      * POST /social/chat/message/batch-send
@@ -477,12 +475,8 @@ public class ChatController {
     public R<Map<String, Object>> getUnreadCount(
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
-            if (userId == null) {
-                log.error("请求头中缺少{}",HEADER_USER_ID);
-                throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-            }
             Map<String, Object> result = new HashMap<>();
-            
+
             // 获取用户所有会话，查询每个会话的未读数量
             PaginationResult<Conversation> conversationResult =
                 conversationService.getConversationList(userId, 1, 1000);

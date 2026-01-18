@@ -25,8 +25,7 @@ public interface OrderRefundActionService {
             boolean isAutoRefund,
             Long operatorId,
             OperatorTypeEnum operatorType,
-            SellerTypeEnum sellerType,
-            BigDecimal refundPercentage);
+            SellerTypeEnum sellerType);
 
     void refundSuccess(PaymentRefundMessage message);
 }

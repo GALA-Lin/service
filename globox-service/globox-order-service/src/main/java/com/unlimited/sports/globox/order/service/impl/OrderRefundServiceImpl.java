@@ -1,15 +1,13 @@
 package com.unlimited.sports.globox.order.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
-import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
-import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
@@ -21,27 +19,22 @@ import com.unlimited.sports.globox.model.order.dto.GetRefundProgressRequestDto;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.*;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import com.unlimited.sports.globox.order.service.OrderRefundService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
-
-import static com.unlimited.sports.globox.common.utils.Assert.rpcResultOk;
 
 /**
  * 提供订单退款相关的服务操作。
@@ -150,8 +143,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 
         // 是否可自动退款
         boolean autoRefund;
-        // 商家订单需要查询退款规则
-        BigDecimal refundPercentage;
         if (order.getSellerType().equals(SellerTypeEnum.VENUE)) {
             MerchantRefundRuleJudgeRequestDto requestDto = MerchantRefundRuleJudgeRequestDto.builder()
                     .venueId(order.getSellerId())
@@ -181,7 +172,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                         .build();
             } else {
                 MerchantRefundRuleJudgeResultVo resultVo = refundRuleResult.getData();
-                refundPercentage = resultVo.getRefundPercentage();
                 autoRefund = true;
             }
 
@@ -195,7 +185,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
 //                autoRefund = false;
 //            }
             // 关闭自动退款，走审批流程
-            refundPercentage = new BigDecimal("100");
             autoRefund = false;
         } else {
             throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
@@ -277,8 +266,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                                 true,
                                 null,
                                 OperatorTypeEnum.USER,
-                                order.getSellerType(),
-                                refundPercentage);
+                                order.getSellerType());
                     });
                 }
             }

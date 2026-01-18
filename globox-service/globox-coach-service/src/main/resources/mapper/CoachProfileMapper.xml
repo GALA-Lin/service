@@ -26,6 +26,7 @@
         <result property="coachTeachingStyle" column="coach_teaching_style"/>
         <result property="coachServiceArea" column="coach_service_area"/>
         <result property="coachRemoteServiceArea" column="coach_remote_service_area"/>
+        <result property="coachMinHours" column="coach_min_hours"/>
         <result property="coachRemoteMinHours" column="coach_remote_min_hours"/>
         <result property="coachAcceptVenueType" column="coach_accept_venue_type"/>
         <result property="coachMinPrice" column="coach_min_price"/>

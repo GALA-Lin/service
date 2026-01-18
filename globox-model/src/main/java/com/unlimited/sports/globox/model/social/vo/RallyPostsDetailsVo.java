@@ -66,6 +66,12 @@ public class RallyPostsDetailsVo {
      */
     @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
     private LocalTime rallyEndTime;
+
+    /**
+     * 约球时段
+     */
+    private String rallyTimeType;
+
     /**
      * 约球性别限制
      */

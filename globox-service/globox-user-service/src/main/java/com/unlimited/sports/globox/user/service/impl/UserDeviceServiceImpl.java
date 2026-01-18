@@ -14,6 +14,7 @@ import com.unlimited.sports.globox.user.service.IUserDeviceService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -33,7 +34,7 @@ public class UserDeviceServiceImpl implements IUserDeviceService {
     private MQService mqService;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
     public UserDevices registerDevice(DeviceRegisterRequest request) {
         Long userId = request.getUserId();
         String deviceId = request.getDeviceId();

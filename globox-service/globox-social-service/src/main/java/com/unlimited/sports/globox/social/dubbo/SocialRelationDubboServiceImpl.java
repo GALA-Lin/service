@@ -8,6 +8,7 @@ import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusDto;
 import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusItemDto;
 import com.unlimited.sports.globox.model.social.entity.SocialUserFollow;
 import com.unlimited.sports.globox.social.mapper.SocialUserFollowMapper;
+import com.unlimited.sports.globox.social.mapper.SocialUserBlockMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,9 @@ public class SocialRelationDubboServiceImpl implements SocialRelationDubboServic
 
     @Autowired
     private SocialUserFollowMapper socialUserFollowMapper;
+
+    @Autowired
+    private SocialUserBlockMapper socialUserBlockMapper;
 
     @Override
     public RpcResult<UserRelationStatusDto> getRelationStatus(Long viewerId, Long targetUserId) {
@@ -92,6 +96,23 @@ public class SocialRelationDubboServiceImpl implements SocialRelationDubboServic
             return RpcResult.ok(result);
         } catch (Exception e) {
             log.error("RPC批量查询关注关系失败: viewerId={}, targetUserIds={}", viewerId, targetUserIds, e);
+            return RpcResult.error(SocialCode.RELATION_RPC_FAILED);
+        }
+    }
+
+    @Override
+    public RpcResult<Boolean> isBlocked(Long viewerId, Long targetUserId) {
+        if (viewerId == null || targetUserId == null) {
+            return RpcResult.error(SocialCode.RELATION_RPC_FAILED);
+        }
+        try {
+            // 检查是否存在任意方向的拉黑关系
+            boolean viewerBlocksTarget = socialUserBlockMapper.existsBlock(viewerId, targetUserId);
+            boolean targetBlocksViewer = socialUserBlockMapper.existsBlock(targetUserId, viewerId);
+            boolean isBlocked = viewerBlocksTarget || targetBlocksViewer;
+            return RpcResult.ok(isBlocked);
+        } catch (Exception e) {
+            log.error("RPC查询拉黑关系失败: viewerId={}, targetUserId={}", viewerId, targetUserId, e);
             return RpcResult.error(SocialCode.RELATION_RPC_FAILED);
         }
     }

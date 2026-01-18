@@ -15,6 +15,7 @@ import com.wechat.pay.java.service.payments.model.Transaction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.math.RoundingMode;
@@ -23,6 +24,7 @@ import java.math.RoundingMode;
  * App 微信支付
  */
 @Slf4j
+@Profile("!dev")
 @Service
 public class WechatPayAppServiceImpl implements WechatPayAppService {
 

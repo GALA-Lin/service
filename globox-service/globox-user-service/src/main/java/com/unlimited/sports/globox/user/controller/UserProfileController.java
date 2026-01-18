@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.user.controller;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
+import com.unlimited.sports.globox.model.auth.dto.CancelAccountRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
@@ -16,6 +18,7 @@ import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import com.unlimited.sports.globox.user.service.UserProfileService;
 import com.unlimited.sports.globox.user.service.UserMediaService;
+import com.unlimited.sports.globox.user.service.AuthService;
 import com.unlimited.sports.globox.common.enums.RegionCityEnum;
 import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
@@ -56,6 +59,9 @@ public class UserProfileController {
 
     @Autowired
     private UserMediaService userMediaService;
+
+    @Autowired
+    private AuthService authService;
 
     @DubboReference(group = "rpc")
     private RegionDubboService regionDubboService;
@@ -193,7 +199,7 @@ public class UserProfileController {
     }
 
     @GetMapping("/media")
-    @Operation(summary = "查询用户媒体列表", description = "获取当前用户的展示墙媒体列表（照片/视频），支持按类型过滤")
+    @Operation(summary = "查询用户媒体列表（自己的）", description = "获取当前用户的展示墙媒体列表（照片/视频），支持按类型过滤")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "查询成功"),
             @ApiResponse(responseCode = "2010", description = "用户不存在"),
@@ -207,6 +213,25 @@ public class UserProfileController {
             @Parameter(description = "媒体类型（可选，IMAGE/VIDEO，为空则返回所有类型）", required = false)
             @RequestParam(value = "mediaType", required = false) String mediaType) {
         return userMediaService.getUserMediaList(userId, mediaType);
+    }
+
+    @GetMapping("/{userId}/media")
+    @Operation(summary = "查询用户媒体列表（查看别人的）", description = "获取指定用户的展示墙媒体列表（照片/视频），支持按类型过滤。包含拉黑校验，被拉黑或拉黑了对方则无法查看")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token"),
+            @ApiResponse(responseCode = "2040", description = "参数无效（mediaType格式错误）"),
+            @ApiResponse(responseCode = "3031", description = "你已被对方拉黑或已拉黑对方")
+    })
+    public R<List<UserMediaVo>> getUserMediaListByUserId(
+            @Parameter(description = "当前登录用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(value = RequestHeaderConstants.HEADER_USER_ID, required = false) Long viewerId,
+            @Parameter(description = "目标用户ID", required = true)
+            @PathVariable("userId") Long targetUserId,
+            @Parameter(description = "媒体类型（可选，IMAGE/VIDEO，为空则返回所有类型）", required = false)
+            @RequestParam(value = "mediaType", required = false) String mediaType) {
+        return userMediaService.getUserMediaList(targetUserId, mediaType, viewerId);
     }
 
     @PutMapping("/media")
@@ -263,6 +288,33 @@ public class UserProfileController {
             @Parameter(description = "视频文件（mp4/mov，最大100MB）", required = true)
             @RequestParam("file") MultipartFile file) {
         return userMediaService.uploadMediaVideo(file);
+    }
+
+    @PostMapping("/account/cancel/verify")
+    @Operation(summary = "注销账号校验", description = "短信验证码校验后返回注销确认凭证")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "校验成功"),
+            @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
+            @ApiResponse(responseCode = "2004", description = "验证码错误或已过期"),
+            @ApiResponse(responseCode = "2005", description = "验证码错误次数过多，请重新获取"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2063", description = "账号已被禁用，请联系管理员"),
+            @ApiResponse(responseCode = "2064", description = "账号已注销，请重新注册")
+    })
+    public R<String> verifyCancelAccount(@Validated @RequestBody CancelAccountRequest request) {
+        return authService.verifyCancelAccount(request);
+    }
+
+    @PostMapping("/account/cancel/confirm")
+    @Operation(summary = "注销账号确认", description = "用户确认后正式注销账号")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "注销成功"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2063", description = "账号已被禁用，请联系管理员"),
+            @ApiResponse(responseCode = "2065", description = "注销确认已过期，请重新验证")
+    })
+    public R<String> confirmCancelAccount(@Validated @RequestBody CancelAccountConfirmRequest request) {
+        return authService.confirmCancelAccount(request);
     }
 
     @PostMapping("/star-card/portrait/upload")

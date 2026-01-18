@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.coach.controller;
 
 import com.unlimited.sports.globox.coach.service.ICoachCourseTypeService;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeBatchDto;
 import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @since 2026/1/8 10:12
@@ -28,6 +30,25 @@ public class CoachCourseTypeController {
      * 如果该服务类型已存在，则更新；否则创建新的
      * 每种服务类型（1-4）仅允许有一种
      */
+
+    @PostMapping("/batch")
+    public R<Map<Integer, Long>> batchSaveOrUpdateCourseTypes(
+            @Valid @RequestBody CoachCourseTypeBatchDto batchDto,
+            @RequestHeader("X-User-Id") Long coachUserId) {
+
+        log.info("批量创建/更新课程类型 - coachUserId: {}, 课程数量: {}",
+                coachUserId, batchDto.getCourseTypes().size());
+
+        // 设置教练ID
+        batchDto.setCoachUserId(coachUserId);
+        batchDto.getCourseTypes().forEach(dto -> dto.setCoachUserId(coachUserId));
+
+        // 批量保存
+        Map<Integer, Long> resultMap = courseTypeService.batchSaveOrUpdateCourseTypes(batchDto);
+
+        return R.ok(resultMap);
+    }
+
     @PostMapping
     public R<Long> saveOrUpdateCourseType(
             @Valid @RequestBody CoachCourseTypeDto dto,

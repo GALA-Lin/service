@@ -14,7 +14,7 @@ public enum CourtTypeEnum {
     INDOOR(1, "室内"),
     OUTDOOR(2, "室外"),
     COVERED(3, "风雨场"),
-    SEMI_ENCLOSED(4, "半封闭");
+    SEMI_ENCLOSED(4, "其他");
 
     private final Integer code;
     private final String name;

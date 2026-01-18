@@ -20,7 +20,7 @@ import java.nio.file.Path;
 /**
  * moonCourt 配置
  */
-@Profile("beta")
+@Profile("!dev")
 @Configuration
 public class WechatPayMoonCourtConfig {
 

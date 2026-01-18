@@ -68,6 +68,11 @@ public enum UserAuthCode implements ResultCode {
     MERCHANT_ACCOUNT_NOT_EXIST(2060, "账号不存在，请检查账号是否正确或联系管理员"),
     MERCHANT_PASSWORD_ERROR(2061, "账号或密码错误，请重新输入"),
     MERCHANT_ACCOUNT_DISABLED(2062, "账号已被禁用，请联系管理员"),
+
+    // 用户账号状态相关 2063-2069
+    USER_ACCOUNT_DISABLED(2063, "账号已被禁用，请联系管理员"),
+    USER_ACCOUNT_CANCELLED(2064, "账号已注销，请重新注册"),
+    CANCEL_CONFIRM_EXPIRED(2065, "注销确认已过期，请重新验证"),
     ;
 
     private final Integer code;

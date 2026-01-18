@@ -13,6 +13,7 @@ import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.dubbo.user.dto.UserInfoDto;
+import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachListDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
@@ -209,13 +210,22 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         Assert.rpcResultOk(rpcResult);
         BatchUserInfoResponse response = rpcResult.getData();
 
+        RpcResult<List<UserPhoneDto>> getUserPhone = userDubboService.batchGetUserPhone(request.getUserIds());
+        Assert.rpcResultOk(getUserPhone);
+        List<UserPhoneDto> phoneDtos = getUserPhone.getData();
+
         if (response == null || response.getUsers() == null || response.getUsers().isEmpty()) {
             log.error("无法获取教练基本信息 - coachUserId: {}", coachUserId);
             throw new GloboxApplicationException("无法获取教练基本信息");
         }
 
-        UserInfoVo userInfo = response.getUsers().get(0);
+        if (phoneDtos == null || phoneDtos.isEmpty()) {
+            log.error("无法获取教练电话 -  coachUserId: {}", coachUserId);
+            throw new GloboxApplicationException("无法获取教练电话");
+        }
 
+        UserInfoVo userInfo = response.getUsers().get(0);
+        String coachPhone = phoneDtos.get(0).getPhone();
         // 查询教练的所有课程服务
         List<CoachCourseType> services = coachCourseTypeMapper.selectList(
                 new LambdaQueryWrapper<CoachCourseType>()
@@ -269,7 +279,11 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         // 构建简单信息VO
         CoachItemVo simpleInfo = CoachItemVo.builder()
                 .coachUserInfo(userInfoVo)
+                .coachPhone(coachPhone)
                 .coachServiceArea(profile.getCoachServiceArea())
+                .coachMinHours(profile.getCoachMinHours())
+                .coachRemoteServiceArea(profile.getCoachRemoteServiceArea())
+                .coachRemoteMinHours(profile.getCoachRemoteMinHours())
                 .coachTeachingYears(profile.getCoachTeachingYears())
                 .coachRatingScore(profile.getCoachRatingScore())
                 .coachRatingCount(profile.getCoachRatingCount())
@@ -295,8 +309,6 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                         profile.getCoachWorkVideos() : Collections.emptyList())
                 .coachSpecialtyTags(profile.getCoachSpecialtyTags() != null ?
                         profile.getCoachSpecialtyTags() : Collections.emptyList())
-                .coachRemoteServiceArea(profile.getCoachRemoteServiceArea())
-                .coachRemoteMinHours(profile.getCoachRemoteMinHours())
                 .coachAcceptVenueType(profile.getCoachAcceptVenueType())
                 .coachAcceptVenueTypeDesc(venueTypeDesc)
                 .services(serviceVos)

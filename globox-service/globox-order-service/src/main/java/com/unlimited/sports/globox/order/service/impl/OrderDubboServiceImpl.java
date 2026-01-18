@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.order.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
@@ -12,7 +13,6 @@ import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
@@ -69,7 +69,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      * @return 结果
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerCancelOrderResultDto> sellerCancelUnpaidOrder(Long orderNo, Long sellerId, Long operatorId, SellerTypeEnum sellerType) {
         // 1) 查询订单（行锁，防并发支付/取消）
@@ -353,7 +353,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 false,
                 sellerId,
                 OperatorTypeEnum.USER,
-                sellerType, refundPercentage);
+                sellerType);
 
         SellerApproveRefundResultDto resultDto = SellerApproveRefundResultDto.builder()
                 .orderNo(orderNo)
@@ -557,7 +557,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      * @return 返回一个RpcResult对象，包含服务提供方发起退款的结果信息，包括订单状态、退款申请状态等
      */
     @Override
-    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerRefundResultDto> refund(Long orderNo, Long SellerId, Long operatorId, List<Long> reqItemIds, SellerTypeEnum sellerType, String remark) {
         LocalDateTime now = LocalDateTime.now();
@@ -656,7 +656,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                         true,
                         null,
                         SellerTypeEnum.COACH.equals(order.getSellerType()) ? OperatorTypeEnum.COACH : OperatorTypeEnum.MERCHANT,
-                        order.getSellerType(), new BigDecimal("100"));
+                        order.getSellerType());
             }
         });
 

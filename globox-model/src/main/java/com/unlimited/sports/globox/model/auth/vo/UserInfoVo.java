@@ -50,4 +50,9 @@ public class UserInfoVo implements Serializable {
      * 用户网球水平（NTRP）
      */
     private Double userNtrpLevel;
+
+    /**
+     * 用户注销状态
+     */
+    private Boolean cancelled;
 }

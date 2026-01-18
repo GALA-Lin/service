@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
@@ -10,6 +11,8 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.HttpRequestUtils;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
+import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
+import com.unlimited.sports.globox.model.auth.dto.CancelAccountRequest;
 import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.DeviceInfo;
 import com.unlimited.sports.globox.model.auth.dto.DeviceRegisterRequest;
@@ -28,12 +31,19 @@ import com.unlimited.sports.globox.model.auth.dto.WechatPhoneLoginRequest;
 import com.unlimited.sports.globox.model.auth.vo.WechatUserInfo;
 import com.unlimited.sports.globox.model.auth.entity.AuthIdentity;
 import com.unlimited.sports.globox.model.auth.entity.AuthUser;
+import com.unlimited.sports.globox.model.auth.entity.InternalTestWhitelist;
 import com.unlimited.sports.globox.model.auth.entity.UserLoginRecord;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
+import com.unlimited.sports.globox.model.auth.entity.UserRacket;
+import com.unlimited.sports.globox.model.auth.entity.UserStyleTag;
+import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
 import com.unlimited.sports.globox.user.mapper.AuthIdentityMapper;
 import com.unlimited.sports.globox.user.mapper.AuthUserMapper;
 import com.unlimited.sports.globox.user.mapper.UserLoginRecordMapper;
 import com.unlimited.sports.globox.user.mapper.UserProfileMapper;
+import com.unlimited.sports.globox.user.mapper.UserRacketMapper;
+import com.unlimited.sports.globox.user.mapper.UserStyleTagMapper;
+import com.unlimited.sports.globox.user.prop.UserProfileDefaultProperties;
 import com.unlimited.sports.globox.user.service.AuthService;
 import com.unlimited.sports.globox.user.service.IUserDeviceService;
 import com.unlimited.sports.globox.user.service.RedisService;
@@ -57,6 +67,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.math.BigDecimal;
 
 /**
  * 认证服务实现
@@ -73,7 +84,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Autowired
     @Lazy
-    private  AuthService thisService;
+    private AuthService thisService;
 
     @Autowired
     private SmsService smsService;
@@ -94,6 +105,12 @@ public class AuthServiceImpl implements AuthService {
     private UserLoginRecordMapper userLoginRecordMapper;
 
     @Autowired
+    private UserRacketMapper userRacketMapper;
+
+    @Autowired
+    private UserStyleTagMapper userStyleTagMapper;
+
+    @Autowired
     private WechatService wechatService;
 
     @Autowired
@@ -101,6 +118,9 @@ public class AuthServiceImpl implements AuthService {
 
     @DubboReference(group = "rpc")
     private ChatDubboService chatDubboService;
+
+    @Autowired
+    private UserProfileDefaultProperties userProfileDefaultProperties;
 
     @Value("${user.jwt.secret}")
     private String jwtSecret;
@@ -117,11 +137,22 @@ public class AuthServiceImpl implements AuthService {
     @Value("${third-party.jwt.access-token-expire:86400}")
     private long thirdPartyAccessTokenExpire;
 
-    @Value("${user.profile.default-avatar-url:}")
-    private String defaultAvatarUrl;
-
     private static final long SMS_CODE_EXPIRE = 300; // 验证码有效期5分钟
+    private static final long CANCEL_CONFIRM_TOKEN_EXPIRE = 600; // 注销确认凭证有效期10分钟
     private static final int MAX_SMS_ERROR_COUNT = 5; // 最大错误次数
+    private static final String CANCEL_CONFIRM_TOKEN_PREFIX = "user:cancel:token:";
+    private static final String DEFAULT_SIGNATURE = "生命不息运动不止";
+    private static final int DEFAULT_SPORTS_YEARS = 0;
+    private static final int DEFAULT_POWER = 5;
+    private static final int DEFAULT_SPEED = 5;
+    private static final int DEFAULT_SERVE = 5;
+    private static final int DEFAULT_VOLLEY = 5;
+    private static final int DEFAULT_STAMINA = 5;
+    private static final int DEFAULT_MENTAL = 5;
+    private static final String DEFAULT_HOME_DISTRICT = "510000";
+    private static final String DEFAULT_EMPTY_TEXT = "";
+    private static final String WHITELIST_LOGIN_PASSWORD = "970824"; // 白名单免验证码固定密码
+    private static final String WHITELIST_CANCEL_PASSWORD = "970824"; // 白名单注销固定密码
 
     @Override
     public R<String> sendCaptcha(SendCaptchaRequest request) {
@@ -171,33 +202,48 @@ public class AuthServiceImpl implements AuthService {
         // 1. 验证手机号格式
         Assert.isTrue(PhoneUtils.isValidPhone(phone), UserAuthCode.INVALID_PHONE);
 
-        // 2. 白名单校验
-        Assert.isTrue(whitelistService.isInWhitelist(phone), UserAuthCode.NOT_IN_WHITELIST);
+        // 2. 白名单校验（非白名单仍保持原逻辑）
+        InternalTestWhitelist whitelist = whitelistService.getWhitelistByPhone(phone);
+        boolean inWhitelist = whitelist != null
+                && whitelist.getStatus() == InternalTestWhitelist.WhitelistStatus.ACTIVE;
 
-        // 3. 验证错误次数检查
-        long errorCount = redisService.getSmsErrorCount(phone);
-        Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
+        // 3. 白名单用户使用固定密码登录，不走验证码
+        if (inWhitelist) {
+            // 3a. 验证错误次数检查
+            long errorCount = redisService.getSmsErrorCount(phone);
+            Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
 
-        // 4. 验证码校验
-        String savedCode = redisService.getSmsCode(phone);
-        Assert.isNotEmpty(savedCode, UserAuthCode.INVALID_CAPTCHA);
+            if (!WHITELIST_LOGIN_PASSWORD.equals(code)) {
+                redisService.incrementSmsError(phone);
+                recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
+                throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            }
+            // 固定密码正确，清除错误计数
+            redisService.clearSmsError(phone);
+        } else {
+            // 3b. 正常验证码登录流程
+            long errorCount = redisService.getSmsErrorCount(phone);
+            Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
 
-        if (!code.equals(savedCode)) {
-            // 错误次数+1
-            redisService.incrementSmsError(phone);
-            // 记录登录失败日志
-            recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
-            throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            String savedCode = redisService.getSmsCode(phone);
+            Assert.isNotEmpty(savedCode, UserAuthCode.INVALID_CAPTCHA);
+
+            if (!code.equals(savedCode)) {
+                redisService.incrementSmsError(phone);
+                recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
+                throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            }
+
+            redisService.clearSmsError(phone);
+            redisService.deleteSmsCode(phone);
         }
-
-        // 5. 验证码正确，清除错误计数和验证码
-        redisService.clearSmsError(phone);
-        redisService.deleteSmsCode(phone);
 
         // 6. 查询或创建用户（登录即注册）
         boolean[] isNewUserFlag = new boolean[1]; // 使用数组传递引用
-        AuthUser authUser = getOrCreateUser(phone, isNewUserFlag);
-        boolean isNewUser = isNewUserFlag[0];
+        LoginUserResult loginResult = getOrCreateUser(phone, isNewUserFlag);
+        AuthUser authUser = loginResult.authUser();
+        boolean reactivated = loginResult.reactivated();
+        boolean isNewUser = isNewUserFlag[0] || reactivated;
 
         // 7. 生成JWT Token
         Map<String, Object> claims = new HashMap<>();
@@ -233,6 +279,7 @@ public class AuthServiceImpl implements AuthService {
                 .userId(authUser.getUserId())
                 .roles(Collections.singletonList(authUser.getRole().name()))
                 .isNewUser(isNewUser)
+                .reactivated(reactivated)
                 .build();
 
         log.info("用户登录成功：userId={}, phone={}", authUser.getUserId(), phone);
@@ -246,7 +293,7 @@ public class AuthServiceImpl implements AuthService {
      * @param isNewUserFlag 是否为新用户的标识（输出参数，true表示新创建的用户）
      * @return 用户信息
      */
-    private AuthUser getOrCreateUser(String phone, boolean[] isNewUserFlag) {
+    private LoginUserResult getOrCreateUser(String phone, boolean[] isNewUserFlag) {
         // 1. 查询auth_identity，看该手机号是否已注册
         LambdaQueryWrapper<AuthIdentity> identityQuery = new LambdaQueryWrapper<>();
         identityQuery.eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
@@ -256,11 +303,7 @@ public class AuthServiceImpl implements AuthService {
         if (identity != null) {
             // 已注册，根据userId查询用户信息
             isNewUserFlag[0] = false;
-            LambdaQueryWrapper<AuthUser> userQuery = new LambdaQueryWrapper<>();
-            userQuery.eq(AuthUser::getUserId, identity.getUserId());
-            AuthUser authUser = authUserMapper.selectOne(userQuery);
-            Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
-            return authUser;
+            return ensureUserActiveForLogin(identity, buildDefaultNicknameForPhone(phone));
         }
 
         // 2. 未注册，创建新用户（时间字段由数据库自动填充）
@@ -269,6 +312,7 @@ public class AuthServiceImpl implements AuthService {
         // userId由数据库自动生成（自增主键）
         newUser.setRole(AuthUser.UserRole.USER);
         newUser.setStatus(AuthUser.UserStatus.ACTIVE);
+        newUser.setCancelled(false);
 
         int insertResult = authUserMapper.insert(newUser);
         Assert.isTrue(insertResult > 0, UserAuthCode.USER_NOT_EXIST);
@@ -285,6 +329,7 @@ public class AuthServiceImpl implements AuthService {
         newIdentity.setIdentifier(phone);
         newIdentity.setCredential(null); // 验证码登录无密码
         newIdentity.setVerified(true);
+        newIdentity.setCancelled(false);
 
         authIdentityMapper.insert(newIdentity);
 
@@ -293,6 +338,7 @@ public class AuthServiceImpl implements AuthService {
         profile.setUserId(userId);
         profile.setNickName("用户" + phone.substring(phone.length() - 4)); // 默认昵称：用户+后4位
         profile.setAvatarUrl(resolveAvatarUrl(null));
+        applyDefaultProfileValues(profile);
 
         userProfileMapper.insert(profile);
 
@@ -300,7 +346,7 @@ public class AuthServiceImpl implements AuthService {
         importTencentIMAccount(userId, profile.getNickName(), profile.getAvatarUrl());
 
         log.info("新用户注册成功：userId={}, phone={}", userId, phone);
-        return newUser;
+        return new LoginUserResult(newUser, false);
     }
 
     @Override
@@ -333,10 +379,8 @@ public class AuthServiceImpl implements AuthService {
 
         if (identity != null) {
             // 4. 已绑定：直接登录
-            LambdaQueryWrapper<AuthUser> userQuery = new LambdaQueryWrapper<>();
-            userQuery.eq(AuthUser::getUserId, identity.getUserId());
-            AuthUser authUser = authUserMapper.selectOne(userQuery);
-            Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+            AuthUser authUser = ensureUserActiveForLogin(identity,
+                    buildDefaultNicknameForWechat(identity.getUserId())).authUser();
 
             boolean isThirdParty = isThirdPartyClient();
 
@@ -498,6 +542,8 @@ public class AuthServiceImpl implements AuthService {
             Assert.isTrue(existingWechatIdentity == null || existingWechatIdentity.getUserId().equals(userId),
                     UserAuthCode.WECHAT_AUTH_FAILED);
 
+            ensureUserActiveForLogin(phoneIdentity, buildDefaultNicknameForPhone(phone));
+
             // 如果微信未绑定，创建绑定记录
             if (existingWechatIdentity == null) {
                 AuthIdentity wechatIdentity = new AuthIdentity();
@@ -507,6 +553,7 @@ public class AuthServiceImpl implements AuthService {
                 wechatIdentity.setIdentifier(identifier);
                 wechatIdentity.setCredential(null);
                 wechatIdentity.setVerified(true);
+                wechatIdentity.setCancelled(false);
                 authIdentityMapper.insert(wechatIdentity);
             }
 
@@ -520,6 +567,7 @@ public class AuthServiceImpl implements AuthService {
             // userId由数据库自动生成（自增主键）
             newUser.setRole(AuthUser.UserRole.USER);
             newUser.setStatus(AuthUser.UserStatus.ACTIVE);
+            newUser.setCancelled(false);
             int insertResult = authUserMapper.insert(newUser);
             Assert.isTrue(insertResult > 0, UserAuthCode.USER_NOT_EXIST);
             // 插入后获取自增的userId
@@ -534,6 +582,7 @@ public class AuthServiceImpl implements AuthService {
             phoneIdentityNew.setIdentifier(phone);
             phoneIdentityNew.setCredential(null);
             phoneIdentityNew.setVerified(true);
+            phoneIdentityNew.setCancelled(false);
             authIdentityMapper.insert(phoneIdentityNew);
 
             // 创建auth_identity（WECHAT类型）
@@ -544,6 +593,7 @@ public class AuthServiceImpl implements AuthService {
             wechatIdentity.setIdentifier(identifier);
             wechatIdentity.setCredential(null);
             wechatIdentity.setVerified(true);
+            wechatIdentity.setCancelled(false);
             authIdentityMapper.insert(wechatIdentity);
 
             // 创建user_profile，自动填充微信信息
@@ -556,6 +606,7 @@ public class AuthServiceImpl implements AuthService {
                 profile.setNickName("用户" + phone.substring(phone.length() - 4));
             }
             profile.setAvatarUrl(resolveAvatarUrl(avatarUrl));
+            applyDefaultProfileValues(profile);
             userProfileMapper.insert(profile);
 
             // 导入腾讯IM账号（失败不影响注册流程）
@@ -601,6 +652,7 @@ public class AuthServiceImpl implements AuthService {
                 .userId(userId)
                 .roles(Collections.singletonList(AuthUser.UserRole.USER.name()))
                 .isNewUser(isNewUser)
+                .reactivated(false)
                 .build();
 
         log.info("微信绑定手机号成功：userId={}, phone={}", userId, phone);
@@ -660,6 +712,7 @@ public class AuthServiceImpl implements AuthService {
             AuthIdentity existingWechatIdentity = authIdentityMapper.selectOne(wechatCheckQuery);
             Assert.isTrue(existingWechatIdentity == null || existingWechatIdentity.getUserId().equals(userId),
                     UserAuthCode.WECHAT_AUTH_FAILED);
+            ensureUserActiveForLogin(phoneIdentity, buildDefaultNicknameForPhone(phone));
 
             // 如果微信未绑定，创建绑定记录
             if (existingWechatIdentity == null) {
@@ -670,6 +723,7 @@ public class AuthServiceImpl implements AuthService {
                 wechatIdentity.setIdentifier(identifier);
                 wechatIdentity.setCredential(null);
                 wechatIdentity.setVerified(true);
+                wechatIdentity.setCancelled(false);
                 authIdentityMapper.insert(wechatIdentity);
             }
 
@@ -682,6 +736,7 @@ public class AuthServiceImpl implements AuthService {
             AuthUser newUser = new AuthUser();
             newUser.setRole(AuthUser.UserRole.USER);
             newUser.setStatus(AuthUser.UserStatus.ACTIVE);
+            newUser.setCancelled(false);
             int insertResult = authUserMapper.insert(newUser);
             Assert.isTrue(insertResult > 0, UserAuthCode.USER_NOT_EXIST);
             userId = newUser.getUserId();
@@ -695,6 +750,7 @@ public class AuthServiceImpl implements AuthService {
             phoneIdentityNew.setIdentifier(phone);
             phoneIdentityNew.setCredential(null);
             phoneIdentityNew.setVerified(true);
+            phoneIdentityNew.setCancelled(false);
             authIdentityMapper.insert(phoneIdentityNew);
 
             // 创建auth_identity（WECHAT类型）
@@ -705,6 +761,7 @@ public class AuthServiceImpl implements AuthService {
             wechatIdentity.setIdentifier(identifier);
             wechatIdentity.setCredential(null);
             wechatIdentity.setVerified(true);
+            wechatIdentity.setCancelled(false);
             authIdentityMapper.insert(wechatIdentity);
 
             // 创建user_profile，使用提供的nickname和avatarUrl
@@ -716,6 +773,7 @@ public class AuthServiceImpl implements AuthService {
                 profile.setNickName("用户" + phone.substring(phone.length() - 4));
             }
             profile.setAvatarUrl(resolveAvatarUrl(avatarUrl));
+            applyDefaultProfileValues(profile);
             userProfileMapper.insert(profile);
 
             // 导入腾讯IM账号（失败不影响注册流程）
@@ -819,6 +877,11 @@ public class AuthServiceImpl implements AuthService {
                 .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE);
         AuthIdentity identity = authIdentityMapper.selectOne(identityQuery);
         Assert.isNotEmpty(identity, UserAuthCode.USER_NOT_EXIST);
+        assertIdentityActive(identity);
+
+        AuthUser authUser = authUserMapper.selectById(userId);
+        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        assertUserActive(authUser);
 
         // 7. 如果已存在密码，拒绝重复设置
         if (identity.getCredential() != null && !identity.getCredential().isEmpty()) {
@@ -889,11 +952,8 @@ public class AuthServiceImpl implements AuthService {
         // 7. 密码正确，清除错误计数
         redisService.clearPasswordError(phone);
 
-        // 8. 查询用户信息
-        LambdaQueryWrapper<AuthUser> userQuery = new LambdaQueryWrapper<>();
-        userQuery.eq(AuthUser::getUserId, identity.getUserId());
-        AuthUser authUser = authUserMapper.selectOne(userQuery);
-        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        // 8. 查询用户信息（并处理注销重用）
+        AuthUser authUser = ensureUserActiveForLogin(identity, buildDefaultNicknameForPhone(phone)).authUser();
 
         // 9. 生成JWT双Token（完全复用phoneLogin的逻辑）
         Map<String, Object> claims = new HashMap<>();
@@ -929,6 +989,7 @@ public class AuthServiceImpl implements AuthService {
                 .userId(authUser.getUserId())
                 .roles(Collections.singletonList(authUser.getRole().name()))
                 .isNewUser(false)
+                .reactivated(false)
                 .build();
 
         log.info("密码登录成功：userId={}, phone={}", authUser.getUserId(), phone);
@@ -980,6 +1041,11 @@ public class AuthServiceImpl implements AuthService {
 
         // 6. 检查用户是否存在
         Assert.isNotEmpty(identity, UserAuthCode.USER_NOT_EXIST);
+        assertIdentityActive(identity);
+
+        AuthUser authUser = authUserMapper.selectById(identity.getUserId());
+        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        assertUserActive(authUser);
 
         // 7. BCrypt加密新密码
         String encodedPassword = PasswordUtils.encode(newPassword);
@@ -993,6 +1059,116 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("密码重置成功：userId={}, phone={}", identity.getUserId(), phone);
         return R.ok("密码重置成功，请用新密码重新登录");
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<String> verifyCancelAccount(CancelAccountRequest request) {
+        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Assert.isNotEmpty(userId, UserAuthCode.MISSING_USER_ID_HEADER);
+
+        String phone = request.getPhone();
+        String code = request.getCode();
+
+        // 1. 验证手机号格式
+        Assert.isTrue(PhoneUtils.isValidPhone(phone), UserAuthCode.INVALID_PHONE);
+
+        boolean inWhitelist = whitelistService.isInWhitelist(phone);
+        if (inWhitelist) {
+            long errorCount = redisService.getSmsErrorCount(phone);
+            Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
+            if (!WHITELIST_CANCEL_PASSWORD.equals(code)) {
+                redisService.incrementSmsError(phone);
+                recordLoginLog(userId, phone, AuthIdentity.IdentityType.PHONE, false,
+                        UserAuthCode.INVALID_CAPTCHA.getMessage());
+                throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            }
+            redisService.clearSmsError(phone);
+        } else {
+            // 2. 验证码校验（沿用 resetPassword 逻辑）
+            long errorCount = redisService.getSmsErrorCount(phone);
+            Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
+
+            String savedCode = redisService.getSmsCode(phone);
+            Assert.isNotEmpty(savedCode, UserAuthCode.INVALID_CAPTCHA);
+
+            if (!code.equals(savedCode)) {
+                redisService.incrementSmsError(phone);
+                recordLoginLog(userId, phone, AuthIdentity.IdentityType.PHONE, false,
+                        UserAuthCode.INVALID_CAPTCHA.getMessage());
+                throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            }
+
+            redisService.clearSmsError(phone);
+            redisService.deleteSmsCode(phone);
+        }
+
+        // 3. 校验手机号归属
+        LambdaQueryWrapper<AuthIdentity> identityQuery = new LambdaQueryWrapper<>();
+        identityQuery.eq(AuthIdentity::getUserId, userId)
+                .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
+                .eq(AuthIdentity::getIdentifier, phone);
+        AuthIdentity identity = authIdentityMapper.selectOne(identityQuery);
+        Assert.isNotEmpty(identity, UserAuthCode.USER_NOT_EXIST);
+        assertIdentityActive(identity);
+
+        AuthUser authUser = authUserMapper.selectById(userId);
+        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        assertUserActive(authUser);
+
+        String cancelToken = UUID.randomUUID().toString();
+        redisService.set(CANCEL_CONFIRM_TOKEN_PREFIX + cancelToken,
+                userId + ":" + phone,
+                CANCEL_CONFIRM_TOKEN_EXPIRE);
+
+        log.info("账号注销校验通过：userId={}", userId);
+        return R.ok(cancelToken);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<String> confirmCancelAccount(CancelAccountConfirmRequest request) {
+        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Assert.isNotEmpty(userId, UserAuthCode.MISSING_USER_ID_HEADER);
+
+        String cancelToken = request.getCancelToken();
+        String tokenValue = redisService.get(CANCEL_CONFIRM_TOKEN_PREFIX + cancelToken);
+        if (!StringUtils.hasText(tokenValue)) {
+            throw new GloboxApplicationException(UserAuthCode.CANCEL_CONFIRM_EXPIRED);
+        }
+
+        String[] parts = tokenValue.split(":", 2);
+        Long tokenUserId = Long.parseLong(parts[0]);
+        String phone = parts.length > 1 ? parts[1] : null;
+        Assert.isTrue(userId.equals(tokenUserId), UserAuthCode.INVALID_PARAM);
+
+        AuthUser authUser = authUserMapper.selectById(userId);
+        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        if (Boolean.TRUE.equals(authUser.getCancelled())) {
+            redisService.delete(CANCEL_CONFIRM_TOKEN_PREFIX + cancelToken);
+            return R.ok("账号已注销");
+        }
+        assertUserActive(authUser);
+
+        // TODO 校验订单是否处于完成状态（待接入订单服务）
+
+        // 标记账号注销
+        authUserMapper.update(null, new LambdaUpdateWrapper<AuthUser>()
+                .eq(AuthUser::getUserId, userId)
+                .set(AuthUser::getCancelled, true));
+        authIdentityMapper.update(null, new LambdaUpdateWrapper<AuthIdentity>()
+                .eq(AuthIdentity::getUserId, userId)
+                .set(AuthIdentity::getCancelled, true));
+
+        // 初始化用户资料
+        resetUserProfileForCancellation(userId);
+
+        // 强制下线
+        redisService.deleteAllRefreshTokens(userId);
+        redisService.delete(CANCEL_CONFIRM_TOKEN_PREFIX + cancelToken);
+
+        log.info("账号注销成功：userId={}, phone={}", userId, phone);
+        return R.ok("账号注销成功");
     }
 
     @Override
@@ -1019,6 +1195,11 @@ public class AuthServiceImpl implements AuthService {
                 .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE);
         AuthIdentity identity = authIdentityMapper.selectOne(identityQuery);
         Assert.isNotEmpty(identity, UserAuthCode.USER_NOT_EXIST);
+        assertIdentityActive(identity);
+
+        AuthUser authUser = authUserMapper.selectById(userId);
+        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        assertUserActive(authUser);
 
         // 5. 检查是否已设置密码
         Assert.isNotEmpty(identity.getCredential(), UserAuthCode.PASSWORD_NOT_SET);
@@ -1075,6 +1256,7 @@ public class AuthServiceImpl implements AuthService {
         userQuery.eq(AuthUser::getUserId, userId);
         AuthUser authUser = authUserMapper.selectOne(userQuery);
         Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        assertUserActive(authUser);
 
         // 5. 删除旧 refreshToken（token 旋转：旧 token 立即失效）
         redisService.deleteRefreshToken(refreshToken, jwtSecret);
@@ -1107,6 +1289,7 @@ public class AuthServiceImpl implements AuthService {
                 .userId(userId)
                 .roles(Collections.singletonList(authUser.getRole().name()))
                 .isNewUser(false)
+                .reactivated(false)
                 .build();
 
         log.info("Token刷新成功：userId={}", userId);
@@ -1190,10 +1373,8 @@ public class AuthServiceImpl implements AuthService {
         if (existingWechatIdentity != null) {
             // 如果已存在，走已绑定流程
             log.info("微信已绑定，走已绑定流程：identifier={}", identifier);
-            LambdaQueryWrapper<AuthUser> userQuery = new LambdaQueryWrapper<>();
-            userQuery.eq(AuthUser::getUserId, existingWechatIdentity.getUserId());
-            AuthUser authUser = authUserMapper.selectOne(userQuery);
-            Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+            AuthUser authUser = ensureUserActiveForLogin(existingWechatIdentity,
+                    buildDefaultNicknameForWechat(existingWechatIdentity.getUserId())).authUser();
 
             boolean isThirdParty = isThirdPartyClient();
 
@@ -1270,6 +1451,7 @@ public class AuthServiceImpl implements AuthService {
         AuthUser newUser = new AuthUser();
         newUser.setRole(AuthUser.UserRole.USER);
         newUser.setStatus(AuthUser.UserStatus.ACTIVE);
+        newUser.setCancelled(false);
         int insertResult = authUserMapper.insert(newUser);
         Assert.isTrue(insertResult > 0, UserAuthCode.USER_NOT_EXIST);
         Long userId = newUser.getUserId();
@@ -1283,6 +1465,7 @@ public class AuthServiceImpl implements AuthService {
         wechatIdentity.setIdentifier(identifier);
         wechatIdentity.setCredential(null);
         wechatIdentity.setVerified(true);
+        wechatIdentity.setCancelled(false);
         authIdentityMapper.insert(wechatIdentity);
 
         // 创建user_profile，使用默认昵称
@@ -1292,6 +1475,7 @@ public class AuthServiceImpl implements AuthService {
         String defaultNickname = "微信用户" + String.format("%04d", userId % 10000);
         profile.setNickName(defaultNickname);
         profile.setAvatarUrl(resolveAvatarUrl(null));
+        applyDefaultProfileValues(profile);
         userProfileMapper.insert(profile);
 
         // 导入腾讯IM账号（失败不影响注册流程）
@@ -1390,6 +1574,175 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    private void assertUserActive(AuthUser authUser) {
+        if (Boolean.TRUE.equals(authUser.getCancelled())) {
+            throw new GloboxApplicationException(UserAuthCode.USER_ACCOUNT_CANCELLED);
+        }
+        if (authUser.getStatus() == AuthUser.UserStatus.DISABLED) {
+            throw new GloboxApplicationException(UserAuthCode.USER_ACCOUNT_DISABLED);
+        }
+    }
+
+    private void assertIdentityActive(AuthIdentity identity) {
+        if (Boolean.TRUE.equals(identity.getCancelled())) {
+            throw new GloboxApplicationException(UserAuthCode.USER_ACCOUNT_CANCELLED);
+        }
+    }
+
+    private void resetUserProfileForCancellation(Long userId) {
+        LambdaUpdateWrapper<UserProfile> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(UserProfile::getUserId, userId)
+                .set(UserProfile::getAvatarUrl, resolveAvatarUrl(null))
+                .set(UserProfile::getPortraitUrl, null)
+                .set(UserProfile::getNickName, "已注销用户")
+                .set(UserProfile::getSignature, DEFAULT_SIGNATURE)
+                .set(UserProfile::getGender, GenderEnum.OTHER)
+                .set(UserProfile::getSportsYears, DEFAULT_SPORTS_YEARS)
+                .set(UserProfile::getNtrp, BigDecimal.ZERO)
+                .set(UserProfile::getPreferredHand, UserProfile.PreferredHand.RIGHT)
+                .set(UserProfile::getMainBattleShot, DEFAULT_EMPTY_TEXT)
+                .set(UserProfile::getStyleTags, DEFAULT_EMPTY_TEXT)
+                .set(UserProfile::getHomeDistrict, DEFAULT_HOME_DISTRICT)
+                .set(UserProfile::getPower, DEFAULT_POWER)
+                .set(UserProfile::getSpeed, DEFAULT_SPEED)
+                .set(UserProfile::getServe, DEFAULT_SERVE)
+                .set(UserProfile::getVolley, DEFAULT_VOLLEY)
+                .set(UserProfile::getStamina, DEFAULT_STAMINA)
+                .set(UserProfile::getMental, DEFAULT_MENTAL);
+        userProfileMapper.update(null, updateWrapper);
+        cancelUserProfileRelations(userId);
+    }
+
+    private record LoginUserResult(AuthUser authUser, boolean reactivated) {
+    }
+
+    private LoginUserResult ensureUserActiveForLogin(AuthIdentity identity, String defaultNickname) {
+        AuthUser authUser = authUserMapper.selectById(identity.getUserId());
+        Assert.isNotEmpty(authUser, UserAuthCode.USER_NOT_EXIST);
+        if (authUser.getStatus() == AuthUser.UserStatus.DISABLED) {
+            throw new GloboxApplicationException(UserAuthCode.USER_ACCOUNT_DISABLED);
+        }
+        boolean reactivated = false;
+        if (Boolean.TRUE.equals(identity.getCancelled()) || Boolean.TRUE.equals(authUser.getCancelled())) {
+            reactivateCancelledAccount(authUser.getUserId(), defaultNickname);
+            authUser.setCancelled(false);
+            authUser.setStatus(AuthUser.UserStatus.ACTIVE);
+            reactivated = true;
+        }
+        return new LoginUserResult(authUser, reactivated);
+    }
+
+    private void reactivateCancelledAccount(Long userId, String defaultNickname) {
+        authUserMapper.update(null, new LambdaUpdateWrapper<AuthUser>()
+                .eq(AuthUser::getUserId, userId)
+                .set(AuthUser::getCancelled, false)
+                .set(AuthUser::getStatus, AuthUser.UserStatus.ACTIVE));
+        authIdentityMapper.update(null, new LambdaUpdateWrapper<AuthIdentity>()
+                .eq(AuthIdentity::getUserId, userId)
+                .set(AuthIdentity::getCancelled, false));
+        resetUserProfileForReactivation(userId, defaultNickname);
+    }
+
+    private void resetUserProfileForReactivation(Long userId, String defaultNickname) {
+        String nickname = StringUtils.hasText(defaultNickname)
+                ? defaultNickname
+                : "用户" + String.format("%04d", userId % 10000);
+        LambdaUpdateWrapper<UserProfile> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(UserProfile::getUserId, userId)
+                .set(UserProfile::getNickName, nickname)
+                .set(UserProfile::getAvatarUrl, resolveAvatarUrl(null))
+                .set(UserProfile::getSignature, DEFAULT_SIGNATURE)
+                .set(UserProfile::getGender, GenderEnum.OTHER)
+                .set(UserProfile::getSportsYears, DEFAULT_SPORTS_YEARS)
+                .set(UserProfile::getNtrp, BigDecimal.ZERO)
+                .set(UserProfile::getPreferredHand, UserProfile.PreferredHand.RIGHT)
+                .set(UserProfile::getMainBattleShot, DEFAULT_EMPTY_TEXT)
+                .set(UserProfile::getStyleTags, DEFAULT_EMPTY_TEXT)
+                .set(UserProfile::getHomeDistrict, DEFAULT_HOME_DISTRICT)
+                .set(UserProfile::getPower, DEFAULT_POWER)
+                .set(UserProfile::getSpeed, DEFAULT_SPEED)
+                .set(UserProfile::getServe, DEFAULT_SERVE)
+                .set(UserProfile::getVolley, DEFAULT_VOLLEY)
+                .set(UserProfile::getStamina, DEFAULT_STAMINA)
+                .set(UserProfile::getMental, DEFAULT_MENTAL);
+        userProfileMapper.update(null, updateWrapper);
+        cancelUserProfileRelations(userId);
+    }
+
+    private void cancelUserProfileRelations(Long userId) {
+        if (userId == null) {
+            return;
+        }
+        LambdaUpdateWrapper<UserRacket> racketUpdate = new LambdaUpdateWrapper<>();
+        racketUpdate.eq(UserRacket::getUserId, userId)
+                .set(UserRacket::getCancelled, true);
+        userRacketMapper.update(null, racketUpdate);
+
+        LambdaUpdateWrapper<UserStyleTag> tagUpdate = new LambdaUpdateWrapper<>();
+        tagUpdate.eq(UserStyleTag::getUserId, userId)
+                .set(UserStyleTag::getCancelled, true);
+        userStyleTagMapper.update(null, tagUpdate);
+    }
+
+    private void applyDefaultProfileValues(UserProfile profile) {
+        if (!StringUtils.hasText(profile.getSignature())) {
+            profile.setSignature(DEFAULT_SIGNATURE);
+        }
+        if (profile.getGender() == null) {
+            profile.setGender(GenderEnum.OTHER);
+        }
+        if (profile.getSportsYears() == null) {
+            profile.setSportsYears(DEFAULT_SPORTS_YEARS);
+        }
+        if (profile.getNtrp() == null) {
+            profile.setNtrp(BigDecimal.ZERO);
+        }
+        if (profile.getPreferredHand() == null) {
+            profile.setPreferredHand(UserProfile.PreferredHand.RIGHT);
+        }
+        if (profile.getMainBattleShot() == null) {
+            profile.setMainBattleShot(DEFAULT_EMPTY_TEXT);
+        }
+        if (profile.getStyleTags() == null) {
+            profile.setStyleTags(DEFAULT_EMPTY_TEXT);
+        }
+        if (profile.getHomeDistrict() == null) {
+            profile.setHomeDistrict(DEFAULT_HOME_DISTRICT);
+        }
+        if (profile.getPower() == null) {
+            profile.setPower(DEFAULT_POWER);
+        }
+        if (profile.getSpeed() == null) {
+            profile.setSpeed(DEFAULT_SPEED);
+        }
+        if (profile.getServe() == null) {
+            profile.setServe(DEFAULT_SERVE);
+        }
+        if (profile.getVolley() == null) {
+            profile.setVolley(DEFAULT_VOLLEY);
+        }
+        if (profile.getStamina() == null) {
+            profile.setStamina(DEFAULT_STAMINA);
+        }
+        if (profile.getMental() == null) {
+            profile.setMental(DEFAULT_MENTAL);
+        }
+    }
+
+    private String buildDefaultNicknameForPhone(String phone) {
+        if (!StringUtils.hasText(phone) || phone.length() < 4) {
+            return null;
+        }
+        return "用户" + phone.substring(phone.length() - 4);
+    }
+
+    private String buildDefaultNicknameForWechat(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return "微信用户" + String.format("%04d", userId % 10000);
+    }
+
     private boolean isThirdPartyClient() {
         String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         return clientType != null && clientType.equalsIgnoreCase(ClientType.THIRD_PARTY_JSAPI.getValue());
@@ -1404,8 +1757,8 @@ public class AuthServiceImpl implements AuthService {
         if (StringUtils.hasText(avatarUrl)) {
             return avatarUrl;
         }
-        if (StringUtils.hasText(defaultAvatarUrl)) {
-            return defaultAvatarUrl;
+        if (StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrl())) {
+            return userProfileDefaultProperties.getDefaultAvatarUrl();
         }
         return null;
     }

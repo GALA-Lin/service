@@ -129,7 +129,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             List<MessageQueueEvent> events = new ArrayList<>();
 
             for (Long toUserId : toUserIds) {
-                // 使用雪花算法生成消息ID
 
                 // 获取或创建会话
                 Conversation conversation = conversationService.getOrCreateConversation(fromUserId, toUserId);
@@ -262,7 +261,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             List<MessageEntity> messageEntities = parseAndSaveMessages(result, fromUserId, toUserId);
 
             // 合并结果
-            if (redisMessageEntities.size() > 0) {
+            if (!redisMessageEntities.isEmpty()) {
                 messageEntities.addAll(0, redisMessageEntities);
             }
 
@@ -295,9 +294,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
     public String deleteMessage(Long messageId, Long userId) {
         try {
             MessageEntity messageEntity = messageMapper.selectById(messageId);
-            log.info("消息{}",messageEntity);
             if (messageEntity == null) {
-                log.info("消息为空");
                 return MessageResult.MESSAGE_IS_NULL.getMessage();
             }
 
@@ -306,7 +303,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             } else if (messageEntity.getToUserId().equals(userId)) {
                 messageEntity.setIsDeletedByReceiver(true);
             } else {
-                log.info("你没有权限删除");
                 return MessageResult.NOT_PERMISSION_TO_DELETE_OTHERS_MESSAGES.getMessage();
             }
 
@@ -574,8 +570,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
     @Override
     public MessageEntity getMessageDetail(Long messageId) {
         try {
-            MessageEntity messageEntity = messageMapper.selectByIdNotDeleted(messageId);
-            return messageEntity;
+            return messageMapper.selectByIdNotDeleted(messageId);
         } catch (Exception e) {
             log.error("查询消息详情异常", e);
             throw new RuntimeException("查询消息详情异常: " + e.getMessage());

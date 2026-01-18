@@ -30,6 +30,11 @@ public class CoachScheduleQueryDto {
     private LocalDate endDate;
 
     /**
+     * 备注
+     */
+    private String remark;
+
+    /**
      * 是否包含自定义日程，默认true
      */
     private Boolean includeCustomSchedule = true;

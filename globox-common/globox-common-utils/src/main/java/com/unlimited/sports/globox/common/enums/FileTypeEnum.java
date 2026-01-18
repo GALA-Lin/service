@@ -18,6 +18,18 @@ public enum FileTypeEnum {
             10 * 1024 * 1024L  // 10MB
     ),
 
+
+    /**
+     * 活动图片
+     */
+    ACTIVITY_IMAGE(
+            "activity",
+            "活动图片",
+            new String[]{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"},
+            10 * 1024 * 1024L  // 10MB
+    ),
+
+
     /**
      * 用户头像
      */

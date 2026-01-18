@@ -4,19 +4,24 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
+import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
+import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeRequestDto;
+import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeResultVo;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,6 +72,8 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
     @Autowired
     private MQService mqService;
 
+    @DubboReference(group = "rpc")
+    private MerchantRefundRuleDubboService merchantRefundRuleDubboService;
 
     @Autowired
     private JsonUtils jsonUtils;
@@ -79,27 +86,37 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
             boolean isAutoRefund,
             Long operatorId,
             OperatorTypeEnum operatorType,
-            SellerTypeEnum sellerType,
-            BigDecimal refundPercentage) {
+            SellerTypeEnum sellerType) {
 
-        // 订单项退款总基础金额
-        BigDecimal totalItemAmount = BigDecimal.ZERO;
-        // 订单项退款总额外费用
-        BigDecimal totalItemExtra = BigDecimal.ZERO;
-        // 订单退款总额外费用
-        BigDecimal totalOrderLevelExtra = BigDecimal.ZERO;
-        // 总手续费
-        BigDecimal totalRefundFee = BigDecimal.ZERO;
+        final BigDecimal TOP = new BigDecimal("100");
+        final int SCALE = 2;
 
         LocalDateTime now = LocalDateTime.now();
 
+        // 1) 锁订单
         Orders order = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()
                         .eq(Orders::getOrderNo, orderNo)
                         .last("FOR UPDATE"));
         Assert.isNotEmpty(order, OrderCode.ORDER_NOT_EXIST);
 
-        // 4) 取出本次申请的 itemId（用 apply_items 精确绑定）
+        // 2) 锁退款申请（并做幂等）
+        OrderRefundApply apply = orderRefundApplyMapper.selectOne(
+                Wrappers.<OrderRefundApply>lambdaQuery()
+                        .eq(OrderRefundApply::getId, refundApplyId)
+                        .eq(OrderRefundApply::getOrderNo, orderNo)
+                        .last("FOR UPDATE"));
+        Assert.isNotEmpty(apply, OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
+
+        if (apply.getApplyStatus() == ApplyRefundStatusEnum.APPROVED) {
+            return 0;
+        }
+
+        // 用用户申请时间做规则判断基准，避免重试导致比例变化
+        // 如果 apply.getCreatedAt() 是 Timestamp/Date，请按你的实体类型调整
+        LocalDateTime refundApplyTime = apply.getCreatedAt() != null ? apply.getCreatedAt() : now;
+
+        // 3) 查本次申请 items
         List<OrderRefundApplyItems> applyItems = orderRefundApplyItemsMapper.selectList(
                 Wrappers.<OrderRefundApplyItems>lambdaQuery()
                         .eq(OrderRefundApplyItems::getRefundApplyId, refundApplyId)
@@ -125,84 +142,100 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                     OrderCode.ORDER_ITEM_REFUND_STATUS_INVALID);
         }
 
-        OrderRefundApply apply = orderRefundApplyMapper.selectOne(
-                Wrappers.<OrderRefundApply>lambdaQuery()
-                        .eq(OrderRefundApply::getId, refundApplyId)
-                        .eq(OrderRefundApply::getOrderNo, orderNo)
-                        .last("FOR UPDATE"));
-        Assert.isNotEmpty(apply, OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
-        // 如果已经被退款了，直接返回
-        if (apply.getApplyStatus() == ApplyRefundStatusEnum.APPROVED) {
-            return 0;
-        }
-
-        // 6) 判断“本次审批后是否整单退款”
-        //    规则：除本次 applyItemIds 之外，订单内不允许存在 NONE/WAIT_APPROVING（其它申请）这类“未纳入退款闭环”的 item
+        // 4) 判断是否整单退款（用于订单级 extra 和 payment）
         Long blockingCount = orderItemsMapper.selectCount(
                 Wrappers.<OrderItems>lambdaQuery()
                         .eq(OrderItems::getOrderNo, orderNo)
                         .notIn(OrderItems::getId, applyItemIds)
                         .in(OrderItems::getRefundStatus,
                                 RefundStatusEnum.NONE,
-                                RefundStatusEnum.WAIT_APPROVING));
-        boolean fullRefundAfterThis = (blockingCount == null || blockingCount == 0);
+                                RefundStatusEnum.WAIT_APPROVING,
+                                RefundStatusEnum.PENDING,
+                                RefundStatusEnum.APPROVED));
+        boolean fullRefundAfterThis = blockingCount == null || blockingCount == 0;
 
-        // 7) 写入“订单项级额外费用退款明细”（order_refund_extra_charges）
-        //    依据：order_extra_charge_links.allocated_amount（退款以此为准）
-        //    注意：只写本次申请涉及 item 的相关 extra；订单级 extra 仅在整单时写入
+        // 5) 先计算每个 item 的退款百分比（用于 item base + item extra）
+        Map<Long, BigDecimal> itemPercentMap = new HashMap<>();
+        for (OrderItems it : items) {
+            BigDecimal percent;
+
+            if (sellerType == SellerTypeEnum.VENUE) {
+                if (OperatorTypeEnum.MERCHANT.equals(operatorType)) {
+                    // 商家发起强制 100%
+                    percent = TOP;
+                } else {
+                    MerchantRefundRuleJudgeRequestDto requestDto = MerchantRefundRuleJudgeRequestDto.builder()
+                            .venueId(order.getSellerId())
+                            .orderTime(order.getCreatedAt())
+                            .refundApplyTime(refundApplyTime)
+                            .userId(order.getBuyerId())
+                            .eventStartTime(LocalDateTime.of(it.getBookingDate(), it.getStartTime()))
+                            .build();
+
+                    RpcResult<MerchantRefundRuleJudgeResultVo> rule =
+                            merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
+                    Assert.rpcResultOk(rule);
+
+                    MerchantRefundRuleJudgeResultVo vo = rule.getData();
+                    Assert.isTrue(vo.isCanRefund(), OrderCode.ORDER_NOT_ALLOW_REFUND);
+
+                    percent = vo.getRefundPercentage();
+                }
+            } else if (sellerType == SellerTypeEnum.COACH) {
+                percent = TOP;
+            } else {
+                throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
+            }
+
+            if (percent == null) percent = BigDecimal.ZERO;
+            Assert.isTrue(percent.compareTo(BigDecimal.ZERO) >= 0 && percent.compareTo(TOP) <= 0,
+                    OrderCode.ORDER_REFUND_AMOUNT_INVALID);
+
+            itemPercentMap.put(it.getId(), percent);
+        }
+
+        // 6) item 级 extra：按 itemPercent 退款，写入 refund_extra_charges，并汇总每个 item 实退 extra
+        //    links 依据 allocated_amount（退款以此为准）
         List<OrderExtraChargeLinks> links = orderExtraChargeLinksMapper.selectList(
                 Wrappers.<OrderExtraChargeLinks>lambdaQuery()
                         .eq(OrderExtraChargeLinks::getOrderNo, orderNo)
                         .in(OrderExtraChargeLinks::getOrderItemId, applyItemIds));
 
-        Map<Long, OrderExtraCharges> chargeMap = new HashMap<>();
+        // itemId 实退 extra 合计（按比例）
+        Map<Long, BigDecimal> itemExtraRefundSum = new HashMap<>();
         if (links != null && !links.isEmpty()) {
-            List<Long> chargeIds = links.stream()
-                    .map(OrderExtraChargeLinks::getExtraChargeId)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .toList();
-            if (!chargeIds.isEmpty()) {
-                chargeMap = orderExtraChargesMapper.selectBatchIds(chargeIds).stream()
-                        .collect(Collectors.toMap(OrderExtraCharges::getId, c -> c));
-            }
-        }
-
-        // itemId -> 本次批准涉及的 item 级 extra 合计（用于回填 order_item_refunds.extra_charge_amount）
-        Map<Long, BigDecimal> itemExtraSum = new HashMap<>();
-
-        if (links != null) {
             for (OrderExtraChargeLinks lk : links) {
-                OrderExtraCharges ch = chargeMap.get(lk.getExtraChargeId());
-                if (ch == null) continue;
+                Long itemId = lk.getOrderItemId();
+                if (itemId == null) continue;
 
-                // item 级额外费用（order_item_id != null）
-                if (ch.getOrderItemId() == null) continue;
+                BigDecimal origin = lk.getAllocatedAmount() == null ? BigDecimal.ZERO : lk.getAllocatedAmount();
+                BigDecimal percent = itemPercentMap.getOrDefault(itemId, BigDecimal.ZERO);
 
-                BigDecimal amt = lk.getAllocatedAmount() == null ? BigDecimal.ZERO : lk.getAllocatedAmount();
+                BigDecimal refundExtra = origin.multiply(percent).divide(TOP, SCALE, RoundingMode.HALF_UP);
 
-                // 幂等：同一个 refundApplyId + extraChargeId 只插一次
+                // 幂等插入：refundApplyId + extraChargeId 唯一
                 boolean already = orderRefundExtraChargesMapper.exists(
                         Wrappers.<OrderRefundExtraCharges>lambdaQuery()
                                 .eq(OrderRefundExtraCharges::getRefundApplyId, refundApplyId)
-                                .eq(OrderRefundExtraCharges::getExtraChargeId, lk.getExtraChargeId())
-                );
+                                .eq(OrderRefundExtraCharges::getExtraChargeId, lk.getExtraChargeId()));
+
                 if (!already) {
                     OrderRefundExtraCharges rec = OrderRefundExtraCharges.builder()
                             .orderNo(orderNo)
                             .refundApplyId(refundApplyId)
                             .extraChargeId(lk.getExtraChargeId())
-                            .orderItemId(lk.getOrderItemId())
-                            .refundAmount(amt)
+                            .orderItemId(itemId)
+                            .refundAmount(refundExtra)
                             .build();
                     orderRefundExtraChargesMapper.insert(rec);
                 }
 
-                itemExtraSum.merge(lk.getOrderItemId(), amt, BigDecimal::add);
+                itemExtraRefundSum.merge(itemId, refundExtra, BigDecimal::add);
             }
         }
 
-        // 8) 整单退款时：记录订单级额外费用（order_item_id IS NULL）
+        // 7) 订单级 extra：仅整单退款时退
+        BigDecimal orderLevelExtraRefund = BigDecimal.ZERO;
         if (fullRefundAfterThis) {
             List<OrderExtraCharges> orderLevelCharges = orderExtraChargesMapper.selectList(
                     Wrappers.<OrderExtraCharges>lambdaQuery()
@@ -210,62 +243,80 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                             .isNull(OrderExtraCharges::getOrderItemId));
 
             for (OrderExtraCharges ch : orderLevelCharges) {
+                BigDecimal amt = ch.getChargeAmount() == null ? BigDecimal.ZERO : ch.getChargeAmount();
+                orderLevelExtraRefund = orderLevelExtraRefund.add(amt);
+
                 boolean already = orderRefundExtraChargesMapper.exists(
                         Wrappers.<OrderRefundExtraCharges>lambdaQuery()
                                 .eq(OrderRefundExtraCharges::getRefundApplyId, refundApplyId)
                                 .eq(OrderRefundExtraCharges::getExtraChargeId, ch.getId()));
+
                 if (!already) {
                     OrderRefundExtraCharges rec = OrderRefundExtraCharges.builder()
                             .orderNo(orderNo)
                             .refundApplyId(refundApplyId)
                             .extraChargeId(ch.getId())
                             .orderItemId(null)
-                            .refundAmount(ch.getChargeAmount())
+                            .refundAmount(amt)
                             .build();
                     orderRefundExtraChargesMapper.insert(rec);
-
-                    BigDecimal amt = ch.getChargeAmount() == null ? BigDecimal.ZERO : ch.getChargeAmount();
-                    totalOrderLevelExtra = totalOrderLevelExtra.add(amt);
                 }
             }
         }
 
-        // 9) 生成 item 退款事实（order_item_refunds） + item 状态流转 + item级日志
+        // 8) 生成退款事实（order_item_refunds）+ item 状态流转 + 日志，并汇总总退款金额
         int approvedCount = 0;
+        BigDecimal totalRefundAmount = BigDecimal.ZERO;
 
         for (OrderItems it : items) {
-            // 已退款的订单项跳过
-            if (RefundStatusEnum.APPROVED.equals(it.getRefundStatus())) {
-                continue;
-            }
+            Long itemId = it.getId();
 
-            // 9.1 退款事实：不存在则插入（幂等）
+            BigDecimal itemAmount = it.getUnitPrice();
+            Assert.isNotEmpty(itemAmount, OrderCode.ORDER_ITEM_NOT_EXIST);
+
+            BigDecimal percent = itemPercentMap.getOrDefault(itemId, BigDecimal.ZERO);
+
+            // item 基础金额按比例退
+            BigDecimal refundItemAmount = itemAmount.multiply(percent).divide(TOP, SCALE, RoundingMode.HALF_UP);
+
+            // item 额外费用按比例退（来自上面的 itemExtraRefundSum）
+            BigDecimal refundExtraAmount = itemExtraRefundSum.getOrDefault(itemId, BigDecimal.ZERO);
+
+            BigDecimal refundAmount = refundItemAmount.add(refundExtraAmount);
+
+            // “不可退部分/扣款”（你表字段叫 refund_fee）
+            BigDecimal baseOrigin = itemAmount;
+            if (links != null && !links.isEmpty()) {
+                // origin extra 合计不再保存，这里用：refundFee = (itemAmount + originExtra) - refundAmount
+                // 若你要精确记录 originExtra，可在上面额外维护 itemExtraOriginSum
+                BigDecimal originExtra = BigDecimal.ZERO;
+                for (OrderExtraChargeLinks lk : links) {
+                    if (itemId.equals(lk.getOrderItemId())) {
+                        originExtra = originExtra.add(lk.getAllocatedAmount() == null ? BigDecimal.ZERO : lk.getAllocatedAmount());
+                    }
+                }
+                baseOrigin = baseOrigin.add(originExtra);
+            }
+            BigDecimal refundFee = baseOrigin.subtract(refundAmount);
+
+            // 汇总总退款金额（按“实际退款金额”口径）
+            totalRefundAmount = totalRefundAmount.add(refundAmount);
+
+            // 幂等：同一个 apply + item 只插一次事实
             boolean factExists = orderItemRefundsMapper.exists(
                     Wrappers.<OrderItemRefunds>lambdaQuery()
                             .eq(OrderItemRefunds::getRefundApplyId, refundApplyId)
-                            .eq(OrderItemRefunds::getOrderItemId, it.getId()));
+                            .eq(OrderItemRefunds::getOrderItemId, itemId));
 
             if (!factExists) {
-                // 基础金额：当前策略用 unit_price（不含额外费用）
-                BigDecimal itemAmount = it.getUnitPrice();
-                Assert.isNotEmpty(itemAmount, OrderCode.ORDER_ITEM_NOT_EXIST);
-
-                BigDecimal extraChargeAmount = itemExtraSum.getOrDefault(it.getId(), BigDecimal.ZERO);
-
-                // 扣除手续费
-                BigDecimal refundFee = itemAmount.multiply(refundPercentage).divide(new  BigDecimal(100),  RoundingMode.HALF_UP);
-                BigDecimal refundAmount = itemAmount.add(extraChargeAmount).subtract(refundFee);
-
-                // 计算总金额
-                totalItemAmount = totalItemAmount.add(itemAmount);
-                totalItemExtra = totalItemExtra.add(extraChargeAmount);
-
                 OrderItemRefunds fact = OrderItemRefunds.builder()
                         .orderNo(orderNo)
-                        .orderItemId(it.getId())
+                        .orderItemId(itemId)
                         .refundApplyId(refundApplyId)
+                        // 保留原始 itemAmount
                         .itemAmount(itemAmount)
-                        .extraChargeAmount(extraChargeAmount)
+                        // 本次实退 extra
+                        .extraChargeAmount(refundExtraAmount)
                         .refundFee(refundFee)
                         .refundAmount(refundAmount)
                         .refundStatus(RefundStatusEnum.APPROVED)
@@ -273,12 +324,12 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 orderItemRefundsMapper.insert(fact);
             }
 
-            // 9.2 仅对 WAIT_APPROVING 的做状态迁移；已经 APPROVED 的直接跳过（幂等）
+            // 仅对 WAIT_APPROVING 的做状态迁移
             if (it.getRefundStatus() == RefundStatusEnum.WAIT_APPROVING) {
                 int ur = orderItemsMapper.update(
                         null,
                         Wrappers.<OrderItems>lambdaUpdate()
-                                .eq(OrderItems::getId, it.getId())
+                                .eq(OrderItems::getId, itemId)
                                 .eq(OrderItems::getOrderNo, orderNo)
                                 .eq(OrderItems::getRefundStatus, RefundStatusEnum.WAIT_APPROVING)
                                 .set(OrderItems::getRefundStatus, RefundStatusEnum.APPROVED));
@@ -286,11 +337,10 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
 
                 approvedCount++;
 
-                // 9.3 item 级日志：只在“真正迁移成功”后插入
                 OrderStatusLogs itemLog = OrderStatusLogs.builder()
                         .orderNo(orderNo)
                         .orderId(order.getId())
-                        .orderItemId(it.getId())
+                        .orderItemId(itemId)
                         .action(OrderActionEnum.REFUND_APPROVE)
                         .oldOrderStatus(order.getOrderStatus())
                         .newOrderStatus(OrderStatusEnum.REFUNDING)
@@ -306,16 +356,13 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
             }
         }
 
-        // 总退款费用
-        BigDecimal totalRefundAmount = totalItemAmount
-                .add(totalItemExtra)
-                .add(totalOrderLevelExtra)
-                .subtract(totalRefundFee);
+        // 加上订单级 extra 退款（整单时）
+        totalRefundAmount = totalRefundAmount.add(orderLevelExtraRefund);
 
         Assert.isTrue(totalRefundAmount.compareTo(BigDecimal.ZERO) >= 0, OrderCode.ORDER_REFUND_AMOUNT_INVALID);
         Assert.isTrue(totalRefundAmount.compareTo(order.getSubtotal()) <= 0, OrderCode.ORDER_REFUND_AMOUNT_INVALID);
 
-        // 10) 更新退款申请状态：PENDING -> APPROVED
+        // 9) 更新退款申请状态：PENDING -> APPROVED（生成 outRequestNo）
         String outRequestNo = UUID.randomUUID().toString().replace("-", "");
         int ua = orderRefundApplyMapper.update(
                 null,
@@ -328,7 +375,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .set(OrderRefundApply::getReviewedAt, now));
         Assert.isTrue(ua == 1, OrderCode.ORDER_REFUND_APPLY_STATUS_NOT_ALLOW);
 
-        // 11) 订单状态：REFUNDING
+        // 10) 订单状态：REFUNDING
         Orders updOrder = new Orders();
         updOrder.setId(order.getId());
         updOrder.setOrderStatus(OrderStatusEnum.REFUNDING);
@@ -344,7 +391,6 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 .oldOrderStatus(order.getOrderStatus())
                 .newOrderStatus(OrderStatusEnum.REFUNDING)
                 .refundApplyId(refundApplyId)
-                .refundApplyId(refundApplyId)
                 .operatorType(operatorType)
                 .operatorId(operatorId)
                 .operatorName(operatorType.getOperatorTypeName() + "_" + operatorId)
@@ -352,9 +398,11 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                 .build();
         orderStatusLogsMapper.insert(orderLog);
 
-        // 12) 发送取消锁场消息
+        // 11) afterCommit：发起退款 + 解锁资源
         List<Long> recordIds = items.stream().map(OrderItems::getRecordId).toList();
         LocalDate bookingDate = items.get(0).getBookingDate();
+
+        BigDecimal finalTotalRefundAmount = totalRefundAmount;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -364,10 +412,10 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .outTradeNo(order.getOutTradeNo())
                         .outRequestNo(outRequestNo)
                         .orderNo(order.getOrderNo())
-                        .refundAmount(totalRefundAmount)
+                        .fullRefund(fullRefundAfterThis)
+                        .refundAmount(finalTotalRefundAmount)
                         .build();
 
-                // 向支付服务发起退款
                 mqService.send(
                         OrderMQConstants.EXCHANGE_TOPIC_ORDER_REFUND_APPLY_TO_PAYMENT,
                         OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT,
@@ -381,25 +429,22 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                         .bookingDate(bookingDate)
                         .build();
 
-                // 取消锁场
-                if (sellerType.equals(SellerTypeEnum.VENUE)) {
+                if (SellerTypeEnum.VENUE.equals(sellerType)) {
                     mqService.send(
                             OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
                             OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                             unlockMsg);
-                } else if (sellerType.equals(SellerTypeEnum.COACH)) {
+                } else if (SellerTypeEnum.COACH.equals(sellerType)) {
                     mqService.send(
                             OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
                             OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
                             unlockMsg);
-                } else {
-                    // 忽略未知来源
                 }
             }
         });
+
         return approvedCount;
     }
-
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -411,7 +456,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
         Assert.isNotEmpty(orderNo, OrderCode.PARAM_ERROR);
 
         if (!message.isOrderCancelled()) {
-            Assert.isTrue(outRequestNo!= null  && !outRequestNo.isBlank(), OrderCode.PARAM_ERROR);
+            Assert.isTrue(outRequestNo != null && !outRequestNo.isBlank(), OrderCode.PARAM_ERROR);
         } else {
             // 订单已经到了被取消的状态，不需要其他操作
             return;

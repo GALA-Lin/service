@@ -17,6 +17,7 @@
         <module>globox-mq-utils</module>
         <module>globox-cos-utils</module>
         <module>globox-redis-utils</module>
+        <module>globox-lock-utils</module>
     </modules>
 
     <properties>

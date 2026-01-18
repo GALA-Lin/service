@@ -72,6 +72,7 @@ public class Conversation implements Serializable {
      */
     @TableField("conversation_avatar_receiver")
     private String conversationAvatarReceiver;
+
     /**
      * 最后一条消息ID
      */

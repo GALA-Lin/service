@@ -22,9 +22,29 @@ public class CoachItemVo {
     private UserInfoVo coachUserInfo;
 
     /**
+     * 教练电话
+     */
+    private String coachPhone;
+
+    /**
      * 常驻区域
      */
     private String coachServiceArea;
+
+    /**
+     * 常驻区域最低授课时长（小时）
+     */
+    private Integer coachMinHours;
+
+    /**
+     * 可接受的远距离服务区域
+     */
+    private String coachRemoteServiceArea;
+
+    /**
+     * 远距离区域最低授课时长（小时）
+     */
+    private Integer coachRemoteMinHours;
 
     /**
      * 教龄

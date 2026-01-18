@@ -1,15 +1,18 @@
-package com.unlimited.sports.globox.order.lock;
+package com.unlimited.sports.globox.common.lock;
 
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
-import org.aspectj.lang.annotation.*;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.expression.*;
+import org.springframework.expression.Expression;
+import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
@@ -34,7 +37,7 @@ public class RedisLockAspect {
         this.redissonClient = redissonClient;
     }
 
-    @Pointcut("@annotation(com.unlimited.sports.globox.order.lock.RedisLock)")
+    @Pointcut("@annotation(com.unlimited.sports.globox.common.lock.RedisLock)")
     public void lockPointcut() {}
 
     @Around("lockPointcut() && @annotation(redisLock)")

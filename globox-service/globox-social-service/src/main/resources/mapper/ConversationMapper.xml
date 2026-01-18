@@ -146,6 +146,7 @@
         updated_at = NOW()
         WHERE conversation_id = #{conversationId}
     </update>
+
     <update id="resetUnreadCount">
         UPDATE conversation
         SET unread_count_receiver =

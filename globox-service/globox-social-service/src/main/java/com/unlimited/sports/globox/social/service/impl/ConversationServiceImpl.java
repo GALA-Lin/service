@@ -116,8 +116,8 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             return PaginationResult.build(
                     pagedConversations != null ? pagedConversations : emptyList(),
                     total != null ? total : 0L,
-                    page != null ? page : 1,
-                    pageSize != null ? pageSize : 50
+                    page,
+                    pageSize
             );
         } catch (Exception e) {
             log.error("查询会话列表失败", e);
@@ -130,29 +130,23 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     public Conversation getOrCreateConversation(Long userId, Long friendId) {
         try {
             if (userId.equals(friendId)){
-                log.error("用户不能与自己进行会话");
                 return null;
             }
             // 先检查会话是否已存在
             Conversation existing = conversationMapper.selectByUserPair(userId, friendId);
             if (existing != null) {
-
-                log.info("会话已存在，返回现有会话: {}", existing.getConversationId());
+                resetUnreadCount(existing.getConversationId(), userId);
                 return existing;
             }
 
             // 会话不存在，创建新会话
-            log.info("会话不存在，开始创建新会话: userId={}, friendId={}", userId, friendId);
-
             RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(friendId);
             Assert.rpcResultOk(rpcResult);
             UserInfoVo friendInfo = rpcResult.getData();
-            log.info("获取用户信息成功: {}", friendInfo);
 
             RpcResult<UserInfoVo> rpcResult2 = userDubboService.getUserInfo(userId);
             Assert.rpcResultOk(rpcResult2);
             UserInfoVo userInfo = rpcResult2.getData();
-            log.info("获取用户信息成功: {}", userInfo);
 
             // 使用Builder模式创建新会话
             Conversation conversation = Conversation.builder()
@@ -289,13 +283,11 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     @Transactional(rollbackFor = Exception.class)
     public Boolean clearUnreadCount(Long userId) {
         try {
-            log.info("用户{}开始清除所有会话的未读计数", userId);
 
             // 1. 获取用户的所有会话列表
             List<Conversation> conversations = conversationMapper.selectByUserId(userId);
 
             if (conversations == null || conversations.isEmpty()) {
-                log.info("用户{}没有会话，无需清除未读计数", userId);
                 return true;
             }
 
@@ -546,25 +538,20 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         try {
             Conversation conversation = conversationMapper.selectById(conversationId);
             if (conversation == null) {
-                log.warn("重置未读计数失败：会话不存在, conversationId={}, userId={}", conversationId, userId);
                 return false;
             }
             // 验证用户是否是会话成员
             if (!conversation.getSenderUserId().equals(userId) && !conversation.getReceiveUserId().equals(userId)) {
-                log.warn("重置未读计数失败：用户{}不是会话{}的成员, userId={}", userId, conversationId, userId);
                 return false;
             }
             // 重置指定用户的未读计数
             int result = conversationMapper.resetUnreadCount(conversationId, userId);
             if (result > 0) {
-                log.info("用户{}的会话{}未读计数重置成功", userId, conversationId);
                 return true;
             } else {
-                log.info("用户{}的会话{}未读计数已经是0", userId, conversationId);
-                return true; // 未读计数已经是0，也算成功
+                return true;
             }
         } catch (Exception e) {
-            log.error("重置未读计数失败, conversationId={}, userId={}", conversationId, userId, e);
             throw new RuntimeException("重置未读计数失败: " + e.getMessage());
         }
     }

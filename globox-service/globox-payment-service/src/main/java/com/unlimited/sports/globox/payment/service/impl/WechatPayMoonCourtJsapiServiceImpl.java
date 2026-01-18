@@ -32,7 +32,7 @@ import java.math.RoundingMode;
  */
 @Slf4j
 @Service
-@Profile("beta")
+@Profile("!dev")
 public class WechatPayMoonCourtJsapiServiceImpl implements WechatPayMoonCourtJsapiService {
 
     @Lazy

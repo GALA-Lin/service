@@ -1,15 +1,24 @@
 package com.unlimited.sports.globox.coach.service;
 
+import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeBatchDto;
 import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @since 2026/1/8 10:08
  * 教练课程类型服务接口
  */
 public interface ICoachCourseTypeService {
+
+    /**
+     * 批量创建或更新课程类型
+     * @param batchDto 批量请求DTO
+     * @return 服务类型 -> 课程类型ID 的映射
+     */
+    Map<Integer, Long> batchSaveOrUpdateCourseTypes(CoachCourseTypeBatchDto batchDto);
 
     /**
      * 创建或更新课程类型

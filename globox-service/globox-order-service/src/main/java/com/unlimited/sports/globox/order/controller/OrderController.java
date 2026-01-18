@@ -88,9 +88,6 @@ public class OrderController {
     public R<PaginationResult<GetOrderVo>> getOrderPage(
             @Validated @Parameter(description = "订单分页查询参数") GetOrderPageDto pageDto,
             @RequestHeader(value = RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID,required = false) String openId) {
-
-        log.info("openid:{}", openId);
-
         PaginationResult<GetOrderVo> resultList = orderService.getOrderPage(pageDto, openId);
         return R.ok(resultList);
     }
@@ -171,7 +168,7 @@ public class OrderController {
 
     /**
      * 用户取消退款申请
-     * 暂不开放
+     * TODO 暂不开放
      */
 //    @PostMapping("/refund/cancel")
 //    @Operation(summary = "取消退款申请", description = "用户在退款未处理完成前主动取消退款申请")

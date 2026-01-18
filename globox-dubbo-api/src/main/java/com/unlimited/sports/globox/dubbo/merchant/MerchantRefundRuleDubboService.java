@@ -1,10 +1,7 @@
 package com.unlimited.sports.globox.dubbo.merchant;
 
 import com.unlimited.sports.globox.common.result.RpcResult;
-import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeRequestDto;
-import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeResultVo;
-import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleQueryRequestDto;
-import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleResultDto;
+import com.unlimited.sports.globox.dubbo.merchant.dto.*;
 
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;

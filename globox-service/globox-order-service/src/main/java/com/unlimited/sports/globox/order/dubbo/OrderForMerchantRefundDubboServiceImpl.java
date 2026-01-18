@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
@@ -12,7 +13,6 @@ import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.RefundTimelineVo;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
@@ -183,8 +183,7 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
                 false,
                 merchantId,
                 OperatorTypeEnum.USER,
-                SellerTypeEnum.VENUE,
-                dto.getRefundPercentage());
+                SellerTypeEnum.VENUE);
 
         SellerApproveRefundResultDto resultDto = SellerApproveRefundResultDto.builder()
                 .orderNo(orderNo)

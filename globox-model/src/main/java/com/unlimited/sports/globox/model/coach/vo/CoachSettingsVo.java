@@ -1,0 +1,175 @@
+package com.unlimited.sports.globox.model.coach.vo;
+
+import lombok.Builder;
+import lombok.Data;
+
+import java.util.List;
+
+/**
+ * @since 2026/1/12
+ * 教练设置信息VO
+ */
+@Data
+@Builder
+public class CoachSettingsVo {
+
+    /**
+     * 教练用户ID
+     */
+    private Long coachUserId;
+
+    /**
+     * 教练状态：0-暂停接单，1-正常接单，2-休假中
+     */
+    private Integer coachStatus;
+
+    /**
+     * 教练状态描述
+     */
+    private String coachStatusDesc;
+
+    /**
+     * 教练位置信息
+     */
+    private LocationInfo locationInfo;
+
+    /**
+     * 服务区域信息
+     */
+    private ServiceAreaInfo serviceAreaInfo;
+
+    /**
+     * 基本设置信息
+     */
+    private BasicSettingsInfo basicSettingsInfo;
+
+    /**
+     * 展示设置信息
+     */
+    private DisplaySettingsInfo displaySettingsInfo;
+
+    /**
+     * 场地偏好设置
+     */
+    private VenuePreferenceInfo venuePreferenceInfo;
+
+    /**
+     * 位置信息
+     */
+    @Data
+    @Builder
+    public static class LocationInfo {
+        /**
+         * 纬度
+         */
+        private Double latitude;
+
+        /**
+         * 经度
+         */
+        private Double longitude;
+    }
+
+    /**
+     * 服务区域信息
+     */
+    @Data
+    @Builder
+    public static class ServiceAreaInfo {
+        /**
+         * 常驻服务区域
+         */
+        private String coachServiceArea;
+
+        /**
+         * 常驻服务区域列表
+         */
+        private List<String> serviceAreaList;
+
+        /**
+         * 远距离服务区域
+         */
+        private String coachRemoteServiceArea;
+
+        /**
+         * 远距离服务区域列表
+         */
+        private List<String> remoteServiceAreaList;
+
+        /**
+         * 远距离最低授课时长（小时）
+         */
+        private Integer coachRemoteMinHours;
+    }
+
+    /**
+     * 基本设置信息
+     */
+    @Data
+    @Builder
+    public static class BasicSettingsInfo {
+        /**
+         * 教学风格
+         */
+        private String coachTeachingStyle;
+
+        /**
+         * 专长标签
+         */
+        private List<String> coachSpecialtyTags;
+
+        /**
+         * 主要奖项
+         */
+        private List<String> coachAward;
+
+        /**
+         * 教龄
+         */
+        private Integer coachTeachingYears;
+    }
+
+    /**
+     * 展示设置信息
+     */
+    @Data
+    @Builder
+    public static class DisplaySettingsInfo {
+        /**
+         * 教学图片
+         */
+        private List<String> coachWorkPhotos;
+
+        /**
+         * 教学视频
+         */
+        private List<VideoItem> coachWorkVideos;
+
+        /**
+         * 证书附件
+         */
+        private List<String> coachCertificationFiles;
+
+        /**
+         * 证书等级
+         */
+        private List<String> coachCertificationLevel;
+    }
+
+    /**
+     * 场地偏好信息
+     */
+    @Data
+    @Builder
+    public static class VenuePreferenceInfo {
+        /**
+         * 接受场地类型
+         */
+        private Integer coachAcceptVenueType;
+
+        /**
+         * 接受场地类型描述
+         */
+        private String coachAcceptVenueTypeDesc;
+    }
+}

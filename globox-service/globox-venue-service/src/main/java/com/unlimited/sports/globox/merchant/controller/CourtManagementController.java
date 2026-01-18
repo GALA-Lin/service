@@ -3,18 +3,27 @@ package com.unlimited.sports.globox.merchant.controller;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.merchant.mapper.MerchantMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
+import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
 import com.unlimited.sports.globox.merchant.service.CourtManagementService;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.merchant.dto.CourtBatchCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
 import com.unlimited.sports.globox.model.merchant.entity.Merchant;
+import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
 import com.unlimited.sports.globox.model.merchant.vo.CourtVo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantInfoVo;
 import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueBasicInfo;
 import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueDetailVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import com.unlimited.sports.globox.merchant.util.*;
@@ -42,27 +51,34 @@ public class CourtManagementController {
     // 1. 注入 MerchantMapper
     private final MerchantMapper merchantMapper;
 
+    private final VenueStaffMapper venueStaffMapper;
+
     /**
      * 查询当前登录的商家基本信息
      */
     @GetMapping("/info")
-    public R<Merchant> getMerchantInfo(
+    public R<MerchantInfoVo> getMerchantInfo(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
 
         // 2. 认证并获取上下文，确保请求合法
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        log.info("[商家信息查询] merchantId: {}", context.getMerchantId());
+        log.info("[商家信息查询] staff{} merchantId: {}",employeeId , context.getMerchantId());
 
         // 3. 从数据库中查询商家详细信息
         Merchant merchant = merchantMapper.selectById(context.getMerchantId());
+        VenueStaff staff = venueStaffMapper.selectById(employeeId);
 
         if (merchant == null) {
             throw new GloboxApplicationException("商家信息不存在");
         }
 
-        return R.ok(merchant);
+        MerchantInfoVo vo = new MerchantInfoVo();
+        BeanUtils.copyProperties(merchant, vo);
+        BeanUtils.copyProperties(staff, vo);
+
+        return R.ok(vo);
     }
 
     /**

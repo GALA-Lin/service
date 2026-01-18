@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
@@ -19,13 +20,13 @@ import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
 import com.unlimited.sports.globox.dubbo.coach.dto.*;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
+import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
 import com.unlimited.sports.globox.model.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.model.order.vo.*;
 import com.unlimited.sports.globox.model.order.vo.GetOrderDetailsVo.ExtraChargeVo;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderService;
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
@@ -95,6 +97,9 @@ public class OrderServiceImpl implements OrderService {
     @Lazy
     @Autowired
     private OrderServiceImpl thisService;
+
+    @DubboReference(group = "rpc")
+    private MerchantRefundRuleDubboService merchantRefundRuleDubboService;
 
 
     /**
@@ -624,9 +629,12 @@ public class OrderServiceImpl implements OrderService {
                 pageDto.getPageSize());
 
         // 2. 分页查询订单主表
-        RpcResult<List<Long>> rpcResult = merchantDubboService.getMoonCourtIdList();
-        Assert.rpcResultOk(rpcResult);
-        List<Long> mooncourtIdList = rpcResult.getData();
+        List<Long> mooncourtIdList = List.of();
+        if (!ObjectUtils.isEmpty(openId)) {
+            RpcResult<List<Long>> rpcResult = merchantDubboService.getMoonCourtIdList();
+            Assert.rpcResultOk(rpcResult);
+            mooncourtIdList = rpcResult.getData();
+        }
 
         IPage<Orders> orderPage = ordersMapper.selectPage(
                 page,
@@ -687,8 +695,7 @@ public class OrderServiceImpl implements OrderService {
                     List<SlotBookingTime> slotTimes =
                             orderItems.stream()
                                     .map(item -> {
-                                        SlotBookingTime t =
-                                                new SlotBookingTime();
+                                        SlotBookingTime t = new SlotBookingTime();
                                         t.setStartTime(item.getStartTime());
                                         t.setEndTime(item.getEndTime());
                                         return t;
@@ -741,6 +748,8 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public GetOrderDetailsVo getDetails(GetOrderDetailsDto dto) {
+
+        LocalDateTime now = LocalDateTime.now();
         Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
@@ -856,10 +865,11 @@ public class OrderServiceImpl implements OrderService {
             BeanUtils.copyProperties(resultDto, coachSnapshotVo);
         }
 
-        // 6) bookingDate：一般同一单同一天；这里取第一个
+        // 6) bookingDate：同一单同一天；这里取第一个
         LocalDate bookingDate = items.get(0).getBookingDate();
 
         // 7) 组装 item VO
+        AtomicBoolean orderRefundable = new AtomicBoolean(false);
         List<GetOrderDetailsVo.OrderItemDetailVo> itemVos = items.stream().map(item -> {
 
             // courtSnapshot：仅 COURT item & venue单
@@ -883,7 +893,7 @@ public class OrderServiceImpl implements OrderService {
             time.setStartTime(item.getStartTime());
             time.setEndTime(item.getEndTime());
 
-            return GetOrderDetailsVo.OrderItemDetailVo.builder()
+            GetOrderDetailsVo.OrderItemDetailVo itemDetailVo = GetOrderDetailsVo.OrderItemDetailVo.builder()
                     .itemId(item.getId())
                     .courtSnapshot(courtVo)
                     .itemBaseAmount(item.getUnitPrice())
@@ -893,7 +903,48 @@ public class OrderServiceImpl implements OrderService {
                     .slotBookingTimes(List.of(time))
                     .refund(refundVo)
                     .build();
+
+            // 只有这四种状态的订单可以申请退款，需要查询退款规则
+            if (OrderStatusEnum.PAID.equals(orders.getOrderStatus())
+                    || OrderStatusEnum.CONFIRMED.equals(orders.getOrderStatus())
+                    || OrderStatusEnum.REFUND_CANCELLED.equals(orders.getOrderStatus())
+                    || OrderStatusEnum.PARTIALLY_REFUNDED.equals(orders.getOrderStatus())) {
+                switch (orders.getSellerType()) {
+                    case VENUE -> {
+                        MerchantRefundRuleJudgeRequestDto requestDto = MerchantRefundRuleJudgeRequestDto.builder()
+                                .eventStartTime(LocalDateTime.of(item.getBookingDate(), item.getStartTime()))
+                                .refundApplyTime(now)
+                                .venueId(orders.getSellerId())
+                                .userId(userId)
+                                .orderTime(orders.getCreatedAt())
+                                .build();
+
+                        RpcResult<MerchantRefundRuleJudgeResultVo> rpcResult =
+                                merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
+
+                        MerchantRefundRuleJudgeResultVo resultVo = rpcResult.getData();
+                        if (rpcResult.isSuccess() && resultVo.isCanRefund()) {
+                            itemDetailVo.setIsItemRefundable(true);
+                            itemDetailVo.setRefundPercentage(resultVo.getRefundPercentage());
+                            orderRefundable.set(true);
+                        } else {
+                            itemDetailVo.setIsItemRefundable(false);
+                        }
+                    }
+                    case COACH -> {
+                        itemDetailVo.setIsItemRefundable(true);
+                        itemDetailVo.setRefundPercentage(new BigDecimal("100"));
+                    }
+                }
+            }
+
+            return itemDetailVo;
         }).toList();
+
+        boolean isCancelable = orders.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID
+                && orders.getOrderStatus() == OrderStatusEnum.PENDING;
+        boolean isRefundable = !isCancelable && orderRefundable.get();
+
 
         // 8) 返回
         GetOrderDetailsVo detailsVo = GetOrderDetailsVo.builder()
@@ -903,6 +954,8 @@ public class OrderServiceImpl implements OrderService {
                 .coachSnapshotVo(coachSnapshotVo)
                 .sellerName(orders.getSellerName())
                 .amount(orders.getPayAmount())
+                .isCancelable(isCancelable)
+                .isRefundable(isRefundable)
                 .bookingDate(bookingDate)
                 .currentOrderStatus(orders.getOrderStatus())
                 .orderLevelExtraCharges(orderLevelExtraCharges)
@@ -950,12 +1003,9 @@ public class OrderServiceImpl implements OrderService {
         Assert.isTrue(order.getBuyerId().equals(userId), OrderCode.ORDER_NOT_EXIST);
 
         // 2. 状态校验
-        // TODO 删除
-        log.info("order status :{}", order.getOrderStatus());
         Assert.isTrue(order.getOrderStatus() == OrderStatusEnum.PENDING,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
 
-        log.info("order payment status :{}", order.getPaymentStatus());
         Assert.isTrue(order.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID,
                 OrderCode.ORDER_STATUS_NOT_ALLOW_CANCEL);
 
@@ -1037,7 +1087,4 @@ public class OrderServiceImpl implements OrderService {
             BigDecimal unitPrice,
             BigDecimal itemSubtotal,
             List<ExtraQuote> recordExtras) { }
-
-
-
 }

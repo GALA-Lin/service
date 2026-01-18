@@ -34,8 +34,9 @@ public class CreateActivityDto {
     private String activityName;
 
     /**
-     * 活动图片URL列表（可选）
+     * 活动图片URL列表
      */
+    @Size(max = 9, message = "活动图片最多9张")
     private List<String> imageUrls;
 
     /**

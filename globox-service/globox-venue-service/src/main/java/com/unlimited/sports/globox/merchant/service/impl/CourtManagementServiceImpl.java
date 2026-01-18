@@ -124,7 +124,7 @@ public class CourtManagementServiceImpl implements CourtManagementService {
                 .status(updateDTO.getStatus() != null ? updateDTO.getStatus() : court.getStatus())
                 .build();
 
-        courtMapper.updateById(court);
+        courtMapper.updateById(updatedCourt);
         Court latestCourt = courtMapper.selectById(updateDTO.getCourtId());
 
         log.info("更新场地成功，场地ID：{}", updateDTO.getCourtId());

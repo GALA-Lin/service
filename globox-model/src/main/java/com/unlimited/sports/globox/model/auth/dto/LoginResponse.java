@@ -35,4 +35,7 @@ public class LoginResponse {
 
     @Schema(description = "是否为新用户（首次登录）", example = "true")
     private Boolean isNewUser;
+
+    @Schema(description = "是否为反注销用户（注销后重新激活）", example = "false")
+    private Boolean reactivated;
 }

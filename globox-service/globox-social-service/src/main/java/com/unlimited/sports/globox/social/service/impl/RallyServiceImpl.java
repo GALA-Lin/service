@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.enums.RegionCityEnum;
+import com.unlimited.sports.globox.common.enums.social.RallyTimeTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.RpcResult;
@@ -32,6 +33,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 
@@ -135,6 +137,7 @@ public class RallyServiceImpl implements RallyService {
                 .rallyEventDate(rallyPosts.getRallyEventDate())
                 .rallyStartTime(rallyPosts.getRallyStartTime())
                 .rallyEndTime(rallyPosts.getRallyEndTime())
+                .rallyTimeType(rallyPosts.getRallyTimeType().getDescription())
                 .rallyGenderLimit(rallyPosts.getRallyGenderLimit())
                 .ntrpMin(rallyPosts.getRallyNtrpMin())
                 .ntrpMax(rallyPosts.getRallyNtrpMax())
@@ -171,7 +174,7 @@ public class RallyServiceImpl implements RallyService {
                 .rallyVenueName(rallyPostsDto.getRallyVenueName())
                 .rallyCourtName(rallyPostsDto.getRallyCourtName())
                 .rallyEventDate(rallyPostsDto.getRallyEventDate())
-                .rallyTimeType(rallyPostsDto.getRallyTimeType())
+                .rallyTimeType(RallyTimeTypeEnum.fromCode(rallyPostsDto.getRallyTimeType()))
                 .rallyStartTime(rallyPostsDto.getRallyStartTime())
                 .rallyEndTime(rallyPostsDto.getRallyEndTime())
                 .rallyCost(rallyPostsDto.getRallyCost())
@@ -327,7 +330,7 @@ public class RallyServiceImpl implements RallyService {
      * @return 审核结果消息
      */
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public String inspectRallyApply(Long postId, Long applicantId, int inspectResult, Long inspectorId) {
         RallyApplication rallyApplication = rallyApplicationMapper.selectOne(
                 Wrappers.<RallyApplication>lambdaQuery()
@@ -344,11 +347,30 @@ public class RallyServiceImpl implements RallyService {
         }
         // 判断申请是否已经处理过
         if (rallyApplication.getStatus() == RallyApplyStatusEnum.PENDING.getCode()) {
-            rallyApplication.setReviewedAt(LocalDateTime.now());
-            rallyApplication.setStatus(inspectResult);
-            rallyApplicationMapper.updateById(rallyApplication);
             // 处理通过申请
             if (inspectResult == RallyApplyStatusEnum.ACCEPTED.getCode()) {
+                RallyParticipant existingParticipant = rallyParticipantMapper.selectOne(
+                        Wrappers.<RallyParticipant>lambdaQuery()
+                                .eq(RallyParticipant::getRallyPostId, postId)
+                                .eq(RallyParticipant::getParticipantId, applicantId)
+                );
+                if (existingParticipant != null) {
+                    rallyApplication.setReviewedAt(LocalDateTime.now());
+                    rallyApplication.setStatus(RallyApplyStatusEnum.ACCEPTED.getCode());
+                    rallyApplicationMapper.updateById(rallyApplication);
+                    return RallyResultEnum.RALLY_POSTS_INSPECT_SUCCESS_PASS.getMessage();
+                }
+                int updated = rallyPostsMapper.decrementRemainingPeopleIfAvailable(postId);
+                if (updated == 0) {
+                    RallyPosts rallyPosts = rallyPostsMapper.selectById(postId);
+                    if (rallyPosts == null) {
+                        throw new GloboxApplicationException(RallyResultEnum.RALLY_POST_NOT_EXIST.getCode(), RallyResultEnum.RALLY_POST_NOT_EXIST.getMessage());
+                    }
+                    if (rallyPosts.getRallyStatus() == RallyPostsStatusEnum.CANCELLED.getCode()) {
+                        throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_JOIN_HAS_CANCELLED.getCode(), RallyResultEnum.RALLY_POSTS_JOIN_HAS_CANCELLED.getMessage());
+                    }
+                    throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_JOIN_HAS_FULL.getCode(), RallyResultEnum.RALLY_POSTS_JOIN_HAS_FULL.getMessage());
+                }
                 RallyParticipant rallyParticipant = RallyParticipant.builder()
                         .rallyPostId(postId)
                         .participantId(applicantId)
@@ -356,17 +378,14 @@ public class RallyServiceImpl implements RallyService {
                         .isInitiator(IsInitiatorForRallyEnum.NO.getCode())
                         .build();
                 rallyParticipantMapper.insert(rallyParticipant);
-                RallyPosts rallyPosts = rallyPostsMapper.selectOne(
-                        Wrappers.<RallyPosts>lambdaQuery()
-                                .eq(RallyPosts::getRallyPostId, postId)
-                );
-                rallyPosts.setRallyRemainingPeople(rallyPosts.getRallyRemainingPeople() - 1);
-                if (rallyPosts.getRallyRemainingPeople() == 0){
-                    rallyPosts.setRallyStatus(RallyPostsStatusEnum.FULL.getCode());
-                }
-                rallyPostsMapper.updateById(rallyPosts);
+                rallyApplication.setReviewedAt(LocalDateTime.now());
+                rallyApplication.setStatus(RallyApplyStatusEnum.ACCEPTED.getCode());
+                rallyApplicationMapper.updateById(rallyApplication);
                 return RallyResultEnum.RALLY_POSTS_INSPECT_SUCCESS_PASS.getMessage();
             }
+            rallyApplication.setReviewedAt(LocalDateTime.now());
+            rallyApplication.setStatus(inspectResult);
+            rallyApplicationMapper.updateById(rallyApplication);
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_INSPECT_FAILURE.getCode(), RallyResultEnum.RALLY_POSTS_INSPECT_FAILURE.getMessage());
         }
         throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_INSPECT_HAS_CANCELLED.getCode(), RallyResultEnum.RALLY_POSTS_INSPECT_HAS_CANCELLED.getMessage());
@@ -388,7 +407,7 @@ public class RallyServiceImpl implements RallyService {
         if (rallyPosts == null) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POST_NOT_EXIST.getCode(), RallyResultEnum.RALLY_POST_NOT_EXIST.getMessage());
         }
-        if (userid != rallyPosts.getInitiatorId()) {
+        if (!Objects.equals(userid, rallyPosts.getInitiatorId())) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_UPDATE_NOT_AUTHORIZED.getCode(), RallyResultEnum.RALLY_POSTS_UPDATE_NOT_AUTHORIZED.getMessage());
         }
         List<RallyParticipant> rallyParticipantList = rallyParticipantMapper.selectList(
@@ -400,7 +419,7 @@ public class RallyServiceImpl implements RallyService {
         rallyPosts.setRallyVenueName(updateRallyDto.getRallyVenueName());
         rallyPosts.setRallyCourtName(updateRallyDto.getRallyCourtName());
         rallyPosts.setRallyEventDate(updateRallyDto.getRallyEventDate());
-        rallyPosts.setRallyTimeType(updateRallyDto.getRallyTimeType());
+        rallyPosts.setRallyTimeType(RallyTimeTypeEnum.fromCode(updateRallyDto.getRallyTimeType()));
         rallyPosts.setRallyStartTime(updateRallyDto.getRallyStartTime());
         rallyPosts.setRallyEndTime(updateRallyDto.getRallyEndTime());
         rallyPosts.setRallyCost(updateRallyDto.getRallyCost());
@@ -547,6 +566,7 @@ public class RallyServiceImpl implements RallyService {
                             .rallyEventDate(rallyPosts.getRallyEventDate())
                             .rallyStartTime(rallyPosts.getRallyStartTime())
                             .rallyEndTime(rallyPosts.getRallyEndTime())
+                            .rallyTimeType(rallyPosts.getRallyTimeType().getDescription())
                             .ntrpMin(rallyPosts.getRallyNtrpMin())
                             .rallyLabel(getRallyLabel(rallyPosts))
                             .ntrpMax(rallyPosts.getRallyNtrpMax())
@@ -814,4 +834,3 @@ public class RallyServiceImpl implements RallyService {
     }
 
 }
-

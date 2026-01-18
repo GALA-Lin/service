@@ -75,25 +75,10 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
     @Autowired
     @Lazy
     private VenueActivityManagementServiceImpl self;
-
-    @Autowired
-    private IFileUploadService fileUploadService;
-
     @Override
-    public Long createActivity(CreateActivityDto dto, MultipartFile[] images, MerchantAuthContext context) {        log.info("创建活动 - employeeId: {}, role: {}, activityName: {}, slotTemplateIds: {}",
+    public Long createActivity(CreateActivityDto dto, MerchantAuthContext context) {
+        log.info("创建活动 - employeeId: {}, role: {}, activityName: {}, slotTemplateIds: {}",
                 context.getEmployeeId(), context.getRole(), dto.getActivityName(), dto.getSlotTemplateIds());
-
-        // 1. 处理可选的图片上传（在事务之外处理网络请求）
-        if (images != null && images.length > 0) {
-            log.info("开始上传活动图片，数量：{}", images.length);
-            // 使用 FileTypeEnum.VENUE_IMAGE 或新增 ACTIVITY_IMAGE 类型
-            BatchUploadResultVo uploadResult = fileUploadService.batchUploadFiles(images, FileTypeEnum.VENUE_IMAGE);
-
-            if (uploadResult.getSuccessCount() > 0) {
-                // 将上传成功的 URL 设置到 DTO 中
-                dto.setImageUrls(uploadResult.getSuccessUrls());
-            }
-        }
 
         // 根据MerchantAuthContext的role确定组织者类型和名称
         String organizerName;
@@ -119,7 +104,7 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                 log.warn("未找到员工信息 - employeeId: {}", context.getEmployeeId());
                 throw new GloboxApplicationException("员工信息不存在");
             }
-            organizerName = staff.getDisplayName() != null ? staff.getDisplayName() : "未知员工";
+            organizerName = staff.getDisplayName() != null ? staff.getDisplayName() : "未命名,ID:"+staff.getUserId();
         }
 
         // 查询槽位模板
@@ -245,6 +230,7 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                 .activityTypeId(dto.getActivityTypeId())
                 .activityTypeDesc(activityType.getTypeCode())
                 .activityName(dto.getActivityName())
+                .imageUrls(dto.getImageUrls())
                 .activityDate(dto.getActivityDate())
                 .startTime(startTime)
                 .endTime(endTime)
@@ -259,8 +245,6 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                 .contactPhone(dto.getContactPhone())
                 .minNtrpLevel(dto.getMinNtrpLevel())
                 .activityConfig(dto.getActivityConfig())
-                .status(VenueActivityStatusEnum.NORMAL.getValue())
-                .imageUrls(dto.getImageUrls() != null ? Collections.singletonList(String.join(",", dto.getImageUrls())) : null) // 示例：转为逗号分隔字符串
                 .build();
 
         // 插入活动数据

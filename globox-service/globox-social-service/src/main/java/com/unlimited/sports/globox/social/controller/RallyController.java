@@ -160,10 +160,7 @@ public class RallyController {
     @PostMapping("/inspect")
     public R inspectRally(@RequestBody InspectDto inspectDto,
                           @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long inspectorId){
-        if (inspectorId == null){
-            log.error("请求头中缺少{}",HEADER_USER_ID);
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
+
         String rallyResult = rallyService.inspectRallyApply(inspectDto.getPostId(), inspectDto.getApplicantId(), inspectDto.getInspectResult(), inspectorId);
         if (rallyResult == null){
             return R.error();

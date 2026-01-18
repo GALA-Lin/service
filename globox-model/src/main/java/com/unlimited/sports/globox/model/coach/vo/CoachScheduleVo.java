@@ -40,6 +40,11 @@ public class CoachScheduleVo {
     private String studentName;
 
     /**
+     * 学生电话
+     */
+    private String studentPhone;
+
+    /**
      * 场地名称
      */
     private String venue;

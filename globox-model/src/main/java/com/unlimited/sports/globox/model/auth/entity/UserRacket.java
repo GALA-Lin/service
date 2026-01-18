@@ -36,6 +36,11 @@ public class UserRacket {
     private Boolean isPrimary;
 
     /**
+     * 是否已注销
+     */
+    private Boolean cancelled;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createdAt;

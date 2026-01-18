@@ -151,4 +151,9 @@ public class CoachOrderDetailWithUserInfoVo implements Serializable {
      * 下单人基本信息
      */
     private UserInfoVo buyerInfo;
+
+    /**
+     * 下单人电话
+     */
+    private String buyerPhone;
 }

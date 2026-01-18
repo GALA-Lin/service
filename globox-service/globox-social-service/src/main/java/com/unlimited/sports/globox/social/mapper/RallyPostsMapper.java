@@ -99,4 +99,12 @@ public interface RallyPostsMapper extends BaseMapper<RallyPosts> {
             "))"
     })
     int countCancelledActivities(@Param("userId") Long userId);
+
+    /**
+     * 原子扣减剩余人数，避免超额通过
+     *
+     * @param postId 帖子ID
+     * @return 影响行数
+     */
+    int decrementRemainingPeopleIfAvailable(@Param("postId") Long postId);
 }

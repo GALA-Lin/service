@@ -41,7 +41,6 @@ public class CoachCourseTypeDto {
     /**
      * 时长（分钟）
      */
-    @NotNull(message = "时长不能为空")
     @Min(value = 30, message = "时长最少30分钟")
     @Max(value = 240, message = "时长最多240分钟")
     private Integer coachDuration;
@@ -63,7 +62,6 @@ public class CoachCourseTypeDto {
     /**
      * 是否启用：0-停用，1-启用
      */
-    @NotNull(message = "启用状态不能为空")
     @Min(value = 0, message = "启用状态必须为0或1")
     @Max(value = 1, message = "启用状态必须为0或1")
     private Integer coachIsActive = 1;

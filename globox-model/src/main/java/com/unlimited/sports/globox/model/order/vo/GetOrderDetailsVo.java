@@ -58,6 +58,16 @@ public class GetOrderDetailsVo {
     private OrderStatusEnum currentOrderStatus;
 
     /**
+     * 是否可取消
+     */
+    private Boolean isCancelable;
+
+    /**
+     * 当前订单是否可退款
+     */
+    private Boolean isRefundable;
+
+    /**
      * 是否活动订单
      */
     @NotNull
@@ -128,6 +138,17 @@ public class GetOrderDetailsVo {
          */
         @Schema(description = "退款信息（无退款时为空）")
         private ItemRefundVo refund;
+
+        /**
+         * 当前订单项是否可退款
+         */
+        private Boolean isItemRefundable;
+
+        /**
+         * 当前订单项可退百分比
+         * 例如：100.00 表示100%
+         */
+        private BigDecimal refundPercentage;
     }
 
 

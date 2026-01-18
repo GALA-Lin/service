@@ -88,7 +88,7 @@ public class CoachProfile implements Serializable {
     private String coachTeachingStyle;
 
     /**
-     * 常驻服务区域（多个，逗号分隔）
+     * 常驻服务区域
      * 例如: "双流区, 金牛区"
      */
     @TableField(value = "coach_service_area")
@@ -100,6 +100,9 @@ public class CoachProfile implements Serializable {
     @TableField(value = "coach_remote_service_area")
     private String coachRemoteServiceArea;
 
+    /**
+     * 最短授课时长（小时）
+     */
     @TableField(value = "coach_min_hours")
     private Integer coachMinHours;
 

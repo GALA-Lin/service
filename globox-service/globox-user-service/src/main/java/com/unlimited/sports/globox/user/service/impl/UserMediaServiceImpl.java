@@ -11,10 +11,14 @@ import com.unlimited.sports.globox.model.auth.entity.UserMedia;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.user.vo.VideoUploadVo;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.result.SocialCode;
+import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.user.mapper.UserMediaMapper;
 import com.unlimited.sports.globox.user.service.FileUploadService;
 import com.unlimited.sports.globox.user.service.UserMediaService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -48,6 +52,9 @@ public class UserMediaServiceImpl implements UserMediaService {
     @Autowired
     private FileUploadService fileUploadService;
 
+    @DubboReference(group = "rpc")
+    private SocialRelationDubboService socialRelationDubboService;
+
     @Override
     public R<List<UserMediaVo>> getUserMediaList(Long userId, String mediaType) {
         if (userId == null) {
@@ -76,6 +83,60 @@ public class UserMediaServiceImpl implements UserMediaService {
         List<UserMedia> mediaList = userMediaMapper.selectList(queryWrapper);
 
         // 5. 转换为VO
+        List<UserMediaVo> voList = mediaList.stream()
+                .map(media -> {
+                    UserMediaVo vo = new UserMediaVo();
+                    BeanUtils.copyProperties(media, vo);
+                    vo.setMediaType(media.getMediaType() != null ? media.getMediaType().name() : null);
+                    return vo;
+                })
+                .collect(Collectors.toList());
+
+        return R.ok(voList);
+    }
+
+    @Override
+    public R<List<UserMediaVo>> getUserMediaList(Long targetUserId, String mediaType, Long viewerId) {
+        if (targetUserId == null) {
+            return R.error(UserAuthCode.USER_NOT_EXIST);
+        }
+
+        // 1. 拉黑校验：如果查看者和目标用户不是同一人，需要检查拉黑关系
+        if (viewerId != null && !viewerId.equals(targetUserId)) {
+            try {
+                RpcResult<Boolean> blockedResult = socialRelationDubboService.isBlocked(viewerId, targetUserId);
+                if (blockedResult != null && blockedResult.isSuccess() && Boolean.TRUE.equals(blockedResult.getData())) {
+                    log.warn("用户{}尝试查看被拉黑用户{}的媒体列表", viewerId, targetUserId);
+                    return R.error(SocialCode.USER_BLOCKED);
+                }
+            } catch (Exception e) {
+                log.error("检查拉黑关系失败: viewerId={}, targetUserId={}", viewerId, targetUserId, e);
+                // RPC调用失败时，为了不影响用户体验，允许继续查询（降级处理）
+            }
+        }
+
+        // 2. 构建查询条件（与查看自己的逻辑相同）
+        LambdaQueryWrapper<UserMedia> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(UserMedia::getUserId, targetUserId)
+                .eq(UserMedia::getStatus, UserMedia.Status.ACTIVE);
+
+        // 3. 如果指定了媒体类型，添加过滤条件
+        if (StringUtils.hasText(mediaType)) {
+            try {
+                UserMedia.MediaType type = UserMedia.MediaType.valueOf(mediaType.toUpperCase());
+                queryWrapper.eq(UserMedia::getMediaType, type);
+            } catch (IllegalArgumentException e) {
+                return R.error(UserAuthCode.INVALID_PARAM);
+            }
+        }
+
+        // 4. 按排序字段升序排序
+        queryWrapper.orderByAsc(UserMedia::getSort);
+
+        // 5. 查询媒体列表
+        List<UserMedia> mediaList = userMediaMapper.selectList(queryWrapper);
+
+        // 6. 转换为VO
         List<UserMediaVo> voList = mediaList.stream()
                 .map(media -> {
                     UserMediaVo vo = new UserMediaVo();

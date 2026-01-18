@@ -31,6 +31,11 @@ public class UserStyleTag {
     private Long tagId;
 
     /**
+     * 是否已注销
+     */
+    private Boolean cancelled;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createdAt;

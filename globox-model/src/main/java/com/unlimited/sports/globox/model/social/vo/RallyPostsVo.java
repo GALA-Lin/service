@@ -1,18 +1,12 @@
 package com.unlimited.sports.globox.model.social.vo;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.unlimited.sports.globox.model.social.dto.RallyPostsDto;
-import com.unlimited.sports.globox.model.social.dto.RallyQueryDto;
-import com.unlimited.sports.globox.model.social.entity.RallyActivityTypeEnum;
-import com.unlimited.sports.globox.model.social.entity.RallyParticipant;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 约球帖子视图对象
@@ -82,6 +76,12 @@ public class RallyPostsVo {
      */
     @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
     private LocalTime rallyEndTime;
+
+
+    /**
+     * 约球时段
+     */
+    private String rallyTimeType;
 
     /**
      * 约球标签

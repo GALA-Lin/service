@@ -7,8 +7,8 @@ import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.OrderAutoCompleteMessage;
-import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
 import com.unlimited.sports.globox.common.message.order.OrderPaidMessage;
 import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
@@ -20,7 +20,6 @@ import com.unlimited.sports.globox.model.order.entity.OrderItems;
 import com.unlimited.sports.globox.model.order.entity.OrderStatusLogs;
 import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.OrderActivitiesMapper;
 import com.unlimited.sports.globox.order.mapper.OrderItemsMapper;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
@@ -134,6 +133,7 @@ public class PaymentSuccessConsumer {
                         .orderNo(orderNo)
                         .outTradeNo(message.getOutTradeNo())
                         .refundReason("订单已取消，无需支付")
+                        .fullRefund(true)
                         .refundAmount(message.getTotalAmount())
                         .orderCancelled(true)
                         .build();
@@ -266,7 +266,7 @@ public class PaymentSuccessConsumer {
                 .build();
         mqService.sendDelay(
                 OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE,
-                OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
+                OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE,
                 autoCompleteMessage,
                 delay);
 

@@ -10,6 +10,7 @@ import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
+import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.vo.CoachOrderDetailWithUserInfoVo;
 import lombok.extern.slf4j.Slf4j;
@@ -82,12 +83,15 @@ public class CoachOrderController {
         // 3. 批量获取用户信息
         BatchUserInfoRequest userReq = new BatchUserInfoRequest();
         userReq.setUserIds(userIds);
-        RpcResult<BatchUserInfoResponse> rpcResult1 = userDubboService.batchGetUserInfo(userReq);
-        BatchUserInfoResponse userResp = rpcResult1.getData();
+        BatchUserInfoResponse userResp = userDubboService.batchGetUserInfo(userReq).getData();
         Map<Long, UserInfoVo> userMap = userResp.getUsers().stream()
                 .collect(Collectors.toMap(UserInfoVo::getUserId, vo -> vo, (v1, v2) -> v1));
 
-        // 4. 转换并封装 VO
+        RpcResult<List<UserPhoneDto>> phoneRpcResult = userDubboService.batchGetUserPhone(userIds);
+        Assert.rpcResultOk(phoneRpcResult);
+        Map<Long, String> phoneMap = phoneRpcResult.getData().stream()
+                .collect(Collectors.toMap(UserPhoneDto::getUserId, UserPhoneDto::getPhone, (v1, v2) -> v1));
+
         // 3. 转换并封装 VO
         IPage<CoachOrderDetailWithUserInfoVo> resultPage = orderPage.convert(orderDto -> {
             CoachOrderDetailWithUserInfoVo vo = new CoachOrderDetailWithUserInfoVo();
@@ -138,11 +142,18 @@ public class CoachOrderController {
         // 复制订单基础属性 (如 orderNo, totalPrice, statusName 等)
         BeanUtils.copyProperties(orderDto, vo);
 
+        RpcResult<UserInfoVo> RpcUserInfo = userDubboService.getUserInfo(orderDto.getUserId());
+        Assert.rpcResultOk(RpcUserInfo);
+        UserInfoVo userInfoVo = RpcUserInfo.getData();
 
-        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(orderDto.getUserId());
-        UserInfoVo userInfoVo = rpcResult.getData();
+        RpcResult<UserPhoneDto> RpcUserPhone = userDubboService.getUserPhone(orderDto.getUserId());
+        Assert.rpcResultOk(RpcUserPhone);
+        String buyerPhone = RpcUserPhone.getData().getPhone();
+
+
         // 设置下单人信息
         vo.setBuyerInfo(userInfoVo);
+        vo.setBuyerPhone(buyerPhone);
 
         log.info("成功获取订单详情 - orderNo: {}, 下单人昵称: {}",
                 orderNo, userInfoVo != null ? userInfoVo.getNickName() : "未知");

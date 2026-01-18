@@ -156,7 +156,6 @@ public class AuthGlobalFilter implements GlobalFilter {
         }
 
         // 添加端标识
-        log.info("client type:{}", clientType);
         headers.set(RequestHeaderConstants.HEADER_CLIENT_TYPE, clientType.getValue());
     }
 

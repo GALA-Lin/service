@@ -54,6 +54,11 @@ public class AuthIdentity {
      * 是否已验证
      */
     private Boolean verified;
+
+    /**
+     * 是否已注销
+     */
+    private Boolean cancelled;
     
     /**
      * 创建时间

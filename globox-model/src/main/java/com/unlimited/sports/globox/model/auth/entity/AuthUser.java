@@ -28,6 +28,11 @@ public class AuthUser {
      * 账号状态
      */
     private UserStatus status;
+
+    /**
+     * 是否已注销
+     */
+    private Boolean cancelled;
     
     /**
      * 用户角色

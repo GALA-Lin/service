@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.coach.mapper.CoachCourseTypeMapper;
 import com.unlimited.sports.globox.coach.service.ICoachCourseTypeService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeBatchDto;
 import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @since 2026/1/8 10:09
@@ -23,6 +25,86 @@ public class CoachCourseTypeServiceImpl implements ICoachCourseTypeService {
 
     @Autowired
     private CoachCourseTypeMapper coachCourseTypeMapper;
+
+
+    /**
+     * 批量创建或更新课程类型
+     *
+     * @param batchDto 批量请求DTO
+     * @return 服务类型 -> 课程类型ID 的映射
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Map<Integer, Long> batchSaveOrUpdateCourseTypes(CoachCourseTypeBatchDto batchDto) {
+        Long coachUserId = batchDto.getCoachUserId();
+        List<CoachCourseTypeDto> courseTypes = batchDto.getCourseTypes();
+
+        log.info("批量创建/更新课程类型 - coachUserId: {}, 课程数量: {}", coachUserId, courseTypes.size());
+
+        // 检查是否有重复的服务类型
+        Set<Integer> serviceTypes = new HashSet<>();
+        for (CoachCourseTypeDto dto : courseTypes) {
+            if (!serviceTypes.add(dto.getCoachServiceTypeEnum())) {
+                throw new GloboxApplicationException("请求中存在重复的服务类型: " + dto.getCoachServiceTypeEnum());
+            }
+        }
+
+        // 查询该教练现有的所有课程类型
+        List<CoachCourseType> existingCourseTypes = coachCourseTypeMapper.selectList(
+                new LambdaQueryWrapper<CoachCourseType>()
+                        .eq(CoachCourseType::getCoachUserId, coachUserId)
+        );
+
+        // 构建现有课程类型的映射 (服务类型 -> 课程类型实体)
+        Map<Integer, CoachCourseType> existingMap = existingCourseTypes.stream()
+                .collect(Collectors.toMap(
+                        CoachCourseType::getCoachServiceTypeEnum,
+                        ct -> ct
+                ));
+
+        // 结果映射 (服务类型 -> 课程类型ID)
+        Map<Integer, Long> resultMap = new LinkedHashMap<>();
+
+        // 遍历请求的课程类型,逐个处理
+        for (CoachCourseTypeDto dto : courseTypes) {
+            Integer serviceType = dto.getCoachServiceTypeEnum();
+            CoachCourseType existing = existingMap.get(serviceType);
+
+            if (existing != null) {
+                // 更新现有课程类型
+                existing.setCourseCover(dto.getCourseCover());
+                existing.setCoachCourseTypeName(dto.getCoachCourseTypeName());
+                existing.setCoachDuration(dto.getCoachDuration());
+                existing.setCoachPrice(dto.getCoachPrice());
+                existing.setCoachDescription(dto.getCoachDescription());
+                existing.setCoachIsActive(dto.getCoachIsActive());
+
+                coachCourseTypeMapper.updateById(existing);
+                resultMap.put(serviceType, existing.getCoachCourseTypeId());
+
+                log.info("更新课程类型 - serviceType: {}, courseTypeId: {}", serviceType, existing.getCoachCourseTypeId());
+            } else {
+                // 创建新的课程类型
+                CoachCourseType newCourseType = new CoachCourseType();
+                newCourseType.setCoachUserId(coachUserId);
+                newCourseType.setCourseCover(dto.getCourseCover());
+                newCourseType.setCoachCourseTypeName(dto.getCoachCourseTypeName());
+                newCourseType.setCoachServiceTypeEnum(dto.getCoachServiceTypeEnum());
+                newCourseType.setCoachDuration(dto.getCoachDuration());
+                newCourseType.setCoachPrice(dto.getCoachPrice());
+                newCourseType.setCoachDescription(dto.getCoachDescription());
+                newCourseType.setCoachIsActive(dto.getCoachIsActive());
+
+                coachCourseTypeMapper.insert(newCourseType);
+                resultMap.put(serviceType, newCourseType.getCoachCourseTypeId());
+
+                log.info("创建课程类型 - serviceType: {}, courseTypeId: {}", serviceType, newCourseType.getCoachCourseTypeId());
+            }
+        }
+
+        log.info("批量创建/更新课程类型完成 - coachUserId: {}, 处理数量: {}", coachUserId, resultMap.size());
+        return resultMap;
+    }
 
     /**
      * 创建或更新课程类型

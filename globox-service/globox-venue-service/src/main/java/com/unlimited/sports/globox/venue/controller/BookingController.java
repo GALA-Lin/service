@@ -21,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/venue/booking")
 public class BookingController {
-    ;
+
     @Autowired
     private IBookingService bookingService;
 

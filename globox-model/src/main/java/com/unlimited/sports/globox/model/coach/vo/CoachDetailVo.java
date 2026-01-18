@@ -59,15 +59,6 @@ public class CoachDetailVo {
      */
     private List<String> coachAwards;
 
-    /**
-     * 可接受的远距离服务区域
-     */
-    private String coachRemoteServiceArea;
-
-    /**
-     * 远距离区域最低授课时长（小时）
-     */
-    private Integer coachRemoteMinHours;
 
     /**
      * 接受场地类型

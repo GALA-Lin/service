@@ -1,4 +1,4 @@
-package com.unlimited.sports.globox.order.lock;
+package com.unlimited.sports.globox.common.lock;
 
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;

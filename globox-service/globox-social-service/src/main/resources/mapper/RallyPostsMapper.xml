@@ -136,4 +136,17 @@
             </if>
         </where>
     </select>
+
+    <update id="decrementRemainingPeopleIfAvailable">
+        UPDATE rally_posts
+        SET rally_remaining_people = rally_remaining_people - 1,
+            rally_updated_at = NOW(),
+            rally_status = CASE
+                WHEN rally_remaining_people - 1 = 0 THEN 1
+                ELSE rally_status
+            END
+        WHERE rally_post_id = #{postId}
+          AND rally_status = 0
+          AND rally_remaining_people > 0
+    </update>
 </mapper>

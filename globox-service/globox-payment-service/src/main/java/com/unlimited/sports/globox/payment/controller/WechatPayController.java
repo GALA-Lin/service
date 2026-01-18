@@ -10,6 +10,7 @@ import com.wechat.pay.java.core.notification.RequestParam;
 import com.wechat.pay.java.service.payments.model.Transaction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,11 +27,12 @@ import java.util.Map;
  * 微信支付接入 controller
  */
 @Slf4j
+@Profile("!dev")
 @RestController
 @RequestMapping("payments/wechat-pay")
 public class WechatPayController {
 
-    @Autowired
+    @Autowired(required = false)
     private WechatPayService wechatPayService;
 
     @Autowired

@@ -9,9 +9,6 @@ import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
  * user 模块 - 启动类
- *
- * @author dk
- * @since 2025/12/19 11:15
  */
 @EnableAsync
 @EnableDiscoveryClient

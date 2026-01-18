@@ -7,6 +7,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.unlimited.sports.globox.coach.mapper.*;
 import com.unlimited.sports.globox.coach.service.ICoachSlotService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
+import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.dto.*;
 import com.unlimited.sports.globox.model.coach.entity.*;
 import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
@@ -14,6 +18,7 @@ import com.unlimited.sports.globox.model.coach.enums.CoachSlotLockType;
 import com.unlimited.sports.globox.model.coach.enums.CoachSlotRecordStatusEnum;
 import com.unlimited.sports.globox.model.coach.vo.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +59,10 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    // 1. 注入用户服务
+    @DubboReference(group = "rpc", timeout = 10000)
+    private UserDubboService userDubboService;
 
     /**
      * 初始化时段模板(不生成记录)
@@ -350,48 +359,70 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
                         .eq(CoachSlotRecord::getLockedType, CoachSlotLockType.USER_ORDER_LOCK.getCode()) // 用户下单锁定
         );
 
-        // 转换为日程VO
+        List<Long> studentIds = slotRecords.stream()
+                .map(CoachSlotRecord::getLockedByUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        Map<Long, UserInfoVo> userMap = new HashMap<>();
+        Map<Long, String> phoneMap = new HashMap<>();
+
+        if (!studentIds.isEmpty()) {
+            // 批量获取昵称
+            BatchUserInfoRequest userReq = new BatchUserInfoRequest();
+            userReq.setUserIds(studentIds);
+            userMap = userDubboService.batchGetUserInfo(userReq).getData().getUsers().stream()
+                    .collect(Collectors.toMap(UserInfoVo::getUserId, u -> u));
+
+            // 批量获取明文手机号
+            phoneMap = userDubboService.batchGetUserPhone(studentIds).getData().stream()
+                    .collect(Collectors.toMap(UserPhoneDto::getUserId, UserPhoneDto::getPhone));
+        }
+
+        Map<Long, UserInfoVo> finalUserMap = userMap;
+        Map<Long, String> finalPhoneMap = phoneMap;
+
         List<CoachScheduleVo> schedules = slotRecords.stream()
-                .map(this::buildScheduleFromSlotRecord)
+                .map(record -> {
+                    UserInfoVo user = finalUserMap.get(record.getLockedByUserId());
+                    return CoachScheduleVo.builder()
+                            .scheduleDate(record.getBookingDate())
+                            .startTime(record.getStartTime())
+                            .endTime(record.getEndTime())
+                            .scheduleType("PLATFORM_SLOT")
+                            .studentName(user != null ? user.getNickName() : "未知学员")
+                            .studentPhone(finalPhoneMap.get(record.getLockedByUserId()))
+                            .bookingId(record.getCoachSlotRecordId())
+                            .build();
+                })
                 .collect(Collectors.toList());
 
-        // 查询自定义日程
+// 4. 处理自定义日程 (自定义日程通常由教练输入，直接从数据库字段映射)
         if (dto.getIncludeCustomSchedule()) {
-            List<CoachCustomSchedule> customSchedules =
-                    customScheduleMapper.selectByDateRange(
-                            dto.getCoachUserId(),
-                            dto.getStartDate(),
-                            dto.getEndDate()
-                    );
+            List<CoachCustomSchedule> customSchedules = customScheduleMapper.selectByDateRange(
+                    dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
 
             schedules.addAll(customSchedules.stream()
-                    .map(this::buildScheduleFromCustom)
+                    .map(custom -> CoachScheduleVo.builder()
+                            .scheduleDate(custom.getScheduleDate())
+                            .startTime(custom.getStartTime())
+                            .endTime(custom.getEndTime())
+                            .scheduleType("CUSTOM_EVENT")
+                            .studentName(custom.getStudentName())
+                            // .studentPhone(custom.getContactPhone())
+                            .customScheduleId(custom.getCoachCustomScheduleId())
+                            .build())
                     .toList());
         }
 
-        // 按日期和时间排序
-        schedules.sort(Comparator
-                .comparing(CoachScheduleVo::getScheduleDate)
+        // 5. 排序逻辑 (必须在所有数据收集完后执行)
+        schedules.sort(Comparator.comparing(CoachScheduleVo::getScheduleDate)
                 .thenComparing(CoachScheduleVo::getStartTime));
 
         return schedules;
     }
 
-    private CoachScheduleVo buildScheduleFromSlotRecord(CoachSlotRecord slotRecord) {
-        return CoachScheduleVo.builder()
-                .scheduleDate(slotRecord.getBookingDate()) // 日程日期
-                .startTime(slotRecord.getStartTime()) // 开始时间
-                .endTime(slotRecord.getEndTime()) // 结束时间
-                .scheduleType("PLATFORM_SLOT") // 自定义日程标识
-                .build();
-    }
-
-    /**
-     * 锁定时段(用户下单,按需生成记录)
-     * 1. 检查是否已有记录
-     * 2. 无记录则创建新记录并锁定
-     * 3. 有记录则原子性更新状态
-     */
     /**
      * 锁定时段
      * 修正：状态码使用枚举
@@ -464,6 +495,7 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         log.info("创建新记录并锁定成功 - recordId: {}", record.getCoachSlotRecordId());
         return true;
     }
+
     /**
      * 解锁时段
      * 修正：状态码使用枚举

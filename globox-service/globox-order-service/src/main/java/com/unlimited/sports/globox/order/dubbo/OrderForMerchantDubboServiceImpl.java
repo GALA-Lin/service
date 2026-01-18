@@ -10,16 +10,12 @@ import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.dubbo.order.OrderForMerchantDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.*;
-import com.unlimited.sports.globox.order.constants.RedisConsts;
-import com.unlimited.sports.globox.order.lock.RedisLock;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
-import com.unlimited.sports.globox.order.service.OrderService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
 import java.time.LocalDateTime;

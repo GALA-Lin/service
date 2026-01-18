@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
@@ -35,6 +36,7 @@ import com.unlimited.sports.globox.user.mapper.AuthUserMapper;
 import com.unlimited.sports.globox.user.mapper.UserProfileMapper;
 import com.unlimited.sports.globox.user.mapper.UserRacketMapper;
 import com.unlimited.sports.globox.user.mapper.UserStyleTagMapper;
+import com.unlimited.sports.globox.user.prop.UserProfileDefaultProperties;
 import com.unlimited.sports.globox.user.service.FileUploadService;
 import com.unlimited.sports.globox.user.service.PortraitMattingService;
 import com.unlimited.sports.globox.user.service.UserProfileService;
@@ -46,6 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -71,8 +74,8 @@ public class UserProfileServiceImpl implements UserProfileService {
     private static final int MAX_BATCH_SIZE = 50;
     private static final int SPORTS_YEAR_THRESHOLD = 1900;
 
-    @Value("${user.profile.default-avatar-url:}")
-    private String defaultAvatarUrl;
+    @Autowired
+    private UserProfileDefaultProperties userProfileDefaultProperties;;
 
     @Autowired
     private UserProfileMapper userProfileMapper;
@@ -163,7 +166,8 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         // 2. 查询用户球拍列表
         LambdaQueryWrapper<UserRacket> racketQuery = new LambdaQueryWrapper<>();
-        racketQuery.eq(UserRacket::getUserId, userId);
+        racketQuery.eq(UserRacket::getUserId, userId)
+                .eq(UserRacket::getCancelled, false);
         List<UserRacket> userRackets = userRacketMapper.selectList(racketQuery);
 
         List<UserRacketVo> racketVos = new ArrayList<>();
@@ -223,7 +227,8 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         // 3. 查询用户标签列表
         LambdaQueryWrapper<UserStyleTag> tagQuery = new LambdaQueryWrapper<>();
-        tagQuery.eq(UserStyleTag::getUserId, userId);
+        tagQuery.eq(UserStyleTag::getUserId, userId)
+                .eq(UserStyleTag::getCancelled, false);
         List<UserStyleTag> userStyleTags = userStyleTagMapper.selectList(tagQuery);
 
         List<StyleTagVo> styleTagVos = new ArrayList<>();
@@ -258,8 +263,17 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setIsFollowed(false);
         vo.setIsMutual(false);
         vo.setHomeDistrictName(getRegionNameByCode(profile.getHomeDistrict()));
-        if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
-            vo.setAvatarUrl(defaultAvatarUrl);
+        if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrl())) {
+            vo.setAvatarUrl(userProfileDefaultProperties.getDefaultAvatarUrl());
+        }
+
+        // 设置默认球星卡
+        if (ObjectUtils.isEmpty(vo.getPortraitUrl())) {
+            if (GenderEnum.FEMALE.equals(profile.getGender())) {
+                vo.setPortraitUrl(userProfileDefaultProperties.getDefaultStarCardFemaleUrl());
+            } else {
+                vo.setPortraitUrl(userProfileDefaultProperties.getDefaultStarCardMaleUrl());
+            }
         }
         AuthUser authUser = authUserMapper.selectById(userId);
         if (authUser != null && authUser.getRole() != null) {
@@ -344,9 +358,10 @@ public class UserProfileServiceImpl implements UserProfileService {
 
             // 2.2 空列表=清空：先删除，然后跳过校验/插入
             if (CollectionUtils.isEmpty(distinctRackets)) {
-                LambdaQueryWrapper<UserRacket> deleteQuery = new LambdaQueryWrapper<>();
-                deleteQuery.eq(UserRacket::getUserId, userId);
-                userRacketMapper.delete(deleteQuery);
+                LambdaUpdateWrapper<UserRacket> cancelQuery = new LambdaUpdateWrapper<>();
+                cancelQuery.eq(UserRacket::getUserId, userId)
+                        .set(UserRacket::getCancelled, true);
+                userRacketMapper.update(null, cancelQuery);
             } else {
                 // 2.3 校验球拍型号是否存在且为MODEL级别（过滤无效的，而不是全部失败）
                 List<Long> modelIds = distinctRackets.stream()
@@ -412,9 +427,10 @@ public class UserProfileServiceImpl implements UserProfileService {
 
             // 3.2 空列表=清空：先删除，然后跳过校验/插入
             if (CollectionUtils.isEmpty(distinctTagIds)) {
-                LambdaQueryWrapper<UserStyleTag> deleteTagQuery = new LambdaQueryWrapper<>();
-                deleteTagQuery.eq(UserStyleTag::getUserId, userId);
-                userStyleTagMapper.delete(deleteTagQuery);
+                LambdaUpdateWrapper<UserStyleTag> cancelTagQuery = new LambdaUpdateWrapper<>();
+                cancelTagQuery.eq(UserStyleTag::getUserId, userId)
+                        .set(UserStyleTag::getCancelled, true);
+                userStyleTagMapper.update(null, cancelTagQuery);
             } else {
                 // 3.3 校验标签是否存在且为ACTIVE状态（过滤无效的，而不是全部失败）
                 LambdaQueryWrapper<StyleTag> tagQuery = new LambdaQueryWrapper<>();
@@ -525,9 +541,10 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 5. 再更新球拍列表（如果提供且非空）
         if (request.getRackets() != null && !CollectionUtils.isEmpty(distinctRackets)) {
             // 5.1 删除用户所有球拍
-            LambdaQueryWrapper<UserRacket> deleteQuery = new LambdaQueryWrapper<>();
-            deleteQuery.eq(UserRacket::getUserId, userId);
-            userRacketMapper.delete(deleteQuery);
+            LambdaUpdateWrapper<UserRacket> cancelQuery = new LambdaUpdateWrapper<>();
+            cancelQuery.eq(UserRacket::getUserId, userId)
+                    .set(UserRacket::getCancelled, true);
+            userRacketMapper.update(null, cancelQuery);
 
             // 5.2 批量插入（使用已校验的 distinctRackets）
             for (UserRacketRequest racketReq : distinctRackets) {
@@ -535,6 +552,7 @@ public class UserProfileServiceImpl implements UserProfileService {
                 userRacket.setUserId(userId);
                 userRacket.setRacketModelId(racketReq.getRacketModelId());
                 userRacket.setIsPrimary(Boolean.TRUE.equals(racketReq.getIsPrimary()));
+                userRacket.setCancelled(false);
                 userRacketMapper.insert(userRacket);
             }
         }
@@ -542,15 +560,17 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 6. 再更新标签列表（如果提供且非空）
         if (request.getTagIds() != null && !CollectionUtils.isEmpty(distinctTagIds)) {
             // 6.1 删除用户所有标签
-            LambdaQueryWrapper<UserStyleTag> deleteTagQuery = new LambdaQueryWrapper<>();
-            deleteTagQuery.eq(UserStyleTag::getUserId, userId);
-            userStyleTagMapper.delete(deleteTagQuery);
+            LambdaUpdateWrapper<UserStyleTag> cancelTagQuery = new LambdaUpdateWrapper<>();
+            cancelTagQuery.eq(UserStyleTag::getUserId, userId)
+                    .set(UserStyleTag::getCancelled, true);
+            userStyleTagMapper.update(null, cancelTagQuery);
 
             // 6.2 批量插入（使用已校验的 distinctTagIds）
             for (Long tagId : distinctTagIds) {
                 UserStyleTag userStyleTag = new UserStyleTag();
                 userStyleTag.setUserId(userId);
                 userStyleTag.setTagId(tagId);
+                userStyleTag.setCancelled(false);
                 userStyleTagMapper.insert(userStyleTag);
             }
         }
@@ -628,6 +648,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 2. 查询主力拍（is_primary=1）
         LambdaQueryWrapper<UserRacket> racketQuery = new LambdaQueryWrapper<>();
         racketQuery.eq(UserRacket::getUserId, userId)
+                .eq(UserRacket::getCancelled, false)
                 .eq(UserRacket::getIsPrimary, true);
         UserRacket primaryRacket = userRacketMapper.selectOne(racketQuery);
 
@@ -641,7 +662,8 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         // 3. 查询球风标签列表
         LambdaQueryWrapper<UserStyleTag> tagQuery = new LambdaQueryWrapper<>();
-        tagQuery.eq(UserStyleTag::getUserId, userId);
+        tagQuery.eq(UserStyleTag::getUserId, userId)
+                .eq(UserStyleTag::getCancelled, false);
         List<UserStyleTag> userStyleTags = userStyleTagMapper.selectList(tagQuery);
 
         List<StyleTagVo> styleTagVos = new ArrayList<>();
@@ -832,6 +854,15 @@ public class UserProfileServiceImpl implements UserProfileService {
     public R<StarCardPortraitVo> getStarCardPortrait(Long userId) {
         UserProfile profile = getUserProfileById(userId);
         Assert.isNotEmpty(profile, UserAuthCode.USER_NOT_EXIST);
+
+        // 设置默认球星卡
+        if (ObjectUtils.isEmpty(profile.getPortraitUrl())) {
+            if (GenderEnum.FEMALE.equals(profile.getGender())) {
+                profile.setPortraitUrl(userProfileDefaultProperties.getDefaultStarCardFemaleUrl());
+            } else {
+                profile.setPortraitUrl(userProfileDefaultProperties.getDefaultStarCardMaleUrl());
+            }
+        }
 
         StarCardPortraitVo vo = StarCardPortraitVo.builder()
                 .portraitUrl(profile.getPortraitUrl())

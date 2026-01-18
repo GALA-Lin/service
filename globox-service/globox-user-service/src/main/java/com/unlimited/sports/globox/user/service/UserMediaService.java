@@ -18,13 +18,23 @@ import java.util.List;
 public interface UserMediaService {
 
     /**
-     * 查询用户媒体列表
+     * 查询用户媒体列表（自己的）
      *
      * @param userId    用户ID
      * @param mediaType 媒体类型（可选，IMAGE/VIDEO，为空则返回所有类型）
      * @return 媒体列表
      */
     R<List<UserMediaVo>> getUserMediaList(Long userId, String mediaType);
+
+    /**
+     * 查询用户媒体列表（查看别人的，包含拉黑校验）
+     *
+     * @param targetUserId 目标用户ID
+     * @param mediaType    媒体类型（可选，IMAGE/VIDEO，为空则返回所有类型）
+     * @param viewerId     查看者用户ID（用于拉黑校验，可为null表示未登录用户）
+     * @return 媒体列表
+     */
+    R<List<UserMediaVo>> getUserMediaList(Long targetUserId, String mediaType, Long viewerId);
 
     /**
      * 保存用户媒体列表（全量替换）

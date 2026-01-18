@@ -27,6 +27,7 @@ import com.wechat.pay.java.service.refund.model.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -47,6 +48,7 @@ import static com.wechat.pay.java.core.http.Constant.*;
  */
 @Slf4j
 @Service
+@Profile("!dev")
 public class WechatPayServiceImpl implements WechatPayService {
 
     @Autowired(required = false)

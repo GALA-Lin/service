@@ -16,4 +16,5 @@ public interface VenueActivityManagementService {
      * @param context 商家认证上下文（包含角色、商家ID、员工ID等信息）
      * @return 活动ID
      */
-    Long createActivity(CreateActivityDto dto, MultipartFile[] images, MerchantAuthContext context);}
+    Long createActivity(CreateActivityDto dto, MerchantAuthContext context);
+}

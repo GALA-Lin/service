@@ -17,4 +17,12 @@ public interface SocialRelationDubboService {
      * 批量查询关注与互相关注的状态
      */
     RpcResult<List<UserRelationStatusItemDto>> batchGetRelationStatus(Long viewerId, List<Long> targetUserIds);
+
+    /**
+     * 检查是否存在任意方向的拉黑关系
+     * @param viewerId 查看者用户ID
+     * @param targetUserId 目标用户ID
+     * @return true表示存在拉黑关系（任意一方拉黑了另一方），false表示不存在拉黑关系
+     */
+    RpcResult<Boolean> isBlocked(Long viewerId, Long targetUserId);
 }

@@ -91,8 +91,23 @@ public interface AuthService {
      */
     R<LoginResponse> refreshToken(TokenRefreshRequest request);
 
+    /**
+     * 注销账号校验
+     *
+     * @param request 注销请求（手机号、验证码）
+     * @return 注销确认凭证
+     */
+    R<String> verifyCancelAccount(CancelAccountRequest request);
+
+    /**
+     * 注销账号确认
+     *
+     * @param request 注销确认请求
+     * @return 成功响应
+     */
+    R<String> confirmCancelAccount(CancelAccountConfirmRequest request);
+
 
     R<WechatLoginResponse> createWechatUserAndLogin(String identifier, String openid,
                                                     DeviceInfo deviceInfo, String clientType);
 }
-

@@ -33,8 +33,10 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -164,13 +166,12 @@ public class CommentServiceImpl implements CommentService {
             if (!parentComment.getNoteId().equals(noteId)) {
                 throw new GloboxApplicationException(SocialCode.COMMENT_PARENT_INVALID);
             }
-            // 仅支持一级回复（父评论的parentId必须为null）
-            if (parentComment.getParentId() != null) {
-                throw new GloboxApplicationException(SocialCode.COMMENT_PARENT_INVALID);
-            }
+
+            // 允许多级嵌套：直接挂到被回复评论
             parentId = parentComment.getCommentId();
-            replyToUserId = request.getReplyToUserId() != null 
-                    ? request.getReplyToUserId() 
+
+            replyToUserId = request.getReplyToUserId() != null
+                    ? request.getReplyToUserId()
                     : parentComment.getUserId();
         }
 
@@ -249,25 +250,50 @@ public class CommentServiceImpl implements CommentService {
         comment.setUpdatedAt(LocalDateTime.now());
         commentMapper.updateById(comment);
 
-        // 6. 级联软删除所有回复
-        List<SocialNoteComment> replies = commentMapper.selectRepliesByParentId(commentId);
+        // 6. 级联软删除所有回复（多级）
+        List<SocialNoteComment> replies = collectAllReplies(commentId);
+        int deleteCount = 1; // 包含当前评论
         if (!replies.isEmpty()) {
             for (SocialNoteComment reply : replies) {
+                if (reply.getStatus() == SocialNoteComment.Status.PUBLISHED) {
+                    deleteCount++;
+                }
                 reply.setStatus(SocialNoteComment.Status.DELETED);
                 reply.setUpdatedAt(LocalDateTime.now());
                 commentMapper.updateById(reply);
             }
         }
-
-        // 7. 计算删除数量（1 + 回复数量）
-        int deleteCount = 1 + replies.size();
-
         // 8. 原子更新笔记评论数
         noteMapper.decrementCommentCount(noteId, deleteCount);
 
         log.info("评论删除成功：userId={}, noteId={}, commentId={}, 删除数量={}", 
                 userId, noteId, commentId, deleteCount);
         return R.ok("删除成功");
+    }
+
+    private List<SocialNoteComment> collectAllReplies(Long parentCommentId) {
+        List<SocialNoteComment> result = new ArrayList<>();
+        ArrayDeque<Long> queue = new ArrayDeque<>();
+        Set<Long> visited = new HashSet<>();
+        queue.add(parentCommentId);
+        visited.add(parentCommentId);
+
+        while (!queue.isEmpty()) {
+            Long currentId = queue.poll();
+            List<SocialNoteComment> replies = commentMapper.selectRepliesByParentId(currentId);
+            if (replies == null || replies.isEmpty()) {
+                continue;
+            }
+            for (SocialNoteComment reply : replies) {
+                Long replyId = reply.getCommentId();
+                if (replyId == null || !visited.add(replyId)) {
+                    continue;
+                }
+                result.add(reply);
+                queue.add(replyId);
+            }
+        }
+        return result;
     }
 
     @Override

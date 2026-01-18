@@ -126,8 +126,27 @@ public class SocialRelationController {
         return socialRelationService.getMutual(userId, targetUserId, page, pageSize, keyword);
     }
 
+    @GetMapping("/stats")
+    @Operation(summary = "用户主页统计（自己的）", description = "获取当前用户的关注数/粉丝数/获赞数")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<UserRelationStatsVo> getMyStats(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+        return socialRelationService.getUserStats(userId);
+    }
+
     @GetMapping("/users/{userId}/stats")
-    @Operation(summary = "用户主页统计", description = "获取用户关注数/粉丝数/获赞数")
+    @Operation(summary = "用户主页统计（查看别人的）", description = "获取指定用户的关注数/粉丝数/获赞数")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<UserRelationStatsVo> getUserStats(
             @Parameter(description = "目标用户ID", required = true)
             @PathVariable("userId") Long targetUserId) {

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.unlimited.sports.globox.common.enums.social.RallyTimeTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -72,10 +73,10 @@ public class RallyPosts implements Serializable {
 
 
     /**
-     * 时间类型: 0=具体时间 1=模糊时间
+     * 约球时段：0=上午；1=下午；2=晚上
      */
     @TableField("rally_time_type")
-    private int rallyTimeType = 0;
+    private RallyTimeTypeEnum rallyTimeType;
     /**
       * 时间-开始
      */

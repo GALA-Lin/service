@@ -16,7 +16,7 @@
         <result column="lock_reason" property="lockReason"/>
         <result column="order_id" property="orderId"/>
         <result column="order_no" property="orderNo"/>
-        <result column="operator_idd" property="operatorId"/>
+        <result column="operator_id" property="operatorId"/>
         <result column="user_nickname" property="userNickname"/>
         <result column="locked_at" property="lockedAt"/>
         <result column="status" property="status"/>
@@ -38,7 +38,7 @@
         <result column="cancelable" property="cancelable"/>
         <result column="locked_type" property="lockedType"/>
         <result column="lock_reason" property="lockReason"/>
-        <result column="operator_idd" property="operatorId"/>
+        <result column="operator_id" property="operatorId"/>
     </resultMap>
 
     <!-- 根据模板ID和日期查询记录 -->

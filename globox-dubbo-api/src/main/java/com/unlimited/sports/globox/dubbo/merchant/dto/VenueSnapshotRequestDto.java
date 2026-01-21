@@ -27,9 +27,7 @@ public class VenueSnapshotRequestDto implements Serializable {
     @NotNull
     private List<Long> courtId;
 
-    @NotNull
     private Double latitude;
 
-    @NotNull
     private Double longitude;
 }

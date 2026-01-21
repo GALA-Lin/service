@@ -267,4 +267,5 @@ public class OrderMQConstants {
             "routing.order.refund-apply.to-payment.final";
     public static final String QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT_DLQ =
             "queue.order.refund-apply.to-payment.payment.dlq";
+
 }

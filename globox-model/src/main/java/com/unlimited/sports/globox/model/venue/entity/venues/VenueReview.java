@@ -31,6 +31,12 @@ public class VenueReview {
 
     private Boolean isAnonymous;
 
+    private Boolean deleted;
+
+    private LocalDateTime deletedAt;
+
+    private Integer deleteOperatorType;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

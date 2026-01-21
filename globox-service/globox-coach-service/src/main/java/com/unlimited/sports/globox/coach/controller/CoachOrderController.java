@@ -1,6 +1,8 @@
 package com.unlimited.sports.globox.coach.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.unlimited.sports.globox.coach.constants.CoachConstants;
+import com.unlimited.sports.globox.coach.util.CoachNotificationUtil;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -16,6 +18,7 @@ import com.unlimited.sports.globox.model.coach.vo.CoachOrderDetailWithUserInfoVo
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
@@ -34,11 +37,16 @@ import java.util.stream.Collectors;
 @RequestMapping("/coach/order")
 public class CoachOrderController {
 
-    @DubboReference(group = "rpc", timeout = 10000)
+    @DubboReference(group = "rpc", timeout = CoachConstants.DUBBO_RPC_TIMEOUT)
     private OrderForCoachDubboService orderForCoachDubboService;
 
-    @DubboReference(group = "rpc", timeout = 10000)
+    @DubboReference(group = "rpc", timeout = CoachConstants.DUBBO_RPC_TIMEOUT)
     private UserDubboService userDubboService;
+
+
+
+    @Autowired
+    private CoachNotificationUtil coachNotificationUtil;
 
     /**
      * 获取教练订单分页列表
@@ -191,6 +199,9 @@ public class CoachOrderController {
         log.info("教练成功取消订单 - orderNo: {}, 取消时间: {}",
                 orderNo, rpcResult.getData().getCancelledAt());
 
+        // 发送通知给学员
+        coachNotificationUtil.handleCoachCancelUnpaidOrderNotification(orderNo, coachUserId);
+
         return R.ok(rpcResult.getData());
     }
 
@@ -224,6 +235,9 @@ public class CoachOrderController {
 
         log.info("教练成功确认订单 - orderNo: {}, 确认时间: {}",
                 orderNo, rpcResult.getData().getConfirmAt());
+
+        // 发送确认通知给学员并发送课程提醒延迟消息
+        coachNotificationUtil.handleCoachConfirmOrderNotification(orderNo, coachUserId);
 
         return R.ok(rpcResult.getData());
     }
@@ -259,6 +273,9 @@ public class CoachOrderController {
         log.info("教练成功同意退款 - orderNo: {}, 同意退款数量: {}",
                 orderNo, rpcResult.getData().getApprovedItemCount());
 
+        // 发送退款批准通知给学员
+        coachNotificationUtil.handleCoachApproveRefundNotification(orderNo, coachUserId);
+
         return R.ok(rpcResult.getData());
     }
 
@@ -293,6 +310,9 @@ public class CoachOrderController {
         log.info("教练成功拒绝退款 - orderNo: {}, 拒绝数量: {}",
                 orderNo, rpcResult.getData().getRejectedItemCount());
 
+        // 发送退款拒绝通知给学员
+        coachNotificationUtil.handleCoachRejectRefundNotification(orderNo, coachUserId, dto.getRemark());
+
         return R.ok(rpcResult.getData());
     }
 
@@ -326,6 +346,9 @@ public class CoachOrderController {
 
         log.info("教练成功申请退款 - orderNo: {}, 订单状态: {}",
                 orderNo, rpcResult.getData().getOrderStatus());
+
+        // 发送订单被教练取消通知给学员
+        coachNotificationUtil.handleCoachRefundNotification(orderNo, coachUserId);
 
         return R.ok(rpcResult.getData());
     }

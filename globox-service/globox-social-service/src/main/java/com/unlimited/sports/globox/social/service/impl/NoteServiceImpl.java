@@ -9,6 +9,9 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.common.utils.NotificationSender;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.NoteMediaRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
@@ -31,6 +34,8 @@ import com.unlimited.sports.globox.social.mapper.SocialNotePoolMapper;
 import com.unlimited.sports.globox.social.service.NoteService;
 import com.unlimited.sports.globox.social.service.SocialRelationService;
 import com.unlimited.sports.globox.social.util.CursorUtils;
+import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
+import com.unlimited.sports.globox.dubbo.governance.SensitiveWordsDubboService;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -85,8 +90,17 @@ public class NoteServiceImpl implements NoteService {
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
 
+    @DubboReference(group = "rpc")
+    private SensitiveWordsDubboService sensitiveWordsDubboService;
+
     @Autowired
     private SocialRelationService socialRelationService;
+
+    @Autowired
+    private NotificationSender notificationSender;
+
+    @Autowired
+    private SocialNotificationUtil socialNotificationUtil;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -199,6 +213,11 @@ public class NoteServiceImpl implements NoteService {
         validateMedia(request.getMediaType(), request.getMediaList());
         fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
 
+        // 4.1 敏感词校验（仅发布路径）
+        RpcResult<Void> publishSensitiveResult = sensitiveWordsDubboService.checkSensitiveWords(
+                (request.getTitle() == null ? "" : request.getTitle()) + "\n" + request.getContent());
+        Assert.rpcResultOk(publishSensitiveResult);
+
         // 5. 创建 PUBLISHED 笔记
         SocialNote note = SocialNote.builder()
                 .userId(userId)
@@ -269,6 +288,11 @@ public class NoteServiceImpl implements NoteService {
         validateMedia(request.getMediaType(), request.getMediaList());
         fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
 
+        // 4.1 敏感词校验（仅发布路径）
+        RpcResult<Void> publishSensitiveResult = sensitiveWordsDubboService.checkSensitiveWords(
+                (request.getTitle() == null ? "" : request.getTitle()) + "\n" + request.getContent());
+        Assert.rpcResultOk(publishSensitiveResult);
+
         // 5. 查询草稿
         SocialNote draft = socialNoteMapper.selectById(request.getNoteId());
         if (draft == null || draft.getStatus() == SocialNote.Status.DELETED) {
@@ -327,6 +351,20 @@ public class NoteServiceImpl implements NoteService {
             boolean hasContent = hasAnyContent(request.getTitle(), request.getContent(), request.getMediaList());
             if (!hasContent) {
                 throw new GloboxApplicationException(SocialCode.NOTE_DRAFT_EMPTY);
+            }
+        }
+
+        // 已发布且标题/正文有修改时，校验敏感词
+        if (note.getStatus() == SocialNote.Status.PUBLISHED) {
+            boolean titleChanged = request.getTitle() != null && !Objects.equals(request.getTitle(), note.getTitle());
+            boolean contentChanged = request.getContent() != null && !Objects.equals(request.getContent(), note.getContent());
+            if (titleChanged || contentChanged) {
+                String effectiveTitle = titleChanged ? request.getTitle() : note.getTitle();
+                String effectiveContent = contentChanged ? request.getContent() : note.getContent();
+                RpcResult<Void> updateSensitiveResult = sensitiveWordsDubboService.checkSensitiveWords(
+                        (effectiveTitle == null ? "" : effectiveTitle) + "\n"
+                                + (effectiveContent == null ? "" : effectiveContent));
+                Assert.rpcResultOk(updateSensitiveResult);
             }
         }
 
@@ -1091,6 +1129,11 @@ public class NoteServiceImpl implements NoteService {
 
             // 4. 原子更新笔记点赞数
             socialNoteMapper.incrementLikeCount(noteId);
+
+            // 5. 发送点赞通知（点赞者不是笔记作者时）
+            if (!note.getUserId().equals(userId)) {
+                socialNotificationUtil.sendNoteLikedNotification(noteId, userId, note.getTitle(), note.getUserId());
+            }
         }
 
         return R.ok("点赞成功");
@@ -1348,4 +1391,5 @@ public class NoteServiceImpl implements NoteService {
     private List<NoteItemVo> convertToNoteItemVo(List<SocialNote> notes) {
         return convertToNoteItemVo(notes, null);
     }
+
 }

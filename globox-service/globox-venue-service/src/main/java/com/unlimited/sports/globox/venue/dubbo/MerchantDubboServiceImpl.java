@@ -4,8 +4,11 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.MerchantErrorCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.VenueCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.*;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueSnapshotVo;
 import com.unlimited.sports.globox.venue.dto.ActivityPreviewContext;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
@@ -21,8 +24,10 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 
 import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
 import com.unlimited.sports.globox.venue.service.*;
+import com.unlimited.sports.globox.venue.constants.BookingConstants;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.redisson.api.RLock;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,6 +69,9 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     @Autowired
     private IBookingService bookingService;
 
+    @DubboReference(group = "rpc")
+    private UserDubboService userDubboService;
+
 
     /**
      * 真正占据槽位
@@ -93,6 +101,15 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             List<RLock> locks = null;
 
             try {
+                // 获取用户信息（昵称）
+                String userName = BookingConstants.DEFAULT_USER_NAME;
+                RpcResult<UserInfoVo> userInfoResult = userDubboService.getUserInfo(dto.getUserId());
+                Assert.rpcResultOk(userInfoResult);
+                UserInfoVo userInfo = userInfoResult.getData();
+                if (userInfo != null && userInfo.getNickName() != null) {
+                    userName = userInfo.getNickName();
+                }
+
                 // 批量获取所有槽位的锁
                 locks = redisDistributedLock.tryLockMultiple(lockKeys, 1, -1L, TimeUnit.SECONDS);
                 if (locks == null) {
@@ -105,7 +122,8 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
                         dto,
                         templates,
                         venue,
-                        courtNameMap);
+                        courtNameMap,
+                        userName);
 
                 return RpcResult.ok(result);
 

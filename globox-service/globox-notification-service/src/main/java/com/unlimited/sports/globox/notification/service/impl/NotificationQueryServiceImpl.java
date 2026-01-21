@@ -15,15 +15,22 @@ import com.unlimited.sports.globox.notification.dto.vo.UnreadCountVO;
 import com.unlimited.sports.globox.notification.enums.MessageTypeEnum;
 import com.unlimited.sports.globox.notification.service.INotificationQueryService;
 import com.unlimited.sports.globox.notification.service.IPushRecordsService;
+import com.unlimited.sports.globox.notification.dto.vo.MessageUserInfo;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEntityTypeEnum;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -35,6 +42,9 @@ public class NotificationQueryServiceImpl implements INotificationQueryService {
 
     @Resource
     private IPushRecordsService pushRecordsService;
+
+    @DubboReference(group = "rpc")
+    private UserDubboService userDubboService;
 
     @Override
     public UnreadCountVO getUnreadCount(Long userId) {
@@ -134,11 +144,88 @@ public class NotificationQueryServiceImpl implements INotificationQueryService {
                 .map(NotificationMessageVO::fromEntity)
                 .collect(Collectors.toList());
 
+        // 附加关联的实体信息
+        attachEntityInfo(voList, pageResult.getRecords(), userId);
+
         return PaginationResult.build(
                 voList,
                 pageResult.getTotal(),
                 request.getPageNum(),
                 request.getPageSize()
         );
+    }
+
+    /**
+     * 为通知消息附加关联的实体信息
+     */
+    private void attachEntityInfo(List<NotificationMessageVO> voList, List<PushRecords> records, Long userId) {
+        // 根据实体类型分组处理
+        Map<Integer, List<NotificationMessageVO>> vosByEntityType = voList.stream()
+                .filter(vo -> vo.getAttachedEntityType() != null && vo.getAttachedEntityType() != NotificationEntityTypeEnum.NONE.getCode())
+                .collect(Collectors.groupingBy(NotificationMessageVO::getAttachedEntityType));
+
+        Map<Long, PushRecords> recordMap = records.stream()
+                .collect(Collectors.toMap(PushRecords::getRecordId, r -> r));
+
+        // 处理USER类型的实体
+        if (vosByEntityType.containsKey(NotificationEntityTypeEnum.USER.getCode())) {
+            enrichUserInfo(vosByEntityType.get(NotificationEntityTypeEnum.USER.getCode()), recordMap, userId);
+        }
+
+        // 后续可添加其他实体类型的处理
+    }
+
+    /**
+     * 为消息富集用户信息
+     */
+    private void enrichUserInfo(List<NotificationMessageVO> userEntityMessages, Map<Long, PushRecords> recordMap, Long userId) {
+        if (CollectionUtils.isEmpty(userEntityMessages)) {
+            return;
+        }
+
+        try {
+            Set<Long> userIds = userEntityMessages.stream()
+                    .map(vo -> recordMap.get(vo.getRecordId()))
+                    .filter(Objects::nonNull)
+                    .map(PushRecords::getAttachedEntityId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+
+            if (CollectionUtils.isEmpty(userIds)) {
+                return;
+            }
+
+            BatchUserInfoRequest userRequest = new BatchUserInfoRequest();
+            userRequest.setUserIds(new ArrayList<>(userIds));
+
+            RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(userRequest);
+
+            if (rpcResult.isSuccess() && rpcResult.getData() != null) {
+                BatchUserInfoResponse response = rpcResult.getData();
+                Map<Long, UserInfoVo> userInfoMap = response.getUsers().stream()
+                        .collect(Collectors.toMap(UserInfoVo::getUserId, u -> u));
+
+                // 为每个消息附加对应的用户信息
+                userEntityMessages.forEach(vo -> {
+                    PushRecords record = recordMap.get(vo.getRecordId());
+                    if (record != null && record.getAttachedEntityId() != null) {
+                        UserInfoVo userInfo = userInfoMap.get(record.getAttachedEntityId());
+                        if (userInfo != null) {
+                            MessageUserInfo messageUserInfo = MessageUserInfo.builder()
+                                    .userId(userInfo.getUserId())
+                                    .nickname(userInfo.getNickName())
+                                    .avatarUrl(userInfo.getAvatarUrl())
+                                    .build();
+                            vo.setEntityInfo(messageUserInfo);
+                            log.info("[消息查询] 已附加用户信息: userId={}, attachedUserId={}, nickname={}",
+                                    userId, userInfo.getUserId(), userInfo.getNickName());
+                        }
+                    }
+                });
+            }
+        } catch (Exception e) {
+            log.error("[消息查询] 获取用户信息失败", e);
+            // 继续返回消息列表，即使用户信息获取失败
+        }
     }
 }

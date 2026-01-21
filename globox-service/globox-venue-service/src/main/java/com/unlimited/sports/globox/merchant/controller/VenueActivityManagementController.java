@@ -4,12 +4,11 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.merchant.service.VenueActivityManagementService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
+import com.unlimited.sports.globox.model.merchant.vo.ActivityCreationResultVo;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
 
@@ -38,19 +37,22 @@ public class VenueActivityManagementController {
      * @return 活动ID
      */
     @PostMapping
-    public R<Long> createActivity(
+    public R<ActivityCreationResultVo> createActivity(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
             @Valid @RequestBody CreateActivityDto dto) {
 
-        log.info("商家创建活动 - employeeId: {}, role: {}, activityName: {}", employeeId, roleStr, dto.getActivityName());
+        log.info("商家创建活动 - employeeId: {}, role: {}, activityName: {}",
+                employeeId, roleStr, dto.getActivityName());
 
         // 验证权限并获取上下文
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-        Long activityId = activityManagementService.createActivity(dto, context);
+        ActivityCreationResultVo result = activityManagementService.createActivity(dto, context);
 
-        log.info("活动创建成功 - activityId: {}", activityId);
+        log.info("活动创建成功 - activityId: {}, batchId: {}, 占用槽位数: {}",
+                result.getActivityId(), result.getMerchantBatchId(),
+                result.getOccupiedSlots().size());
 
-        return R.ok(activityId);
+        return R.ok(result);
     }
 }

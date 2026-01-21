@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.social.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.unlimited.sports.globox.common.constants.RallyMQConstants;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
@@ -22,20 +23,21 @@ import java.util.Map;
 @Configuration
 public class RabbitMQConfig {
 
+    // ==================== 社交消息相关配置 ====================
     // 交换机名称
     public static final String SOCIAL_EXCHANGE = "social.exchange";
-    
+
     // 队列名称
     public static final String MESSAGE_QUEUE = "social.message.queue";
     public static final String CONVERSATION_QUEUE = "social.conversation.queue";
     public static final String BATCH_MESSAGE_QUEUE = "social.batch.message.queue";
-    
+
     // 路由键
     public static final String MESSAGE_ROUTING_KEY = "social.message.save";
     public static final String CONVERSATION_ROUTING_KEY = "social.conversation.update";
     public static final String BATCH_MESSAGE_ROUTING_KEY = "social.batch.message.save";
 
-    
+
     // 死信路由键
     public static final String MESSAGE_DLX_ROUTING_KEY = "social.message.dlx";
     public static final String CONVERSATION_DLX_ROUTING_KEY = "social.conversation.dlx";
@@ -131,14 +133,13 @@ public class RabbitMQConfig {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        
+
         // 创建Jackson2JsonMessageConverter并使用自定义ObjectMapper
         return new Jackson2JsonMessageConverter(objectMapper);
     }
 
     /**
      * 配置RabbitTemplate，使用JSON转换器
-     * 注意：确认回调和返回回调将由 MQProducerAckConfig 统一处理
      */
     @Bean
     public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory) {
@@ -147,8 +148,10 @@ public class RabbitMQConfig {
         return template;
     }
 
+
     /**
      * 配置监听容器工厂
+     * 约球提醒队列与交换机的绑定
      */
     @Bean
     public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
@@ -163,4 +166,52 @@ public class RabbitMQConfig {
         factory.setPrefetchCount(10);
         return factory;
     }
+
+    // ==================== 约球提醒相关配置 ====================
+
+    /**
+     * 约球开始提醒队列
+     */
+    @Bean
+    public Queue rallyStartingReminderQueue() {
+        return new Queue(RallyMQConstants.QUEUE_RALLY_STARTING_REMINDER, true, false, false);
+    }
+
+    /**
+     * 约球开始提醒重试队列
+     */
+    @Bean
+    public Queue rallyStartingReminderRetryQueue() {
+        return new Queue(RallyMQConstants.QUEUE_RALLY_STARTING_REMINDER_RETRY, true, false, false);
+    }
+
+    /**
+     * 约球开始提醒死信队列
+     */
+    @Bean
+    public Queue rallyStartingReminderDlq() {
+        return new Queue(RallyMQConstants.QUEUE_RALLY_STARTING_REMINDER_DLQ, true, false, false);
+    }
+
+    /**
+     * 约球提醒交换机
+     */
+    @Bean
+    public TopicExchange rallyStartingReminderExchange() {
+        return new TopicExchange(RallyMQConstants.EXCHANGE_TOPIC_RALLY_STARTING_REMINDER, true, false);
+    }
+
+    /**
+     * 约球提醒队列与交换机的绑定
+     */
+    @Bean
+    public Binding rallyStartingReminderBinding(Queue rallyStartingReminderQueue, TopicExchange rallyStartingReminderExchange) {
+        return BindingBuilder.bind(rallyStartingReminderQueue)
+                .to(rallyStartingReminderExchange)
+                .with(RallyMQConstants.ROUTING_RALLY_STARTING_REMINDER);
+    }
+
+
+
+
 }

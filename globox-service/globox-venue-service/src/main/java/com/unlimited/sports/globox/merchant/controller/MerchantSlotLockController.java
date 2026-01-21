@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.merchant.service.MerchantSlotLockService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
+import com.unlimited.sports.globox.model.merchant.dto.LockSlotRequest;
 import com.unlimited.sports.globox.model.merchant.vo.LockedSlotVo;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -12,9 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,7 +23,7 @@ import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER
 
 /**
  * @since 2025/12/28 11:05
- * 商家锁场管理controller
+ * 商家锁场管理Controller
  */
 @Slf4j
 @RestController
@@ -36,80 +35,78 @@ public class MerchantSlotLockController {
     private final MerchantAuthUtil merchantAuthUtil;
 
     /**
-     * 锁场
-     */
-    @PostMapping("/lock")
-    public R<Void> lockSlot(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestParam @NotNull(message = "模板ID不能为空") Long templateId,
-            @RequestParam @NotNull(message = "预约日期不能为空")
-            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate,
-            @RequestParam @NotBlank(message = "锁定原因不能为空") String reason) {
-        log.info("锁场请求, employeeId: {}, roleStr: {}, templateId: {}, bookingDate: {}, reason: {}",
-                employeeId, roleStr, templateId, bookingDate, reason);
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-
-        lockService.lockSlotByMerchant(templateId, bookingDate, reason, context.getMerchantId());
-        return R.ok();
-    }
-
-    /**
-     * 批量锁场
+     * 锁场（支持单个和批量）
      */
     @PostMapping("/batch/lock")
-    public R<Void> lockSlotsBatch(
+    public R<Void> lockSlots(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestParam @NotNull(message = "预约日期不能为空")
-            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate,
-            @RequestParam @NotBlank(message = "锁定原因不能为空") String reason,
-            @Valid @RequestBody BatchLockRequest request) {
-        log.info("批量锁场请求, employeeId: {}, roleStr: {}, bookingDate: {}, reason: {}, request: {}",
-                employeeId, roleStr, bookingDate, reason, request);
+            @Valid @RequestBody LockSlotRequest request) {
+
+        log.info("锁场请求, employeeId: {}, roleStr: {}, request: {}",
+                employeeId, roleStr, request);
+
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        lockService.lockSlotsBatchByMerchant(
-                request.getTemplateIds(), bookingDate, reason, context.getMerchantId());
+        // 根据模板ID列表数量决定是单个锁场还是批量锁场
+        if (request.getTemplateIds().size() == 1) {
+            // 单个锁场
+            lockService.lockSlotByMerchant(
+                    request.getTemplateIds().get(0),
+                    request.getBookingDate(),
+                    request.getReason(),
+                    request.getUserName(),
+                    request.getUserPhone(),
+                    employeeId,
+                    context.getMerchantId()
+            );
+        } else {
+            // 批量锁场（会生成批次ID）
+            lockService.lockSlotsBatchByMerchant(
+                    request.getTemplateIds(),
+                    request.getBookingDate(),
+                    request.getReason(),
+                    request.getUserName(),
+                    request.getUserPhone(),
+                    employeeId,
+                    context.getMerchantId()
+            );
+        }
+
         return R.ok();
     }
 
     /**
-     * 解锁场
-     */
-    @PostMapping("/unlock")
-    public R<Void> unlockSlot(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestParam @NotNull(message = "模板ID不能为空") Long templateId,
-            @RequestParam @NotNull(message = "预约日期不能为空")
-            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate) {
-
-        log.info("解锁场请求, employeeId: {}, roleStr: {}, templateId: {}, bookingDate: {}",
-                employeeId, roleStr, templateId, bookingDate);
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-
-        lockService.unlockSlotByMerchant(templateId, bookingDate, context.getMerchantId());
-        return R.ok();
-    }
-
-    /**
-     * 批量解锁场
+     * 解锁场（支持单个和批量）
      */
     @PostMapping("/batch/unlock")
-    public R<Void> unlockSlotsBatch(
+    public R<Void> unlockSlots(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestParam @NotNull(message = "预约日期不能为空")
-            @JsonFormat(pattern = "yyyy-MM-dd") LocalDate bookingDate,
-            @Valid @RequestBody BatchUnlockRequest request) {
+            @Valid @RequestBody UnlockSlotRequest request) {
 
-        log.info("批量解锁场请求, employeeId: {}, roleStr: {}, bookingDate: {}, request: {}",
-                employeeId, roleStr, bookingDate, request);
+        log.info("解锁场请求, employeeId: {}, roleStr: {}, request: {}",
+                employeeId, roleStr, request);
+
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        lockService.unlockSlotsBatchByMerchant(
-                request.getTemplateIds(), bookingDate, context.getMerchantId());
+        // 根据模板ID列表数量决定是单个解锁还是批量解锁
+        if (request.getTemplateIds().size() == 1) {
+            // 单个解锁
+            lockService.unlockSlotByMerchant(
+                    request.getTemplateIds().get(0),
+                    request.getBookingDate(),
+                    context.getMerchantId()
+            );
+        } else {
+            // 批量解锁
+            lockService.unlockSlotsBatchByMerchant(
+                    request.getTemplateIds(),
+                    request.getBookingDate(),
+                    context.getMerchantId()
+            );
+        }
+
         return R.ok();
     }
 
@@ -158,22 +155,15 @@ public class MerchantSlotLockController {
     }
 
     /**
-     * 批量锁场请求
+     * 解锁请求DTO
      */
     @Data
-    public static class BatchLockRequest {
-        @NotEmpty(message = "模板ID列表不能为空")
-        @Size(max = 100, message = "一次最多锁定100个时段")
-        private List<Long> templateIds;
-    }
-
-    /**
-     * 批量解锁场请求
-     */
-    @Data
-    public static class BatchUnlockRequest {
+    public static class UnlockSlotRequest {
         @NotEmpty(message = "模板ID列表不能为空")
         @Size(max = 100, message = "一次最多解锁100个时段")
         private List<Long> templateIds;
+
+        @JsonFormat(pattern = "yyyy-MM-dd")
+        private LocalDate bookingDate;
     }
 }

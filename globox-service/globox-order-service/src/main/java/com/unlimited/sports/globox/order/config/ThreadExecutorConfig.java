@@ -13,11 +13,17 @@ public class ThreadExecutorConfig {
 
     @Bean
     public ExecutorService businessExecutorService() {
+        int corePoolSize = 8;
+        int maxPoolSize  = 32;
+        int queueCapacity = 1000;
+
         return new ThreadPoolExecutor(
-                5,
-                10,
-                5,
-                TimeUnit.MINUTES,
-                new ArrayBlockingQueue<>(100));
+                corePoolSize,
+                maxPoolSize,
+                60L,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(queueCapacity),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
     }
 }

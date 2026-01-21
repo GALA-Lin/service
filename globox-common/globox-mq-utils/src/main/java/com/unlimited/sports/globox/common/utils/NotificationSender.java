@@ -2,7 +2,9 @@ package com.unlimited.sports.globox.common.utils;
 
 import com.unlimited.sports.globox.common.constants.NotificationMQConstants;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEntityTypeEnum;
 import com.unlimited.sports.globox.common.message.notification.NotificationMessage;
+import com.unlimited.sports.globox.common.message.notification.NotificationMessage.*;
 import com.unlimited.sports.globox.common.service.MQService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,7 +63,7 @@ public class NotificationSender {
         );
 
         // 构建接收者列表
-        List<NotificationMessage.Recipient> recipients = userIds.stream()
+        List<Recipient> recipients = userIds.stream()
                 .map(userId -> NotificationMessage.Recipient.builder()
                         .userId(userId)
                         .userType("CONSUMER")
@@ -169,5 +171,91 @@ public class NotificationSender {
      */
     public static CustomDataBuilder createCustomData() {
         return new CustomDataBuilder();
+    }
+
+    /**
+     * 发送通知到notification-service（支持附加实体信息）
+     * 用于需要展示附加实体信息的场景，如社交通知需要展示发送者头像
+     *
+     * @param userIds           接收通知的用户ID列表
+     * @param event             通知事件枚举
+     * @param businessId        业务ID
+     * @param customData        自定义数据（用于模板渲染）
+     * @param attachedEntityType 附加实体类型（对应 NotificationEntityTypeEnum）
+     * @param attachedEntityId   附加实体ID
+     */
+    public void sendNotification(
+            List<Long> userIds,
+            NotificationEventEnum event,
+            Long businessId,
+            Map<String, Object> customData,
+            NotificationEntityTypeEnum attachedEntityType,
+            Long attachedEntityId) {
+
+        if (userIds == null || userIds.isEmpty()) {
+            log.warn("[通知发送] 用户ID列表为空 - event={}, businessId={}", event.getEventCode(), businessId);
+            return;
+        }
+
+        // 生成messageId
+        String messageId = NotificationMessage.generateMessageId(
+                event.getEventCode(),
+                userIds.get(0)
+        );
+
+        // 构建接收者列表
+        List<Recipient> recipients = userIds.stream()
+                .map(userId -> NotificationMessage.Recipient.builder()
+                        .userId(userId)
+                        .userType("CONSUMER")
+                        .build())
+                .toList();
+
+        // 构建通知消息
+        NotificationMessage notificationMessage = NotificationMessage.builder()
+                .messageId(messageId)
+                .messageType(event.name())
+                .timestamp(System.currentTimeMillis())
+                .sourceSystem(applicationName)
+                .traceId(UUID.randomUUID().toString())
+                .recipients(recipients)
+                .payload(NotificationMessage.NotificationPayload.builder()
+                        .businessId(businessId)
+                        .customData(customData)
+                        .attachedEntityType(attachedEntityType != null ? attachedEntityType : NotificationEntityTypeEnum.NONE)
+                        .attachedEntityId(attachedEntityId)
+                        .build())
+                .build();
+
+        // 发送消息到notification-service
+        mqService.send(
+                NotificationMQConstants.EXCHANGE_TOPIC_NOTIFICATION,
+                NotificationMQConstants.ROUTING_NOTIFICATION_CORE,
+                notificationMessage
+        );
+
+        log.info("[通知发送] 消息已发送（含附加实体） - messageId={}, userIds={}, event={}, businessId={}, attachedEntityType={}, attachedEntityId={}",
+                messageId, userIds, event.getEventCode(), businessId, attachedEntityType, attachedEntityId);
+    }
+
+    /**
+     * 发送通知到notification-service（单个用户，支持附加实体信息）
+     *
+     * @param userId             接收通知的用户ID
+     * @param event              通知事件枚举
+     * @param businessId         业务ID
+     * @param customData         自定义数据（用于模板渲染）
+     * @param attachedEntityType 附加实体类型
+     * @param attachedEntityId   附加实体ID
+     */
+    public void sendNotification(
+            Long userId,
+            NotificationEventEnum event,
+            Long businessId,
+            Map<String, Object> customData,
+            NotificationEntityTypeEnum attachedEntityType,
+            Long attachedEntityId) {
+
+        sendNotification(List.of(userId), event, businessId, customData, attachedEntityType, attachedEntityId);
     }
 }

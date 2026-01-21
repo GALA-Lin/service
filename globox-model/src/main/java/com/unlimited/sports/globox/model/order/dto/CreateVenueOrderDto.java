@@ -5,6 +5,7 @@ import lombok.Data;
 
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
@@ -34,4 +35,8 @@ public class CreateVenueOrderDto {
             example = "[101,102,103]",
             requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> slotIds;
+
+//    @NotNull(message = "手机号不能为空")
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
+    private String userPhone;
 }

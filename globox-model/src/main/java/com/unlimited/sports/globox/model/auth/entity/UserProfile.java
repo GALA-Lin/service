@@ -12,9 +12,6 @@ import java.time.LocalDateTime;
 
 /**
  * 用户资料表
- *
- * @author Wreckloud
- * @since 2025/12/19
  */
 @Data
 @TableName("user_profile")
@@ -57,12 +54,12 @@ public class UserProfile {
      */
     @TableField("gender")
     private GenderEnum gender;
-    
+
     /**
      * 球龄
-     * TODO: 目前存的是起始年份(由传入年数换算)，字段名与含义不一致，后续需要新增专用字段或迁移
      */
-    private Integer sportsYears;
+    @TableField("sports_start_year")
+    private Integer sportsStartYear;
 
     
     /**
@@ -74,17 +71,7 @@ public class UserProfile {
      * 持拍手
      */
     private PreferredHand preferredHand;
-    
-    /**
-     * 主力球拍
-     */
-    private String mainBattleShot;
-    
-    /**
-     * 球风标签
-     */
-    private String styleTags;
-    
+
     /**
      * 常驻区域
      */
@@ -119,7 +106,12 @@ public class UserProfile {
      * 心理
      */
     private Integer mental;
-    
+
+    /**
+     * 是否已注销
+     */
+    private Boolean cancelled;
+
     /**
      * 创建时间
      */
@@ -129,21 +121,14 @@ public class UserProfile {
      * 更新时间
      */
     private LocalDateTime updatedAt;
-    
-    /**
-     * 性别枚举
-     * @deprecated 已废弃，请使用 {@link GenderEnum} 替代
-     */
+
     @Deprecated
     public enum Gender {
         MALE,
         FEMALE,
         OTHER
     }
-    
-    /**
-     * 持拍手枚举
-     */
+
     public enum PreferredHand {
         LEFT,
         RIGHT

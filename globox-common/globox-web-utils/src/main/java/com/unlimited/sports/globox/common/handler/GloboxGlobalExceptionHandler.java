@@ -13,11 +13,13 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.ConstraintViolation;
 import javax.validation.ConstraintViolationException;
+import java.util.stream.Collectors;
 
 /**
  * 统一异常处理
@@ -26,124 +28,116 @@ import javax.validation.ConstraintViolationException;
  * @since 2025/12/17 22:03
  */
 @Log4j2
-@ControllerAdvice
+@RestControllerAdvice
 public class GloboxGlobalExceptionHandler {
 
-    /**
-     * 处理 MissingServletRequestParameterException 异常
-     * SpringMVC 参数不正确
-     * 没有携带需要的参数
-     */
-    @ResponseBody
-    @ExceptionHandler(value = MissingServletRequestParameterException.class)
-    public R<Void> missingServletRequestParameterExceptionHandler(HttpServletRequest req, MissingServletRequestParameterException ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 包装 R 结果
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public R<Void> handleMissingParam(HttpServletRequest req, MissingServletRequestParameterException ex) {
+        logWarn(req, ValidCode.MISSING_REQUEST_PARAM.getCode(), ex.getMessage());
         return R.error(ValidCode.MISSING_REQUEST_PARAM);
     }
 
-
-    /**
-     * get 携带query参数与路径参数
-     */
-    @ResponseBody
-    @ExceptionHandler(value = ConstraintViolationException.class)
-    public R<Void> constraintViolationExceptionHandler(HttpServletRequest req, ConstraintViolationException ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 拼接错误
-        StringBuilder detailMessage = new StringBuilder();
-        for (ConstraintViolation<?> constraintViolation : ex.getConstraintViolations()) {
-            // 使用 ; 分隔多个错误
-            if (!detailMessage.isEmpty()) {
-                detailMessage.append(";");
-            }
-            // 拼接内容到其中
-            detailMessage.append(constraintViolation.getMessage());
-        }
-        // 包装 R 结果
+    @ExceptionHandler(ConstraintViolationException.class)
+    public R<Void> handleConstraintViolation(HttpServletRequest req, ConstraintViolationException ex) {
+        String detail = ex.getConstraintViolations()
+                .stream()
+                .map(ConstraintViolation::getMessage)
+                .collect(Collectors.joining(";"));
+        logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), detail);
         return R.<Void>error(ValidCode.INVALID_REQUEST_PARAM)
-                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detailMessage);
+                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detail);
     }
 
-
-    /**
-     * 表单参数校验
-     */
-    @ResponseBody
-    @ExceptionHandler(value = BindException.class)
-    public R<Void> bindExceptionHandler(HttpServletRequest req, BindException ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 拼接错误
-        StringBuilder detailMessage = new StringBuilder();
-        for (ObjectError objectError : ex.getAllErrors()) {
-            // 使用 ; 分隔多个错误
-            if (!detailMessage.isEmpty()) {
-                detailMessage.append(";");
-            }
-            // 拼接内容到其中
-            detailMessage.append(objectError.getDefaultMessage());
-        }
-        // 包装 R 结果
+    @ExceptionHandler(BindException.class)
+    public R<Void> handleBind(HttpServletRequest req, BindException ex) {
+        String detail = ex.getAllErrors()
+                .stream()
+                .map(ObjectError::getDefaultMessage)
+                .collect(Collectors.joining(";"));
+        logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), detail);
         return R.<Void>error(ValidCode.INVALID_REQUEST_PARAM)
-                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detailMessage);
+                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detail);
     }
 
-
-    /**
-     * post请求，json参数
-     */
-    @ResponseBody
-    @ExceptionHandler(value = MethodArgumentNotValidException.class)
-    public R<Void> methodArgumentNotValidExceptionHandler(HttpServletRequest req, MethodArgumentNotValidException ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 拼接错误
-        StringBuilder detailMessage = new StringBuilder();
-        for (ObjectError objectError : ex.getBindingResult().getAllErrors()) {
-            // 使用 ; 分隔多个错误
-            if (!detailMessage.isEmpty()) {
-                detailMessage.append(";");
-            }
-            // 拼接内容到其中
-            detailMessage.append(objectError.getDefaultMessage());
-        }
-        // 包装 R 结果
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public R<Void> handleMethodArgNotValid(HttpServletRequest req, MethodArgumentNotValidException ex) {
+        String detail = ex.getBindingResult()
+                .getAllErrors()
+                .stream()
+                .map(ObjectError::getDefaultMessage)
+                .collect(Collectors.joining(";"));
+        logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), detail);
         return R.<Void>error(ValidCode.INVALID_REQUEST_PARAM)
-                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detailMessage);
+                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detail);
     }
 
-    /**
-     * 处理全局自定义异常
-     *
-     * @param ex exception
-     */
-    @ResponseBody
-    @ExceptionHandler(GloboxApplicationException.class)
-    public R<Void> applicationExceptionHandler(GloboxApplicationException ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 使用公共的结果类封装返回结果, 这里我指定状态码为
-        return R.error(ex);
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public R<Void> handleNotReadable(HttpServletRequest req, HttpMessageNotReadableException ex) {
+        // JSON 格式问题：客户端问题
+        logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), "JSON parse error: " + ex.getMostSpecificCause().getMessage());
+        return R.error(ValidCode.INVALID_REQUEST_PARAM);
     }
 
-    /**
-     * 处理文件过大异常
-     */
-    @ResponseBody
-    @ExceptionHandler(value = MaxUploadSizeExceededException.class)
-    public R<Void> maxUploadSizeExceededExceptionHandler(HttpServletRequest req, Exception ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 返回 ERROR R
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public R<Void> handleMaxUpload(HttpServletRequest req, MaxUploadSizeExceededException ex) {
+        logWarn(req, ApplicationCode.FILE_SIZE_EXCEEDED.getCode(), ex.getMessage());
         return R.error(ApplicationCode.FILE_SIZE_EXCEEDED);
     }
 
+    @ExceptionHandler(GloboxApplicationException.class)
+    public R<Void> handleApp(HttpServletRequest req, GloboxApplicationException ex) {
+        int code = ex.getCode();
 
-    /**
-     * 处理其它 Exception 异常
-     */
-    @ResponseBody
-    @ExceptionHandler(value = Exception.class)
-    public R<Void> exceptionHandler(HttpServletRequest req, Exception ex) {
-        log.error("An error occurred: {}", ex.getMessage(), ex);
-        // 返回 ERROR R
+        if (code == ApplicationCode.FAIL.getCode()) {
+            // 只有 500：系统错误，打堆栈
+            logError(req, code, ex.getMessage(), ex);
+        } else {
+            logInfo(req, code, ex.getMessage());
+        }
+
+        return R.error(ex);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public R<Void> handleAny(HttpServletRequest req, Exception ex) {
+        // 未知异常：视为 500
+        logError(req, ApplicationCode.FAIL.getCode(), ex.getMessage(), ex);
         return R.error(ApplicationCode.FAIL);
+    }
+
+    // ------------------- logging helpers -------------------
+
+
+    private void logInfo(HttpServletRequest req, int code, String msg) {
+        log.info("biz: code={}, {} uri={} ip={} msg={}",
+                code, req.getMethod(), uriWithQuery(req), getClientIp(req), msg);
+    }
+
+    private void logWarn(HttpServletRequest req, int code, String msg) {
+        log.warn("warn: code={}, {} uri={} ip={} msg={}",
+                code, req.getMethod(), uriWithQuery(req), getClientIp(req), msg);
+    }
+
+    private void logError(HttpServletRequest req, int code, String msg, Throwable ex) {
+        log.error("error: code={}, {} uri={} ip={} msg={}",
+                code, req.getMethod(), uriWithQuery(req), getClientIp(req), msg, ex);
+    }
+
+    private String uriWithQuery(HttpServletRequest req) {
+        String uri = req.getRequestURI();
+        String qs = req.getQueryString();
+        return (qs == null || qs.isBlank()) ? uri : (uri + "?" + qs);
+    }
+
+    private String getClientIp(HttpServletRequest req) {
+        String xff = req.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            return xff.split(",")[0].trim();
+        }
+        String realIp = req.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp;
+        }
+        return req.getRemoteAddr();
     }
 }

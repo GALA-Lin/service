@@ -116,8 +116,8 @@
             t.end_time,
             r.locked_type,
             CASE r.locked_type
-                WHEN 1 THEN '用户订单'
-                WHEN 2 THEN '商家锁场'
+                WHEN 1 THEN '商家锁场'
+                WHEN 2 THEN '用户订单'
                 ELSE '未知'
                 END AS locked_type_name,
             r.lock_reason,
@@ -160,8 +160,8 @@
             t.end_time,
             r.locked_type,
             CASE r.locked_type
-                WHEN 1 THEN '用户订单'
-                WHEN 2 THEN '商家锁场'
+                WHEN 1 THEN '商家锁场'
+                WHEN 2 THEN '用户订单'
                 ELSE '未知'
                 END AS locked_type_name,
             r.lock_reason,
@@ -213,7 +213,7 @@
                 WHEN 3 THEN '不可预订'
                 ELSE '未知'
                 END AS status_name,
-            (r.status = 2 AND r.locked_type = 1) AS cancelable,
+            (r.status = 2 AND r.locked_type = 2) AS cancelable,
             r.locked_type,
             r.lock_reason,
             r.operator_id AS user_id
@@ -306,7 +306,7 @@
         WHEN 3 THEN '不可预订'
         ELSE '未知'
         END AS status_name,
-        (r.status = 2 AND r.locked_type = 1) AS cancelable,
+        (r.status = 2 AND r.locked_type = 2) AS cancelable,
         r.locked_type,
         r.lock_reason,
         r.operator_id
@@ -341,6 +341,11 @@
         vbsr.booking_slot_record_id AS bookingSlotRecordId,
         vbsr.slot_template_id AS slotTemplateId,
         vbsr.status,
+        vbsr.user_name AS userName,
+        vbsr.user_phone AS userPhone,
+        vbsr.merchant_batch_id AS merchantBatchId,
+        vbsr.locked_type AS lockedType,
+        vbsr.lock_reason AS lockReason,
         vbsr.booking_date AS bookingDate,
         vbsr.operator_id AS operatorId,
         vbsr.created_at AS createdAt,

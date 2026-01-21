@@ -53,10 +53,34 @@ public class VenueBookingSlotRecord {
     private OperatorSourceEnum operatorSource;
 
     /**
+     * 锁定类型：1=商家锁场，2=用户订单
+     */
+    @TableField("locked_type")
+    private Integer lockedType;
+
+    /**
      * 第三方平台的订单/锁场ID（用于解锁时调用第三方API）
      */
     @TableField("third_party_booking_id")
     private String thirdPartyBookingId;
+
+    /**
+     * 商家锁场批次ID
+     */
+    @TableField("merchant_batch_id")
+    private String merchantBatchId;
+
+    /**
+     * 用户姓名（昵称）
+     */
+    @TableField("user_name")
+    private String userName;
+
+    /**
+     * 用户手机号
+     */
+    @TableField("user_phone")
+    private String userPhone;
 
     /**
      * 创建时间

@@ -20,46 +20,25 @@ public class VenueDictVo {
     /**
      * 场地类型字典
      */
-    private List<DictItem> courtTypes;
+    private List<VenueDictItem> courtTypes;
 
     /**
      * 地面类型字典
      */
-    private List<DictItem> groundTypes;
+    private List<VenueDictItem> groundTypes;
 
     /**
      * 场地片数筛选字典
      */
-    private List<DictItem> courtCountFilters;
+    private List<VenueDictItem> courtCountFilters;
 
     /**
      * 距离筛选字典
      */
-    private List<DictItem> distances;
+    private List<VenueDictItem> distances;
 
     /**
      * 设施类型字典
      */
-    private List<DictItem> facilities;
-
-    /**
-     * 字典项结构
-     * todo 后续后台管理实现后移除,使用统一的字典结构item
-     */
-
-    @Data
-    @AllArgsConstructor
-    @NoArgsConstructor
-    @Builder
-    public static class DictItem {
-        /**
-         * 值（用于前端提交参数）
-         */
-        private Integer value;
-
-        /**
-         * 描述（用于前端显示）
-         */
-        private String description;
-    }
+    private List<VenueDictItem> facilities;
 }

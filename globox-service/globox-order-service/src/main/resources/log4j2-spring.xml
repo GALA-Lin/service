@@ -19,7 +19,7 @@
 
         <!-- 文件日志格式 -->
         <Property name="FILE_LOG_PATTERN">
-            %d{${LOG_DATEFORMAT_PATTERN}} ${LOG_LEVEL_PATTERN} %pid --- [%t] %-40.40c{1.} : %m%n${LOG_EXCEPTION_CONVERSION_WORD}
+            %d{${LOG_DATEFORMAT_PATTERN}} ${LOG_LEVEL_PATTERN} %pid --- [%t] %X{traceId:-} %X{spanId:-} %X{X-B3-TraceId:-} %X{X-B3-SpanId:-} %X{sw8:-} %-60.60c{2} : %m%n${LOG_EXCEPTION_CONVERSION_WORD}
         </Property>
     </Properties>
 
@@ -37,7 +37,9 @@
                      filePattern="${LOG_PATH}/%d{yyyy-MM-dd}/error.%d{yyyy-MM-dd-HH}.log.gz"
                      append="true">
             <PatternLayout pattern="${FILE_LOG_PATTERN}" charset="UTF-8"/>
-            <ThresholdFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            <Filters>
+                <LevelMatchFilter level="ERROR" onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
             <Policies>
                 <SizeBasedTriggeringPolicy size="10 MB"/>
                 <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
@@ -50,7 +52,10 @@
                      filePattern="${LOG_PATH}/%d{yyyy-MM-dd}/info.%d{yyyy-MM-dd-HH}.log.gz"
                      append="true">
             <PatternLayout pattern="${FILE_LOG_PATTERN}" charset="UTF-8"/>
-            <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
+            <Filters>
+                <LevelRangeFilter minLevel="INFO" maxLevel="WARN"
+                                  onMatch="ACCEPT" onMismatch="DENY"/>
+            </Filters>
             <Policies>
                 <SizeBasedTriggeringPolicy size="10 MB"/>
                 <TimeBasedTriggeringPolicy interval="1" modulate="true"/>

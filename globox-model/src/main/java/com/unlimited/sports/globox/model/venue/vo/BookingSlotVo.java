@@ -74,6 +74,26 @@ public class BookingSlotVo {
     private BigDecimal price;
 
     /**
+     * 模板ID（区别于bookingSlotId）
+     */
+    private Long templateId;
+
+    /**
+     * 锁定类型：1=商家锁场，2=用户订单
+     */
+    private Integer lockedType;
+
+    /**
+     * 锁定原因
+     */
+    private String lockReason;
+
+    /**
+     * 关联订单ID（如果有）
+     */
+    private String orderId;
+
+    /**
      * 是否是本人预定的槽位（仅当slotType=1时使用）
      * true: 该槽位是当前用户预定的
      * false: 该槽位是他人预定的，或未预定

@@ -503,7 +503,6 @@ public class VenueOrderServiceImpl implements VenueOrderService {
         // 使用 Builder 构建 VO
         return VenueBookingSlotVo.builder()
                 .bookingSlotId(slot.getBookingSlotId())
-                .orderId(slot.getOrderId())
                 .courtId(slot.getCourtId())
                 .courtName(courtName)
                 .bookingDate(slot.getBookingDate())

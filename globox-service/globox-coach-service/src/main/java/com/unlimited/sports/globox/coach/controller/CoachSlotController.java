@@ -1,9 +1,8 @@
 package com.unlimited.sports.globox.coach.controller;
 
+import com.alibaba.fastjson2.JSON;
 import com.unlimited.sports.globox.coach.service.ICoachSlotService;
-import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.R;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.model.coach.dto.*;
 import com.unlimited.sports.globox.model.coach.vo.CoachAvailableSlotVo;
 import com.unlimited.sports.globox.model.coach.vo.CoachScheduleVo;
@@ -82,6 +81,7 @@ public class CoachSlotController {
     @GetMapping("/available")
     public R<Map<String, List<CoachAvailableSlotVo>>> getAvailableSlots(
             @Valid CoachAvailableSlotQueryDto dto) {
+        log.info("请求参数{}", JSON.toJSONString(dto));
         log.info("查询可预约时段 - coachUserId: {}, {} - {}",
                 dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
         Map<String, List<CoachAvailableSlotVo>> slots = coachSlotService.getAvailableSlots(dto);

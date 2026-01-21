@@ -44,5 +44,6 @@ public interface VenueSlotRecordService {
      */
     List<SlotAvailabilityVo> queryAvailability(Long courtId, LocalDate date);
 
-    List<VenueSlotAvailabilityVo> queryVenueAvailability(@NotNull Long venueId, LocalDate date, LocalTime startTime, LocalTime endTime);
+    List<VenueSlotAvailabilityVo> queryVenueAvailability(@NotNull Long venueId, LocalDate date,
+                                                         LocalTime startTime, LocalTime endTime);
 }

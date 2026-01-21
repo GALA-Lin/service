@@ -110,4 +110,12 @@ public interface AuthService {
 
     R<WechatLoginResponse> createWechatUserAndLogin(String identifier, String openid,
                                                     DeviceInfo deviceInfo, String clientType);
+
+    /**
+     * Apple登录（暂未实现）
+     *
+     * @param request Apple登录请求（identityToken）
+     * @return 登录响应（Token、用户信息）
+     */
+    R<LoginResponse> appleLogin(AppleLoginRequest request);
 }

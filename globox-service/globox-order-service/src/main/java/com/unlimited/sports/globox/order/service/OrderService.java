@@ -43,7 +43,7 @@ public interface OrderService {
      * @param dto 包含创建教练订单所需参数的数据传输对象，包括预订日期和预订的场地时段ID列表
      * @return 包含创建订单结果的信息对象，主要包含生成的订单号
      */
-    CreateOrderResultVo createCoachOrder(@Valid CreateCoachOrderDto dto);
+    CreateOrderResultVo createCoachOrder(CreateCoachOrderDto dto);
 
 
     /**

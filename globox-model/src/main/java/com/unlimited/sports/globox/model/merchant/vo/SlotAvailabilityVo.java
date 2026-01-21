@@ -73,6 +73,26 @@ public class SlotAvailabilityVo {
      */
     private String orderId;
 
+    /**
+     * 锁场批次
+     */
+    private Long merchantBatchId;
+
+    /**
+     * 商家操作人姓名
+     */
+    private String displayName;
+
+    /**
+     * 使用人名称
+     */
+    private String userName;
+
+    /**
+     * 使用者电话
+     */
+    private String userPhone;
+
     // ========== 活动相关字段（新增） ==========
 
     /**
@@ -80,10 +100,6 @@ public class SlotAvailabilityVo {
      */
     private Integer slotType;
 
-    /**
-     * 活动ID（如果是活动槽位）
-     */
-    private Long activityId;
 
     /**
      * 活动名称

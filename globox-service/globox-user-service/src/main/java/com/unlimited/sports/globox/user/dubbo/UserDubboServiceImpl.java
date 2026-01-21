@@ -7,11 +7,9 @@ import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.dubbo.user.dto.UserInfoDto;
 import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
-import com.unlimited.sports.globox.model.auth.entity.AuthUser;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.auth.entity.AuthIdentity;
-import com.unlimited.sports.globox.user.mapper.AuthUserMapper;
 import com.unlimited.sports.globox.user.service.UserProfileService;
 import com.unlimited.sports.globox.user.mapper.AuthIdentityMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +23,6 @@ import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -49,9 +46,6 @@ public class UserDubboServiceImpl implements UserDubboService {
     @Autowired
     private AuthIdentityMapper authIdentityMapper;
 
-    @Autowired
-    private AuthUserMapper authUserMapper;
-
     @Override
     public RpcResult<UserInfoVo> getUserInfo(Long userId) {
 
@@ -60,15 +54,13 @@ public class UserDubboServiceImpl implements UserDubboService {
             return RpcResult.error(UserAuthCode.QUERY_NOT_EXIST);
         }
 
-        AuthUser authUser = authUserMapper.selectById(userId);
-
         // 转换为VO
         UserInfoVo vo = new UserInfoVo();
         BeanUtils.copyProperties(profile, vo);
         // 手动映射枚举和字段名不一致的字段
         vo.setGender(profile.getGender());
         vo.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : null);
-        vo.setCancelled(authUser != null && Boolean.TRUE.equals(authUser.getCancelled()));
+        vo.setCancelled(Boolean.TRUE.equals(profile.getCancelled()));
         if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
             vo.setAvatarUrl(defaultAvatarUrl);
         }
@@ -99,19 +91,6 @@ public class UserDubboServiceImpl implements UserDubboService {
 
         // todo : userprofile新增注销字段后修改逻辑.
 
-        List<AuthUser> authUsers = authUserMapper.selectBatchIds(
-                profiles.stream()
-                        .map(UserProfile::getUserId)
-                        .distinct()
-                        .collect(Collectors.toList())
-        );
-        Map<Long, Boolean> cancelledMap = CollectionUtils.isEmpty(authUsers)
-                ? Collections.emptyMap()
-                : authUsers.stream().collect(Collectors.toMap(
-                        AuthUser::getUserId,
-                        authUser -> Boolean.TRUE.equals(authUser.getCancelled())
-                ));
-
         // 转换为VO列表
         List<UserInfoVo> userInfoList = profiles.stream()
                 .map(profile -> {
@@ -120,7 +99,7 @@ public class UserDubboServiceImpl implements UserDubboService {
                     // 手动映射枚举和字段名不一致的字段
                     dto.setGender(profile.getGender());
                     dto.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : null);
-                    dto.setCancelled(Boolean.TRUE.equals(cancelledMap.get(profile.getUserId())));
+                    dto.setCancelled(Boolean.TRUE.equals(profile.getCancelled()));
                     if (!StringUtils.hasText(dto.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
                         dto.setAvatarUrl(defaultAvatarUrl);
                     }

@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.util.ObjectUtils;
 
 import javax.validation.constraints.NotNull;
 import java.math.BigDecimal;
@@ -84,8 +85,8 @@ public class VenueSnapshotVo {
             String defaultVenueCoverImage ) {
 
         // 计算距离
-        BigDecimal distance = BigDecimal.ZERO;
-        if (venue.getLatitude() != null && venue.getLongitude() != null) {
+        BigDecimal distance = new BigDecimal("-1");
+        if (!ObjectUtils.isEmpty(userLatitude) && !ObjectUtils.isEmpty(userLongitude)) {
             distance = DistanceUtils.calculateDistance(
                     userLatitude,
                     userLongitude,
@@ -93,6 +94,7 @@ public class VenueSnapshotVo {
                     venue.getLongitude().doubleValue()
             );
         }
+
         // 获取封面图片
         String coverImage = defaultVenueCoverImage;
         if (venue.getImageUrls() != null && !venue.getImageUrls().isEmpty()) {

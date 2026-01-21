@@ -58,6 +58,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.time.Year;
 
@@ -167,7 +168,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 2. 查询用户球拍列表
         LambdaQueryWrapper<UserRacket> racketQuery = new LambdaQueryWrapper<>();
         racketQuery.eq(UserRacket::getUserId, userId)
-                .eq(UserRacket::getCancelled, false);
+                .eq(UserRacket::getDeleted, false);
         List<UserRacket> userRackets = userRacketMapper.selectList(racketQuery);
 
         List<UserRacketVo> racketVos = new ArrayList<>();
@@ -228,7 +229,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 3. 查询用户标签列表
         LambdaQueryWrapper<UserStyleTag> tagQuery = new LambdaQueryWrapper<>();
         tagQuery.eq(UserStyleTag::getUserId, userId)
-                .eq(UserStyleTag::getCancelled, false);
+                .eq(UserStyleTag::getDeleted, false);
         List<UserStyleTag> userStyleTags = userStyleTagMapper.selectList(tagQuery);
 
         List<StyleTagVo> styleTagVos = new ArrayList<>();
@@ -257,7 +258,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         BeanUtils.copyProperties(profile, vo);
         vo.setGender(profile.getGender() != null ? profile.getGender().name() : null);
         vo.setPreferredHand(profile.getPreferredHand() != null ? profile.getPreferredHand().name() : null);
-        vo.setSportsYears(resolveSportsYears(profile.getSportsYears()));
+        vo.setSportsYears(resolveSportsYears(profile.getSportsStartYear()));
         vo.setRackets(racketVos);
         vo.setStyleTags(styleTagVos);
         vo.setIsFollowed(false);
@@ -360,7 +361,7 @@ public class UserProfileServiceImpl implements UserProfileService {
             if (CollectionUtils.isEmpty(distinctRackets)) {
                 LambdaUpdateWrapper<UserRacket> cancelQuery = new LambdaUpdateWrapper<>();
                 cancelQuery.eq(UserRacket::getUserId, userId)
-                        .set(UserRacket::getCancelled, true);
+                        .set(UserRacket::getDeleted, true);
                 userRacketMapper.update(null, cancelQuery);
             } else {
                 // 2.3 校验球拍型号是否存在且为MODEL级别（过滤无效的，而不是全部失败）
@@ -429,7 +430,7 @@ public class UserProfileServiceImpl implements UserProfileService {
             if (CollectionUtils.isEmpty(distinctTagIds)) {
                 LambdaUpdateWrapper<UserStyleTag> cancelTagQuery = new LambdaUpdateWrapper<>();
                 cancelTagQuery.eq(UserStyleTag::getUserId, userId)
-                        .set(UserStyleTag::getCancelled, true);
+                        .set(UserStyleTag::getDeleted, true);
                 userStyleTagMapper.update(null, cancelTagQuery);
             } else {
                 // 3.3 校验标签是否存在且为ACTIVE状态（过滤无效的，而不是全部失败）
@@ -485,7 +486,7 @@ public class UserProfileServiceImpl implements UserProfileService {
             if (startYear == null) {
                 log.warn("用户资料更新：无效的球龄年数被忽略：userId={}, sportsYears={}", userId, request.getSportsYears());
             } else {
-                profile.setSportsYears(startYear);
+                profile.setSportsStartYear(startYear);
                 needUpdate = true;
             }
         }
@@ -538,40 +539,229 @@ public class UserProfileServiceImpl implements UserProfileService {
             userProfileMapper.updateById(profile);
         }
 
-        // 5. 再更新球拍列表（如果提供且非空）
-        if (request.getRackets() != null && !CollectionUtils.isEmpty(distinctRackets)) {
-            // 5.1 删除用户所有球拍
-            LambdaUpdateWrapper<UserRacket> cancelQuery = new LambdaUpdateWrapper<>();
-            cancelQuery.eq(UserRacket::getUserId, userId)
-                    .set(UserRacket::getCancelled, true);
-            userRacketMapper.update(null, cancelQuery);
+        // 5. 再更新球拍列表（如果提供）
+        if (request.getRackets() != null) {
+            if (CollectionUtils.isEmpty(distinctRackets)) {
+                // 空列表=清空：删除用户所有球拍
+                LambdaUpdateWrapper<UserRacket> cancelQuery = new LambdaUpdateWrapper<>();
+                cancelQuery.eq(UserRacket::getUserId, userId)
+                        .set(UserRacket::getDeleted, true);
+                userRacketMapper.update(null, cancelQuery);
+            } else {
+                // 增量更新：查询现有记录
+                LambdaQueryWrapper<UserRacket> existingQuery = new LambdaQueryWrapper<>();
+                existingQuery.eq(UserRacket::getUserId, userId)
+                        .eq(UserRacket::getDeleted, false);
+                List<UserRacket> existingRackets = userRacketMapper.selectList(existingQuery);
 
-            // 5.2 批量插入（使用已校验的 distinctRackets）
-            for (UserRacketRequest racketReq : distinctRackets) {
-                UserRacket userRacket = new UserRacket();
-                userRacket.setUserId(userId);
-                userRacket.setRacketModelId(racketReq.getRacketModelId());
-                userRacket.setIsPrimary(Boolean.TRUE.equals(racketReq.getIsPrimary()));
-                userRacket.setCancelled(false);
-                userRacketMapper.insert(userRacket);
+                // 构建现有记录Map（key = racketModelId），并清理重复的 active 记录
+                Map<Long, List<UserRacket>> existingRacketGroup = existingRackets.stream()
+                        .collect(Collectors.groupingBy(UserRacket::getRacketModelId));
+                Map<Long, UserRacket> existingRacketMap = new HashMap<>();
+                List<Long> duplicateRacketIds = new ArrayList<>();
+                existingRacketGroup.forEach((modelId, list) -> {
+                    if (!list.isEmpty()) {
+                        existingRacketMap.put(modelId, list.get(0));
+                        if (list.size() > 1) {
+                            for (int i = 1; i < list.size(); i++) {
+                                if (list.get(i).getUserRacketId() != null) {
+                                    duplicateRacketIds.add(list.get(i).getUserRacketId());
+                                }
+                            }
+                        }
+                    }
+                });
+                if (!duplicateRacketIds.isEmpty()) {
+                    LambdaUpdateWrapper<UserRacket> dedupeQuery = new LambdaUpdateWrapper<>();
+                    dedupeQuery.in(UserRacket::getUserRacketId, duplicateRacketIds)
+                            .set(UserRacket::getDeleted, true);
+                    userRacketMapper.update(null, dedupeQuery);
+                }
+
+                // 构建请求Map（key = racketModelId）
+                Map<Long, UserRacketRequest> requestRacketMap = distinctRackets.stream()
+                        .collect(Collectors.toMap(UserRacketRequest::getRacketModelId, r -> r));
+
+                // 计算差异
+                Set<Long> requestModelIds = requestRacketMap.keySet();
+                Set<Long> existingModelIds = existingRacketMap.keySet();
+
+                // toAdd：请求里有，数据库里没有
+                List<Long> toAddModelIds = requestModelIds.stream()
+                        .filter(modelId -> !existingModelIds.contains(modelId))
+                        .collect(Collectors.toList());
+
+                // toRemove：数据库里有，请求里没有
+                List<Long> toRemoveModelIds = existingModelIds.stream()
+                        .filter(modelId -> !requestModelIds.contains(modelId))
+                        .collect(Collectors.toList());
+
+                // toUpdate：两边都有，但 isPrimary 可能变化
+                List<UserRacketRequest> toUpdateRackets = requestModelIds.stream()
+                        .filter(existingModelIds::contains)
+                        .map(requestRacketMap::get)
+                        .filter(req -> {
+                            UserRacket existing = existingRacketMap.get(req.getRacketModelId());
+                            Boolean reqIsPrimary = Boolean.TRUE.equals(req.getIsPrimary());
+                            Boolean existingIsPrimary = Boolean.TRUE.equals(existing.getIsPrimary());
+                            return !Objects.equals(reqIsPrimary, existingIsPrimary);
+                        })
+                        .collect(Collectors.toList());
+
+                // 执行操作
+                boolean hasChanges = !toAddModelIds.isEmpty() || !toRemoveModelIds.isEmpty() || !toUpdateRackets.isEmpty();
+
+                if (hasChanges) {
+                    // toRemove：软删除
+                    if (!toRemoveModelIds.isEmpty()) {
+                        LambdaUpdateWrapper<UserRacket> removeQuery = new LambdaUpdateWrapper<>();
+                        removeQuery.eq(UserRacket::getUserId, userId)
+                                .in(UserRacket::getRacketModelId, toRemoveModelIds)
+                                .set(UserRacket::getDeleted, true);
+                        userRacketMapper.update(null, removeQuery);
+                    }
+
+                    // toUpdate：更新 isPrimary
+                    for (UserRacketRequest req : toUpdateRackets) {
+                        UserRacket existing = existingRacketMap.get(req.getRacketModelId());
+                        LambdaUpdateWrapper<UserRacket> updateQuery = new LambdaUpdateWrapper<>();
+                        updateQuery.eq(UserRacket::getUserRacketId, existing.getUserRacketId())
+                                .set(UserRacket::getIsPrimary, Boolean.TRUE.equals(req.getIsPrimary()));
+                        userRacketMapper.update(null, updateQuery);
+                    }
+
+                    // toAdd：新增或复用已删除记录（批量查 deleted=true）
+                    Map<Long, UserRacket> deletedRacketMap = new HashMap<>();
+                    if (!toAddModelIds.isEmpty()) {
+                        LambdaQueryWrapper<UserRacket> deletedQuery = new LambdaQueryWrapper<>();
+                        deletedQuery.eq(UserRacket::getUserId, userId)
+                                .in(UserRacket::getRacketModelId, toAddModelIds)
+                                .eq(UserRacket::getDeleted, true);
+                        List<UserRacket> deletedRackets = userRacketMapper.selectList(deletedQuery);
+                        deletedRacketMap = deletedRackets.stream()
+                                .collect(Collectors.toMap(UserRacket::getRacketModelId, r -> r, (a, b) -> a));
+                    }
+
+                    for (Long modelId : toAddModelIds) {
+                        UserRacketRequest req = requestRacketMap.get(modelId);
+                        UserRacket deletedRacket = deletedRacketMap.get(modelId);
+
+                        if (deletedRacket != null) {
+                            // 复用已删除记录：复活
+                            LambdaUpdateWrapper<UserRacket> reviveQuery = new LambdaUpdateWrapper<>();
+                            reviveQuery.eq(UserRacket::getUserRacketId, deletedRacket.getUserRacketId())
+                                    .set(UserRacket::getDeleted, false)
+                                    .set(UserRacket::getIsPrimary, Boolean.TRUE.equals(req.getIsPrimary()));
+                            userRacketMapper.update(null, reviveQuery);
+                        } else {
+                            // 插入新行
+                            UserRacket userRacket = new UserRacket();
+                            userRacket.setUserId(userId);
+                            userRacket.setRacketModelId(modelId);
+                            userRacket.setIsPrimary(Boolean.TRUE.equals(req.getIsPrimary()));
+                            userRacket.setDeleted(false);
+                            userRacketMapper.insert(userRacket);
+                        }
+                    }
+                }
             }
         }
 
-        // 6. 再更新标签列表（如果提供且非空）
-        if (request.getTagIds() != null && !CollectionUtils.isEmpty(distinctTagIds)) {
-            // 6.1 删除用户所有标签
-            LambdaUpdateWrapper<UserStyleTag> cancelTagQuery = new LambdaUpdateWrapper<>();
-            cancelTagQuery.eq(UserStyleTag::getUserId, userId)
-                    .set(UserStyleTag::getCancelled, true);
-            userStyleTagMapper.update(null, cancelTagQuery);
+        // 6. 再更新标签列表（如果提供）
+        if (request.getTagIds() != null) {
+            if (CollectionUtils.isEmpty(distinctTagIds)) {
+                // 空列表=清空：删除用户所有标签
+                LambdaUpdateWrapper<UserStyleTag> cancelTagQuery = new LambdaUpdateWrapper<>();
+                cancelTagQuery.eq(UserStyleTag::getUserId, userId)
+                        .set(UserStyleTag::getDeleted, true);
+                userStyleTagMapper.update(null, cancelTagQuery);
+            } else {
+                // 增量更新：查询现有记录
+                LambdaQueryWrapper<UserStyleTag> existingTagQuery = new LambdaQueryWrapper<>();
+                existingTagQuery.eq(UserStyleTag::getUserId, userId)
+                        .eq(UserStyleTag::getDeleted, false);
+                List<UserStyleTag> existingTags = userStyleTagMapper.selectList(existingTagQuery);
 
-            // 6.2 批量插入（使用已校验的 distinctTagIds）
-            for (Long tagId : distinctTagIds) {
-                UserStyleTag userStyleTag = new UserStyleTag();
-                userStyleTag.setUserId(userId);
-                userStyleTag.setTagId(tagId);
-                userStyleTag.setCancelled(false);
-                userStyleTagMapper.insert(userStyleTag);
+                // 构建现有标签ID集合，并清理重复的 active 记录
+                Map<Long, List<UserStyleTag>> existingTagGroup = existingTags.stream()
+                        .collect(Collectors.groupingBy(UserStyleTag::getTagId));
+                Set<Long> existingTagIds = existingTagGroup.keySet();
+                List<Long> duplicateTagIds = new ArrayList<>();
+                existingTagGroup.forEach((tagId, list) -> {
+                    if (list.size() > 1) {
+                        for (int i = 1; i < list.size(); i++) {
+                            if (list.get(i).getUserStyleTagId() != null) {
+                                duplicateTagIds.add(list.get(i).getUserStyleTagId());
+                            }
+                        }
+                    }
+                });
+                if (!duplicateTagIds.isEmpty()) {
+                    LambdaUpdateWrapper<UserStyleTag> dedupeQuery = new LambdaUpdateWrapper<>();
+                    dedupeQuery.in(UserStyleTag::getUserStyleTagId, duplicateTagIds)
+                            .set(UserStyleTag::getDeleted, true);
+                    userStyleTagMapper.update(null, dedupeQuery);
+                }
+
+                // 构建请求标签ID集合
+                Set<Long> requestTagIds = distinctTagIds.stream()
+                        .collect(Collectors.toSet());
+
+                // 计算差异
+                // toAdd：请求里有，数据库里没有
+                List<Long> toAddTagIds = requestTagIds.stream()
+                        .filter(tagId -> !existingTagIds.contains(tagId))
+                        .collect(Collectors.toList());
+
+                // toRemove：数据库里有，请求里没有
+                List<Long> toRemoveTagIds = existingTagIds.stream()
+                        .filter(tagId -> !requestTagIds.contains(tagId))
+                        .collect(Collectors.toList());
+
+                // 执行操作
+                boolean hasChanges = !toAddTagIds.isEmpty() || !toRemoveTagIds.isEmpty();
+
+                if (hasChanges) {
+                    // toRemove：软删除
+                    if (!toRemoveTagIds.isEmpty()) {
+                        LambdaUpdateWrapper<UserStyleTag> removeQuery = new LambdaUpdateWrapper<>();
+                        removeQuery.eq(UserStyleTag::getUserId, userId)
+                                .in(UserStyleTag::getTagId, toRemoveTagIds)
+                                .set(UserStyleTag::getDeleted, true);
+                        userStyleTagMapper.update(null, removeQuery);
+                    }
+
+                    // toAdd：新增或复用已删除记录（批量查 deleted=true）
+                    Map<Long, UserStyleTag> deletedTagMap = new HashMap<>();
+                    if (!toAddTagIds.isEmpty()) {
+                        LambdaQueryWrapper<UserStyleTag> deletedQuery = new LambdaQueryWrapper<>();
+                        deletedQuery.eq(UserStyleTag::getUserId, userId)
+                                .in(UserStyleTag::getTagId, toAddTagIds)
+                                .eq(UserStyleTag::getDeleted, true);
+                        List<UserStyleTag> deletedTags = userStyleTagMapper.selectList(deletedQuery);
+                        deletedTagMap = deletedTags.stream()
+                                .collect(Collectors.toMap(UserStyleTag::getTagId, t -> t, (a, b) -> a));
+                    }
+
+                    for (Long tagId : toAddTagIds) {
+                        UserStyleTag deletedTag = deletedTagMap.get(tagId);
+
+                        if (deletedTag != null) {
+                            // 复用已删除记录：复活
+                            LambdaUpdateWrapper<UserStyleTag> reviveQuery = new LambdaUpdateWrapper<>();
+                            reviveQuery.eq(UserStyleTag::getUserStyleTagId, deletedTag.getUserStyleTagId())
+                                    .set(UserStyleTag::getDeleted, false);
+                            userStyleTagMapper.update(null, reviveQuery);
+                        } else {
+                            // 插入新行
+                            UserStyleTag userStyleTag = new UserStyleTag();
+                            userStyleTag.setUserId(userId);
+                            userStyleTag.setTagId(tagId);
+                            userStyleTag.setDeleted(false);
+                            userStyleTagMapper.insert(userStyleTag);
+                        }
+                    }
+                }
             }
         }
 
@@ -648,7 +838,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 2. 查询主力拍（is_primary=1）
         LambdaQueryWrapper<UserRacket> racketQuery = new LambdaQueryWrapper<>();
         racketQuery.eq(UserRacket::getUserId, userId)
-                .eq(UserRacket::getCancelled, false)
+                .eq(UserRacket::getDeleted, false)
                 .eq(UserRacket::getIsPrimary, true);
         UserRacket primaryRacket = userRacketMapper.selectOne(racketQuery);
 
@@ -663,7 +853,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         // 3. 查询球风标签列表
         LambdaQueryWrapper<UserStyleTag> tagQuery = new LambdaQueryWrapper<>();
         tagQuery.eq(UserStyleTag::getUserId, userId)
-                .eq(UserStyleTag::getCancelled, false);
+                .eq(UserStyleTag::getDeleted, false);
         List<UserStyleTag> userStyleTags = userStyleTagMapper.selectList(tagQuery);
 
         List<StyleTagVo> styleTagVos = new ArrayList<>();
@@ -693,7 +883,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setSignature(profile.getSignature());
         vo.setNtrp(profile.getNtrp());
         vo.setStyleTags(styleTagVos);
-        vo.setSportsYears(resolveSportsYears(profile.getSportsYears()));
+        vo.setSportsYears(resolveSportsYears(profile.getSportsStartYear()));
         vo.setPreferredHand(profile.getPreferredHand() != null ? profile.getPreferredHand().name() : null);
         vo.setMainRacketModelName(mainRacketModelName);
         vo.setHomeDistrict(profile.getHomeDistrict());

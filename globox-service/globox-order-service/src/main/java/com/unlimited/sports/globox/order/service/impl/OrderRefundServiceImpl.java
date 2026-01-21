@@ -22,6 +22,7 @@ import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import com.unlimited.sports.globox.order.service.OrderRefundService;
+import com.unlimited.sports.globox.order.util.CoachNotificationHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
+
 
 /**
  * 提供订单退款相关的服务操作。
@@ -76,10 +78,11 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     @Autowired
     private OrderRefundActionService orderRefundActionService;
 
-
     @DubboReference(group = "rpc")
     private MerchantRefundRuleDubboService merchantRefundRuleDubboService;
 
+    @Autowired
+    private CoachNotificationHelper coachNotificationHelper;
     /**
      * 申请订单退款。
      *
@@ -268,6 +271,13 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                                 OperatorTypeEnum.USER,
                                 order.getSellerType());
                     });
+                    // 如果是教练订单自动退款（教练未确认订单），发送订单已取消通知给教练
+                    if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
+                        coachNotificationHelper.sendCoachOrderCancelledByStudent(orderNo, order.getSellerId(), userId);
+                    }
+                } else if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
+                    // 教练订单需要审批时，通知教练有退款申请
+                    coachNotificationHelper.sendCoachRefundRequest(orderNo, order.getSellerId(), userId);
                 }
             }
         });

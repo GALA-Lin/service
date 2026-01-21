@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 
 /**
  * 用户创建活动订单 - 请求 DTO
@@ -28,4 +29,8 @@ public class CreateVenueActivityOrderDto {
             requiredMode = Schema.RequiredMode.REQUIRED
     )
     private Long activityId;
+
+//    @NotNull(message = "手机号不能为空")
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
+    private String userPhone;
 }

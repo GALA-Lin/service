@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.common.message.notification;
 
 import com.alibaba.fastjson2.annotation.JSONField;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEntityTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -116,6 +117,22 @@ public class NotificationMessage implements Serializable {
          */
         @JSONField(name = "customData")
         private Map<String, Object> customData;
+
+        /**
+         * 附加实体类型（需要附加展示的实体类型）
+         * NONE=无附加信息, USER=用户信息...
+         */
+        @JSONField(name = "attachedEntityType")
+        @Builder.Default
+        private NotificationEntityTypeEnum attachedEntityType = NotificationEntityTypeEnum.NONE;
+
+        /**
+         * 附加实体ID（需要查询的实体ID）
+         * 当 attachedEntityType=USER 时，此字段存放用户ID
+         * ...
+         */
+        @JSONField(name = "attachedEntityId")
+        private Long attachedEntityId;
     }
 
     /**

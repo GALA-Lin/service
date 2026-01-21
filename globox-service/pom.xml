@@ -20,6 +20,7 @@
         <module>globox-order-service</module>
         <module>globox-notification-service</module>
         <module>globox-coach-service</module>
+        <module>globox-governance-service</module>
     </modules>
 
     <properties>

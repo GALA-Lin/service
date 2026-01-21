@@ -56,6 +56,9 @@ public class DeviceTokenServiceImpl implements IDeviceTokenService {
         // 单点登录：先通知旧设备，再将该用户的所有其他设备标记为不活跃
         notifyAndDeactivateOtherDevices(userId, deviceId, deviceOs);
 
+        // 停用同一deviceToken的其他用户（防止设备共享导致的消息误推送）
+        deactivateOtherUsersOnSameDevice(deviceToken, userId);
+
         // 检查设备是否已存在
         DevicePushToken existingToken = getDeviceToken(userId, deviceId);
 
@@ -269,6 +272,31 @@ public class DeviceTokenServiceImpl implements IDeviceTokenService {
 
         devicePushTokenMapper.update(null, updateWrapper);
     }
+
+    /**
+     * 停用同一deviceToken的其他用户
+     * 场景：用户A退出登录后，用户B在同一设备登录，需要停用用户A的该设备记录
+     */
+    private void deactivateOtherUsersOnSameDevice(String deviceToken, Long currentUserId) {
+        if (deviceToken == null || deviceToken.trim().isEmpty()) {
+            return;
+        }
+
+        LambdaUpdateWrapper<DevicePushToken> updateWrapper = Wrappers.lambdaUpdate(DevicePushToken.class)
+                .eq(DevicePushToken::getDeviceToken, deviceToken)
+                .ne(DevicePushToken::getUserId, currentUserId)
+                .eq(DevicePushToken::getIsActive, true)
+                .set(DevicePushToken::getIsActive, false)
+                .set(DevicePushToken::getUpdatedAt, LocalDateTime.now());
+
+        int updated = devicePushTokenMapper.update(null, updateWrapper);
+        if (updated > 0) {
+            log.info("[设备Token同步] 停用同设备的其他用户: deviceToken={}, 当前用户={}, 停用数量={}",
+                    deviceToken, currentUserId, updated);
+        }
+    }
+
+
 
     /**
      * 获取"账号在别处登录"模板

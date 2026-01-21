@@ -13,6 +13,7 @@ import com.unlimited.sports.globox.social.mapper.ConversationMapper;
 import com.unlimited.sports.globox.social.mapper.MessageMapper;
 import com.unlimited.sports.globox.social.service.ConversationService;
 import com.unlimited.sports.globox.social.service.MessageService;
+import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
 import com.unlimited.sports.globox.social.util.TencentCloudImUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomUtils;
@@ -24,11 +25,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 /**
  * 消息服务实现类
@@ -55,6 +53,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
 
+    @Autowired
+    private SocialNotificationUtil socialNotificationUtil;
 
     private static final String REDIS_MESSAGE_QUEUE = "silence:im:message:queue:entity:";
     private static final String REDIS_MESSAGE_KEY = "silence:im:message:entity:";
@@ -93,6 +93,15 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
             // 5. 同步更新会话（确保会话立即更新）
             updateConversationAfterMessage(messageEntity, conversationId);
+
+            // 6. 发送新消息通知给接收人
+            socialNotificationUtil.sendChatMessageNotification(
+                    conversationId,
+                    messageEntity.getMessageId(),
+                    messageEntity.getToUserId(),
+                    messageEntity.getFromUserId(),
+                    messageEntity.getContent()
+            );
 
             log.info("消息发送成功，消息ID: {}", messageEntity.getMessageId());
             return MessageResult.SUCCESS.getMessage();
@@ -676,5 +685,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                 return MessageTypeEnum.TEXT; // 默认为文本消息
         }
     }
+
 
 }

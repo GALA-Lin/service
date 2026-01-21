@@ -61,6 +61,12 @@ public class OrderServiceImpl implements OrderService {
     @Value("${order.unpaid-auto-cancel.scheduled}")
     private Integer delay;
 
+    /**
+     * 订单自动关闭时间 单位 s
+     */
+    @Value("${order.activity-unpaid-auto-cancel.scheduled}")
+    private Integer activityDelay;
+
     @Autowired
     private OrdersMapper ordersMapper;
 
@@ -121,8 +127,6 @@ public class OrderServiceImpl implements OrderService {
         RpcResult<PricingResultDto> rpcResult = merchantDubboService.quoteVenue(pricingRequestDto);
         Assert.rpcResultOk(rpcResult);
         PricingResultDto result = rpcResult.getData();
-        // TODO ETA 等微信支付测试通过后删除
-//        PricingResultDto result = getPricingResultDto();
 
         Assert.isNotEmpty(result.getRecordQuote(), OrderCode.SLOT_HAD_BOOKING);
 
@@ -578,12 +582,16 @@ public class OrderServiceImpl implements OrderService {
 
                     @Override
                     public void afterCommit() {
+                        int orderDelay = delay;
+                        if (order.getActivity()) {
+                            orderDelay = activityDelay;
+                        }
                         // 发送消息，定时关闭订单
                         mqService.sendDelay(
                                 OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL,
                                 OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
                                 orderAutoCancelMessage,
-                                delay);
+                                orderDelay);
                     }
 
                     @Override
@@ -918,17 +926,20 @@ public class OrderServiceImpl implements OrderService {
                                 .userId(userId)
                                 .orderTime(orders.getCreatedAt())
                                 .build();
-
-                        RpcResult<MerchantRefundRuleJudgeResultVo> rpcResult =
-                                merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
-
-                        MerchantRefundRuleJudgeResultVo resultVo = rpcResult.getData();
-                        if (rpcResult.isSuccess() && resultVo.isCanRefund()) {
-                            itemDetailVo.setIsItemRefundable(true);
-                            itemDetailVo.setRefundPercentage(resultVo.getRefundPercentage());
-                            orderRefundable.set(true);
-                        } else {
+                        if (!item.getRefundStatus().equals(RefundStatusEnum.NONE)) {
                             itemDetailVo.setIsItemRefundable(false);
+                        } else {
+                            RpcResult<MerchantRefundRuleJudgeResultVo> rpcResult =
+                                    merchantRefundRuleDubboService.judgeApplicableRefundRule(requestDto);
+
+                            MerchantRefundRuleJudgeResultVo resultVo = rpcResult.getData();
+                            if (rpcResult.isSuccess() && resultVo.isCanRefund()) {
+                                itemDetailVo.setIsItemRefundable(true);
+                                itemDetailVo.setRefundPercentage(resultVo.getRefundPercentage());
+                                orderRefundable.set(true);
+                            } else {
+                                itemDetailVo.setIsItemRefundable(false);
+                            }
                         }
                     }
                     case COACH -> {

@@ -382,11 +382,17 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
      * @return 返回商家退款的结果，包括订单状态、退款申请状态等信息
      */
     @Override
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     public RpcResult<SellerRefundResultDto> refund(MerchantRefundRequestDto dto) {
+        List<Long> itemList = orderItemsMapper.selectList(
+                Wrappers.<OrderItems>lambdaQuery()
+                        .eq(OrderItems::getOrderNo, dto.getOrderNo())
+                        .eq(OrderItems::getRefundStatus, RefundStatusEnum.NONE)
+        ).stream().map(OrderItems::getId).toList();
         return orderDubboService.refund(dto.getOrderNo(),
                 dto.getVenueId(),
                 dto.getMerchantId(),
-                dto.getOrderItemIds(),
+                itemList,
                 SellerTypeEnum.VENUE,
                 dto.getRemark());
     }

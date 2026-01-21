@@ -1,16 +1,22 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.unlimited.sports.globox.common.constants.RallyMQConstants;
 import com.unlimited.sports.globox.common.enums.RegionCityEnum;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.common.enums.social.RallyTimeTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.message.social.RallyStartingReminderMessage;
+import com.unlimited.sports.globox.common.service.MQService;
+import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.dubbo.governance.SensitiveWordsDubboService;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
-import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.dto.RallyPostsDto;
 import com.unlimited.sports.globox.model.social.dto.RallyQueryDto;
 import com.unlimited.sports.globox.model.social.dto.UpdateRallyDto;
@@ -20,19 +26,28 @@ import com.unlimited.sports.globox.social.mapper.RallyApplicationMapper;
 import com.unlimited.sports.globox.social.mapper.RallyParticipantMapper;
 import com.unlimited.sports.globox.social.mapper.RallyPostsMapper;
 import com.unlimited.sports.globox.social.service.RallyService;
+import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
+
+import java.time.Duration;
 import java.util.LinkedHashMap;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.ObjectUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -61,6 +76,24 @@ public class RallyServiceImpl implements RallyService {
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
 
+    @DubboReference(group = "rpc")
+    private SensitiveWordsDubboService sensitiveWordsDubboService;
+
+    @Autowired
+    private NotificationSender notificationSender;
+
+    @Autowired
+    private SocialNotificationUtil socialNotificationUtil;
+
+    @Autowired
+    private MQService mqService;
+
+    /**
+     * 约球开始前多久提醒（单位：秒）
+     */
+    @Value("${rally.reminder.advance.seconds:3600}")
+    private int reminderAdvanceSeconds;
+
     /**
      * 获取社交活动列表
      * @param rallyQueryDto 查询条件
@@ -78,9 +111,7 @@ public class RallyServiceImpl implements RallyService {
         }
         log.info("获筛选地址 - split: ·················{}", split);
         List<RallyPosts> rallyPostsList = rallyPostsMapper.getRallyPostsList(split, rallyQueryDto.getTimeRange(), rallyQueryDto.getGenderLimit(),rallyQueryDto.getNtrpMin(),rallyQueryDto.getNtrpMax(),rallyQueryDto.getActivityType(), offset, rallyQueryDto.getPageSize());
-        log.info("获取社交活动列表成功 - rallyPostsList: ========================={}", rallyPostsList);
         List<RallyPostsVo> rallyPostsVos = rallyPostsToRallyPostsVo(rallyPostsList);
-        log.info("获取社交活动列表成功 - rallyPostsVos: ------------------------{}", rallyPostsVos);
         Long count = rallyPostsMapper.countRallyPostsList(split, rallyQueryDto.getTimeRange(), rallyQueryDto.getGenderLimit(),rallyQueryDto.getNtrpMin(),rallyQueryDto.getNtrpMax(),rallyQueryDto.getActivityType());
         PaginationResult<RallyPostsVo> rallyList = PaginationResult.build(
                 rallyPostsVos,
@@ -167,6 +198,21 @@ public class RallyServiceImpl implements RallyService {
         if (rallyPostsDto.getRallyEventDate().isBefore(LocalDate.now())){
             return null;
         }
+        StringBuilder builder = new StringBuilder();
+        builder.append(rallyPostsDto.getRallyTitle())
+                .append('\n');
+        if (!ObjectUtils.isEmpty(rallyPostsDto.getRallyVenueName())) {
+            builder.append(rallyPostsDto.getRallyVenueName())
+                    .append('\n');
+        }
+        if (!ObjectUtils.isEmpty(rallyPostsDto.getRallyCourtName())) {
+            builder.append(rallyPostsDto.getRallyCourtName())
+                    .append('\n');
+        }
+
+
+        RpcResult<Void> voidRpcResult = sensitiveWordsDubboService.checkSensitiveWords(builder.toString());
+        Assert.rpcResultOk(voidRpcResult);
         RallyPosts rallyPosts = RallyPosts.builder()
                 .initiatorId(rallyApplicantId)
                 .rallyTitle(rallyPostsDto.getRallyTitle())
@@ -194,6 +240,15 @@ public class RallyServiceImpl implements RallyService {
         rallyPostsMapper.insert(rallyPosts);
         int i = initRallyParticipant(rallyPosts, rallyApplicantId);
         if (i >= 0) {
+            // 如果指定了时间，发送延迟消息到队列（提前1小时提醒）
+            if (rallyPosts.getRallyEventDate() != null && rallyPosts.getRallyStartTime() != null) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        sendRallyStartingReminderDelayedMessage(rallyPosts);
+                    }
+                });
+            }
             return rallyPosts;
         } else {
             return null;
@@ -207,7 +262,9 @@ public class RallyServiceImpl implements RallyService {
      * @return 取消结果消息
      */
     @Override
+    @Transactional
     public String cancelRally(Long rallyId, Long userId) {
+        log.info("取消约球{}",rallyId);
         RallyPosts rallyPosts = rallyPostsMapper.selectById(rallyId);
         if (rallyPosts == null) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POST_NOT_EXIST.getCode(), RallyResultEnum.RALLY_POST_NOT_EXIST.getMessage());
@@ -221,8 +278,45 @@ public class RallyServiceImpl implements RallyService {
         if (i < 0) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_CANCEL_FAILURE.getCode(), RallyResultEnum.RALLY_POSTS_CANCEL_FAILURE.getMessage());
         }
-        //todo 调用推送服务告诉用户社交活动取消成功
+
+        // 发送约球取消通知给所有参与者
+        sendRallyCancelledNotifications(rallyId, rallyPosts);
+
         return RallyResultEnum.RALLY_POSTS_CANCEL_SUCCESS.getMessage();
+    }
+
+    /**
+     * 发送约球取消通知给所有参与者（排除发起人）
+     */
+    private void sendRallyCancelledNotifications(Long rallyId, RallyPosts rallyPosts) {
+        try {
+            // 查询所有参与者（排除发起人）
+            List<RallyParticipant> participants = rallyParticipantMapper.selectList(
+                    Wrappers.<RallyParticipant>lambdaQuery()
+                            .eq(RallyParticipant::getRallyPostId, rallyId)
+                            .ne(RallyParticipant::getParticipantId, rallyPosts.getInitiatorId())
+            );
+
+            if (participants.isEmpty()) {
+                log.info("[约球取消] 没有参与者需要通知 - rallyId={}", rallyId);
+                return;
+            }
+
+            // 为每个参与者发送取消通知
+            for (RallyParticipant participant : participants) {
+                try {
+                    socialNotificationUtil.sendRallyCancelledNotification(rallyId, participant.getParticipantId(), rallyPosts);
+                } catch (Exception e) {
+                    log.error("[约球取消] 发送参与者通知失败 - rallyId={}, participantId={}, error={}",
+                            rallyId, participant.getParticipantId(), e.getMessage());
+                    // 单个参与者通知失败不影响其他参与者通知继续发送
+                }
+            }
+
+            log.info("[约球取消] 参与者通知发送完成 - rallyId={}, 参与者数量={}", rallyId, participants.size());
+        } catch (Exception e) {
+            log.error("[约球取消] 发送参与者通知失败 - rallyId={}", rallyId, e);
+        }
     }
 
     /**
@@ -274,6 +368,10 @@ public class RallyServiceImpl implements RallyService {
                 .reviewedBy(rallyPosts.getInitiatorId())
                 .build();
         rallyApplicationMapper.insert(rallyApplication);
+
+        // 发送约球参与申请通知给发起人
+        socialNotificationUtil.sendRallyApplicationNotification(postId, userId, rallyPosts);
+
         return RallyApplyStatusEnum.fromCode(rallyApplication.getStatus()).getDescription();
     }
 
@@ -316,6 +414,9 @@ public class RallyServiceImpl implements RallyService {
             rallyParticipantMapper.deleteById(rallyParticipant);
             log.info("rallyPosts: {}", rallyPosts);
             rallyPostsMapper.updateById(rallyPosts);
+
+            // 发送参与者退出通知给发起人
+            socialNotificationUtil.sendRallyQuitNotification(rallyId, userId, rallyPosts);
         }
         log.info("------------->{}", status);
         return RallyResultEnum.getMessageByCode(rallyApplication.getStatus());
@@ -378,10 +479,43 @@ public class RallyServiceImpl implements RallyService {
                         .isInitiator(IsInitiatorForRallyEnum.NO.getCode())
                         .build();
                 rallyParticipantMapper.insert(rallyParticipant);
+                RallyPosts rallyPosts = rallyPostsMapper.selectOne(
+                        Wrappers.<RallyPosts>lambdaQuery()
+                                .eq(RallyPosts::getRallyPostId, postId)
+                );
+                rallyPosts.setRallyRemainingPeople(rallyPosts.getRallyRemainingPeople() - 1);
+                if (rallyPosts.getRallyRemainingPeople() == 0){
+                    rallyPosts.setRallyStatus(RallyPostsStatusEnum.FULL.getCode());
+                }
+                rallyPostsMapper.updateById(rallyPosts);
+
+                // 根据人数是否已满，发送不同的通知给申请人
+                if (rallyPosts.getRallyRemainingPeople() == 0) {
+                    // 人数已满，发送特殊的已满接受通知给申请人
+                    socialNotificationUtil.sendRallyParticipantsFullAcceptedNotification(postId, applicantId, rallyPosts);
+                    // 发送人数已满通知给发起人
+                    socialNotificationUtil.sendRallyFullNotification(postId, rallyPosts, inspectorId);
+                } else {
+                    // 人数未满，发送普通的申请被接受通知
+                    socialNotificationUtil.sendRallyApplicationAcceptedNotification(postId, applicantId, rallyPosts);
+                }
+
                 rallyApplication.setReviewedAt(LocalDateTime.now());
                 rallyApplication.setStatus(RallyApplyStatusEnum.ACCEPTED.getCode());
                 rallyApplicationMapper.updateById(rallyApplication);
                 return RallyResultEnum.RALLY_POSTS_INSPECT_SUCCESS_PASS.getMessage();
+            } else if (inspectResult == RallyApplyStatusEnum.REJECTED.getCode()) {
+                // 处理拒绝申请
+                // 检查是否因为人数已满而拒绝
+                RallyPosts rallyPosts = rallyPostsMapper.selectOne(
+                        Wrappers.<RallyPosts>lambdaQuery()
+                                .eq(RallyPosts::getRallyPostId, postId)
+                );
+                if (rallyPosts != null && rallyPosts.getRallyStatus() == RallyPostsStatusEnum.FULL.getCode()) {
+                    // 人数已满，发送人数已满拒绝通知
+                    socialNotificationUtil.sendRallyParticipantsFullRejectedNotification(postId, applicantId, rallyPosts);
+                }
+                return RallyResultEnum.RALLY_POSTS_INSPECT_FAILURE.getMessage();
             }
             rallyApplication.setReviewedAt(LocalDateTime.now());
             rallyApplication.setStatus(inspectResult);
@@ -831,6 +965,48 @@ public class RallyServiceImpl implements RallyService {
         }
         // 其他状态返回枚举的描述
         return RallyPostsStatusEnum.fromCode(rallyStatus).getDescription();
+    }
+
+    /**
+     * 发送约球即将开始的延迟提醒消息
+     * 延迟时间 = 约球时间 - 1小时
+     * @param rallyPosts 约球信息
+     */
+    private void sendRallyStartingReminderDelayedMessage(RallyPosts rallyPosts) {
+        try {
+            RallyStartingReminderMessage message = RallyStartingReminderMessage.builder()
+                    .rallyId(rallyPosts.getRallyPostId())
+                    .build();
+
+            // 计算约球开始时间和当前时间，得出延迟时间（毫秒）
+            // 约球时间 - 提前指定秒数为提醒时间
+            LocalDateTime rallyStartDateTime = LocalDateTime.of(
+                    rallyPosts.getRallyEventDate(),
+                    rallyPosts.getRallyStartTime()
+            );
+            LocalDateTime reminderDateTime = rallyStartDateTime.minusSeconds(reminderAdvanceSeconds);
+            LocalDateTime nowDateTime = LocalDateTime.now();
+
+            // 如果提醒时间已过，不发送
+            if (reminderDateTime.isBefore(nowDateTime)) {
+                log.info("约球提醒时间已过，不发送延迟消息 - rallyId={}, reminderTime={}",
+                        rallyPosts.getRallyPostId(), reminderDateTime);
+                return;
+            }
+
+            long delayMillis = Duration.between(nowDateTime, reminderDateTime).toMillis();
+            mqService.sendDelay(
+                    RallyMQConstants.EXCHANGE_TOPIC_RALLY_STARTING_REMINDER,
+                    RallyMQConstants.ROUTING_RALLY_STARTING_REMINDER,
+                    message,
+                    (int)delayMillis);
+            log.info("约球提醒延迟消息已发送 - rallyId={}, delay={}ms, reminderTime={}",
+                    rallyPosts.getRallyPostId(), delayMillis, reminderDateTime);
+        } catch (Exception e) {
+            log.error("发送约球提醒延迟消息失败 - rallyId={}, error={}",
+                    rallyPosts.getRallyPostId(), e.getMessage(), e);
+            // 延迟消息发送失败不影响约球创建
+        }
     }
 
 }

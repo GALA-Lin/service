@@ -26,57 +26,36 @@ public class VenueListResponse {
      * 场地类型字典
      */
     @NonNull
-    private List<DictItem> courtTypes = new ArrayList<>();
+    private List<VenueDictItem> courtTypes = new ArrayList<>();
 
     /**
      * 地面类型字典
      */
     @NonNull
-    private List<DictItem> groundTypes = new ArrayList<>();
+    private List<VenueDictItem> groundTypes = new ArrayList<>();
 
     /**
      * 场地片数筛选字典
      */
     @NonNull
-    private List<DictItem> courtCountFilters = new ArrayList<>();
+    private List<VenueDictItem> courtCountFilters = new ArrayList<>();
 
     /**
      * 距离筛选字典
      */
     @NonNull
-    private List<DictItem> distances = new ArrayList<>();
+    private List<VenueDictItem> distances = new ArrayList<>();
 
     /**
      * 设施类型字典
      */
     @NonNull
-    private List<DictItem> facilities = new ArrayList<>();
+    private List<VenueDictItem> facilities = new ArrayList<>();
 
     /**
      * 价格区间
      */
     private PriceRange priceRange;
-
-    /**
-     * 字典项结构
-     */
-    @Data
-    @AllArgsConstructor
-    @NoArgsConstructor
-    @Builder
-    public static class DictItem {
-        /**
-         * 值（用于前端提交参数）
-         */
-        @NonNull
-        private Integer value;
-
-        /**
-         * 描述（用于前端显示）
-         */
-        @NonNull
-        private String description;
-    }
 
     /**
      * 价格区间

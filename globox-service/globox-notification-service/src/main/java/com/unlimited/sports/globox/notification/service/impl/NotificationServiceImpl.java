@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.notification.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.notification.NotificationMessage;
 import com.unlimited.sports.globox.model.notification.entity.DevicePushToken;
 import com.unlimited.sports.globox.model.notification.entity.NotificationTemplates;
@@ -16,6 +17,7 @@ import com.unlimited.sports.globox.notification.service.IDeviceTokenService;
 import com.unlimited.sports.globox.notification.service.INotificationService;
 import com.unlimited.sports.globox.notification.service.IPushRecordsService;
 import com.unlimited.sports.globox.notification.util.TemplateRenderer;
+import com.unlimited.sports.globox.notification.util.NotificationTypeConverter;
 import com.unlimited.sports.globox.notification.enums.MessageTypeEnum;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -103,11 +105,18 @@ public class NotificationServiceImpl implements INotificationService {
 
             log.info("[通知处理] 模板渲染完成: title={}, content={}", renderedTitle, renderedContent);
 
+            // 获取附加实体信息
+            Integer attachedEntityType = message.getPayload() != null && message.getPayload().getAttachedEntityType() != null
+                    ? message.getPayload().getAttachedEntityType().getCode()
+                    : 0;
+            Long attachedEntityId = message.getPayload() != null ? message.getPayload().getAttachedEntityId() : null;
+
             // 批量处理接收者
             if (message.getRecipients() != null && !message.getRecipients().isEmpty()) {
                 processBatchRecipients(
                         messageId, messageType, message.getRecipients(),
-                        renderedTitle, renderedContent, action, variables, template
+                        renderedTitle, renderedContent, action, variables, template,
+                        attachedEntityType, attachedEntityId
                 );
             }
 
@@ -127,44 +136,66 @@ public class NotificationServiceImpl implements INotificationService {
                                        List<NotificationMessage.Recipient> recipients,
                                        String renderedTitle, String renderedContent,
                                        String action, Map<String, Object> variables,
-                                       NotificationTemplates template) {
+                                       NotificationTemplates template,
+                                       Integer attachedEntityType, Long attachedEntityId) {
         // 提取所有接收者的userId
         List<Long> userIds = recipients.stream()
                 .map(NotificationMessage.Recipient::getUserId)
                 .toList();
 
         // 批量查询所有用户的最新活跃设备
-        Map<Long, DevicePushToken> userDeviceMap = deviceTokenService.getLatestActiveDevicesByUserIds(userIds);
+        Map<Long, DevicePushToken> userDeviceMap;
+        try {
+            userDeviceMap = deviceTokenService.getLatestActiveDevicesByUserIds(userIds);
+        } catch (Exception e) {
+            log.error("[批量推送] 查询设备信息失败: messageId={}", messageId, e);
+            // 记录失败状态
+            recordFailedPushForAllRecipients(messageId, messageType, recipients, renderedTitle,
+                    renderedContent, action, variables, template, attachedEntityType, attachedEntityId,
+                    "查询设备信息失败");
+            // 抛出异常，让RabbitMQ消费者捕获并重试
+            throw new RuntimeException("查询设备信息失败", e);
+        }
 
         // 收集所有有效的设备信息和被过滤的记录
         List<String> deviceTokens = new ArrayList<>();
         Map<String, DevicePushInfo> deviceInfoMap = new HashMap<>();
+        List<PushRecords> filteredRecords = new ArrayList<>();
 
         // 按是否有活跃设备分组
         Map<Boolean, List<NotificationMessage.Recipient>> partitioned = recipients.stream()
                 .collect(Collectors.partitioningBy(recipient -> userDeviceMap.containsKey(recipient.getUserId())));
 
         // 处理无活跃设备的用户（构建过滤记录）
-        List<PushRecords> filteredRecords = partitioned.get(false).stream()
+        partitioned.get(false).stream()
                 .peek(recipient -> log.warn("[批量推送] 用户无活跃设备: userId={}", recipient.getUserId()))
-                .map(recipient -> {
+                .forEach(recipient -> {
                     PushRecords record = buildPushRecord(
                             messageId, messageType, recipient.getUserId(), null, null,
                             renderedTitle, renderedContent, action, variables,
-                            null, PushStatusEnum.FILTERED, template, null
+                            null, PushStatusEnum.FILTERED, template, null,
+                            attachedEntityType, attachedEntityId
                     );
                     record.setErrorMsg("用户无活跃设备");
-                    return record;
-                })
-                .toList();
+                    filteredRecords.add(record);
+                });
 
-        // 处理有活跃设备的用户（添加到批量推送列表）
+        // 处理有活跃设备的用户（添加到批量推送列表或过滤记录）
         partitioned.get(true).forEach(recipient -> {
             DevicePushToken device = userDeviceMap.get(recipient.getUserId());
             String deviceToken = device.getDeviceToken();
-            // 过滤掉无效的deviceToken
+
+            // 如果deviceToken无效，记录为过滤状态
             if (deviceToken == null || deviceToken.trim().isEmpty()) {
-                log.warn("[批量推送] deviceToken无效: userId={}, deviceId={}", recipient.getUserId(), device.getDeviceId());
+                log.error("[批量推送] deviceToken无效: userId={}, deviceId={}", recipient.getUserId(), device.getDeviceId());
+                PushRecords record = buildPushRecord(
+                        messageId, messageType, recipient.getUserId(), device.getDeviceId(), null,
+                        renderedTitle, renderedContent, action, variables,
+                        null, PushStatusEnum.FILTERED, template, device.getUserType(),
+                        attachedEntityType, attachedEntityId
+                );
+                record.setErrorMsg("deviceToken为空");
+                filteredRecords.add(record);
                 return;
             }
 
@@ -195,14 +226,14 @@ public class NotificationServiceImpl implements INotificationService {
                     extData.put("action", action);
                 }
 
-                // 添加消息类型（探索/球局/系统），便于前端做对应的UI展示或跳转
-                if (template != null && template.getNotificationModule() != null) {
-                    MessageTypeEnum userMsgType = MessageTypeEnum.fromModuleCode(template.getNotificationModule());
-                    if (userMsgType != null) {
-                        extData.put("messageType", userMsgType.getCode());
-                        log.debug("[批量推送] 消息分类: module={}, messageType={}", template.getNotificationModule(), userMsgType.getCode());
-                    }
+                // 推断消息类型（探索/球局/系统），便于前端做对应的UI展示或跳转
+                MessageTypeEnum userMsgType = NotificationTypeConverter.inferMessageType(messageType);
+                if (userMsgType == null) {
+                    log.error("[批量推送] 无法推断消息分类，将跳过推送: eventType={}", messageType);
+                    throw new GloboxApplicationException("无法推断消息分类: eventType=" + messageType);
                 }
+                extData.put("messageType", userMsgType.getCode());
+                log.info("[批量推送] 消息分类推断成功: eventType={}, messageType={}", messageType, userMsgType.getCode());
 
                 extJson = JSON.toJSONString(extData);
 
@@ -225,17 +256,20 @@ public class NotificationServiceImpl implements INotificationService {
                 if (taskId != null) {
                     log.info("[批量推送] 推送成功: taskId={}, 设备数量={}", taskId, deviceTokens.size());
                     buildBatchPushRecords(deviceTokens, deviceInfoMap, recordsToSave, messageId, messageType,
-                            renderedTitle, renderedContent, action, variables, template, taskId, PushStatusEnum.SENT, null);
+                            renderedTitle, renderedContent, action, variables, template, taskId, PushStatusEnum.SENT, null,
+                            attachedEntityType, attachedEntityId);
                 } else {
                     log.error("[批量推送] 推送失败");
                     buildBatchPushRecords(deviceTokens, deviceInfoMap, recordsToSave, messageId, messageType,
-                            renderedTitle, renderedContent, action, variables, template, null, PushStatusEnum.FAILED, "腾讯云批量推送失败");
+                            renderedTitle, renderedContent, action, variables, template, null, PushStatusEnum.FAILED, "腾讯云批量推送失败",
+                            attachedEntityType, attachedEntityId);
                 }
 
             } catch (Exception e) {
                 log.error("[批量推送] 发送异常", e);
                 buildBatchPushRecords(deviceTokens, deviceInfoMap, recordsToSave, messageId, messageType,
-                        renderedTitle, renderedContent, action, variables, template, null, PushStatusEnum.FAILED, e.getMessage());
+                        renderedTitle, renderedContent, action, variables, template, null, PushStatusEnum.FAILED, e.getMessage(),
+                        attachedEntityType, attachedEntityId);
             }
 
             // 批量插入所有推送记录
@@ -296,13 +330,15 @@ public class NotificationServiceImpl implements INotificationService {
                                        String renderedTitle, String renderedContent,
                                        String action, Map<String, Object> variables,
                                        NotificationTemplates template,
-                                       String taskId, PushStatusEnum status, String errorMsg) {
+                                       String taskId, PushStatusEnum status, String errorMsg,
+                                       Integer attachedEntityType, Long attachedEntityId) {
         for (String deviceToken : deviceTokens) {
             DevicePushInfo info = deviceInfoMap.get(deviceToken);
             PushRecords record = buildPushRecord(
                     messageId, messageType, info.userId, info.deviceId, deviceToken,
                     renderedTitle, renderedContent, action, variables, taskId,
-                    status, template, info.userType
+                    status, template, info.userType,
+                    attachedEntityType, attachedEntityId
             );
 
             // 设置成功时间或错误信息
@@ -324,7 +360,8 @@ public class NotificationServiceImpl implements INotificationService {
                                        String title, String content, String action,
                                        Map<String, Object> customData,
                                        String taskId, PushStatusEnum status,
-                                       NotificationTemplates template, String userType) {
+                                       NotificationTemplates template, String userType,
+                                       Integer attachedEntityType, Long attachedEntityId) {
         // 从模板中获取分类信息
         Integer notificationModule = template != null ? template.getNotificationModule() : 0;
         Integer userRole = template != null ? template.getUserRole() : 0;
@@ -347,6 +384,8 @@ public class NotificationServiceImpl implements INotificationService {
                 .content(content)
                 .action(action)
                 .customData(customData != null ? JSON.toJSONString(customData) : null)
+                .attachedEntityType(attachedEntityType != null ? attachedEntityType : 0)
+                .attachedEntityId(attachedEntityId)
                 .status(status)
                 .tencentTaskId(taskId)
                 .createdAt(LocalDateTime.now())
@@ -364,6 +403,35 @@ public class NotificationServiceImpl implements INotificationService {
         return pushRecordsService.getOne(wrapper);
     }
 
+
+    /**
+     * 为所有接收者记录失败的推送（用于异常情况）
+     */
+    private void recordFailedPushForAllRecipients(String messageId, String messageType,
+                                                   List<NotificationMessage.Recipient> recipients,
+                                                   String renderedTitle, String renderedContent,
+                                                   String action, Map<String, Object> variables,
+                                                   NotificationTemplates template,
+                                                   Integer attachedEntityType, Long attachedEntityId,
+                                                   String errorMsg) {
+        List<PushRecords> failedRecords = recipients.stream()
+                .map(recipient -> {
+                    PushRecords record = buildPushRecord(
+                            messageId, messageType, recipient.getUserId(), null, null,
+                            renderedTitle, renderedContent, action, variables,
+                            null, PushStatusEnum.FAILED, template, null,
+                            attachedEntityType, attachedEntityId
+                    );
+                    record.setErrorMsg(errorMsg);
+                    return record;
+                })
+                .toList();
+
+        if (!failedRecords.isEmpty()) {
+            pushRecordsService.saveBatchRecords(failedRecords);
+            log.info("[批量推送] 已为所有接收者记录失败状态: messageId={}, 接收者数量={}", messageId, recipients.size());
+        }
+    }
 
     /**
      * 设备推送信息（用于批量推送记录）

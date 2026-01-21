@@ -59,7 +59,8 @@ public class CoachPricingRequestDto implements Serializable {
     /**
      * 联系电话
      */
-    private String contactPhone;
+    @NotNull(message = "手机号不能为空")
+    private String userPhone;
 
     /**
      * 学员人数

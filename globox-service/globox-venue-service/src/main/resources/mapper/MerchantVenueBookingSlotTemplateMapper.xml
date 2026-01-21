@@ -20,10 +20,11 @@
     </insert>
 
     <!-- 删除场地的所有模板 -->
-    <delete id="deleteByCourtId">
+    <update id="deleteByCourtId">
+        UPDATE venue_booking_slot_template
         SET is_deleted = 1, updated_at = NOW()
         WHERE court_id = #{courtId} AND is_deleted = 0
-    </delete>
+    </update>
 
     <select id="MerchantSelectByCourtIdsAndTimeRange" resultType="com.unlimited.sports.globox.model.merchant.entity.VenueBookingSlotTemplate">
         SELECT

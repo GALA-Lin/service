@@ -8,6 +8,8 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.common.utils.NotificationSender;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -22,6 +24,7 @@ import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.mapper.SocialUserBlockMapper;
 import com.unlimited.sports.globox.social.mapper.SocialUserFollowMapper;
 import com.unlimited.sports.globox.social.service.SocialRelationService;
+import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +57,12 @@ public class SocialRelationServiceImpl implements SocialRelationService {
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
+
+    @Autowired
+    private NotificationSender notificationSender;
+
+    @Autowired
+    private SocialNotificationUtil socialNotificationUtil;
 
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
@@ -88,6 +97,10 @@ public class SocialRelationServiceImpl implements SocialRelationService {
                 .createdAt(LocalDateTime.now())
                 .build();
         socialUserFollowMapper.insert(follow);
+
+        // 发送被关注通知
+        socialNotificationUtil.sendFollowNotification(targetUserId, userId);
+
         return R.ok("关注成功");
     }
 

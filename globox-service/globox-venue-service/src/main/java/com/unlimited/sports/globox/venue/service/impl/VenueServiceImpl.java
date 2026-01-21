@@ -1,6 +1,8 @@
 package com.unlimited.sports.globox.venue.service.impl;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
@@ -8,6 +10,7 @@ import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.dubbo.governance.SensitiveWordsDubboService;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -18,6 +21,7 @@ import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.entity.VenueBusinessHours;
+import com.unlimited.sports.globox.model.venue.dto.DeleteVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
@@ -25,6 +29,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenueReview;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.model.venue.enums.*;
+import com.unlimited.sports.globox.model.venue.enums.ReviewDeleteOperatorType;
 import com.unlimited.sports.globox.venue.constants.ReviewConstants;
 import com.unlimited.sports.globox.venue.mapper.venues.VenueReviewMapper;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
@@ -36,6 +41,7 @@ import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
 import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
+import com.unlimited.sports.globox.model.venue.vo.VenueDictItem;
 import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
 import com.unlimited.sports.globox.model.venue.vo.ActivityParticipantVo;
@@ -79,6 +85,9 @@ public class VenueServiceImpl implements IVenueService {
     @Value("${default_image.venue_avatar}")
     private String defaultVenueUserAvatar;
 
+
+    @DubboReference(group = "rpc")
+    private SensitiveWordsDubboService sensitiveWordsDubboService;
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -159,9 +168,9 @@ public class VenueServiceImpl implements IVenueService {
                         .eq(VenueReview::getVenueId, dto.getVenueId())
                         .isNull(VenueReview::getParentReviewId)
                         .eq(VenueReview::getReviewType, ReviewType.USER_COMMENT.getValue())
+                        .ne(VenueReview::getDeleted, true)
                         .orderByDesc(VenueReview::getCreatedAt)
         );
-
         if (reviewPage.getRecords().isEmpty()) {
             return PaginationResult.build(Collections.emptyList(), 0L, dto.getPage(), dto.getPageSize());
         }
@@ -211,7 +220,6 @@ public class VenueServiceImpl implements IVenueService {
                     return vo;
                 })
                 .collect(Collectors.toList());
-
         return PaginationResult.build(reviewVos, reviewPage.getTotal(), dto.getPage(), dto.getPageSize());
     }
 
@@ -225,8 +233,9 @@ public class VenueServiceImpl implements IVenueService {
         if (venue == null) {
             throw new GloboxApplicationException("场馆不存在");
         }
-
-
+        // 敏感词校验
+        RpcResult<Void> result = sensitiveWordsDubboService.checkSensitiveWords(dto.getContent());
+        Assert.rpcResultOk(result);
         // todo 暂时没有回复功能,如果有,直接放开下面的代码 时间2025-12-23
 //        // 如果是回复，验证父评论是否存在
 //        if (dto.getParentReviewId() != null) {
@@ -273,6 +282,7 @@ public class VenueServiceImpl implements IVenueService {
                         .eq(VenueReview::getVenueId, venueId)
                         .isNull(VenueReview::getParentReviewId)
                         .eq(VenueReview::getReviewType, 1)
+                        .ne(VenueReview::getDeleted, true)
         );
 
         if (!CollectionUtils.isEmpty(reviews)) {
@@ -343,6 +353,7 @@ public class VenueServiceImpl implements IVenueService {
                 new LambdaQueryWrapper<VenueReview>()
                         .in(VenueReview::getParentReviewId, reviewIds)
                         .eq(VenueReview::getReviewType, 2)
+                        .ne(VenueReview::getDeleted, true)
         );
 
         // 按父评论ID分组统计数量
@@ -355,36 +366,36 @@ public class VenueServiceImpl implements IVenueService {
 
     @Override
     public VenueDictVo getSearchFilterDictionary() {
-        List<VenueDictVo.DictItem> courtTypes = Arrays.stream(CourtType.values())
-                .map(type -> VenueDictVo.DictItem.builder()
+        List<VenueDictItem> courtTypes = Arrays.stream(CourtType.values())
+                .map(type -> VenueDictItem.builder()
                         .value(type.getValue())
                         .description(type.getDescription())
                         .build())
                 .collect(Collectors.toList());
 
-        List<VenueDictVo.DictItem> groundTypes = Arrays.stream(GroundType.values())
-                .map(type -> VenueDictVo.DictItem.builder()
+        List<VenueDictItem> groundTypes = Arrays.stream(GroundType.values())
+                .map(type -> VenueDictItem.builder()
                         .value(type.getValue())
                         .description(type.getDescription())
                         .build())
                 .collect(Collectors.toList());
 
-        List<VenueDictVo.DictItem> courtCountFilters = Arrays.stream(CourtCountFilter.values())
-                .map(filter -> VenueDictVo.DictItem.builder()
+        List<VenueDictItem> courtCountFilters = Arrays.stream(CourtCountFilter.values())
+                .map(filter -> VenueDictItem.builder()
                         .value(filter.getValue())
                         .description(filter.getDescription())
                         .build())
                 .collect(Collectors.toList());
 
-        List<VenueDictVo.DictItem> distances = Arrays.stream(DistanceFilter.values())
-                .map(filter -> VenueDictVo.DictItem.builder()
+        List<VenueDictItem> distances = Arrays.stream(DistanceFilter.values())
+                .map(filter -> VenueDictItem.builder()
                         .value(filter.getValue())
                         .description(filter.getDescription())
                         .build())
                 .collect(Collectors.toList());
 
-        List<VenueDictVo.DictItem> facilities = Arrays.stream(FacilityType.values())
-                .map(facility -> VenueDictVo.DictItem.builder()
+        List<VenueDictItem> facilities = Arrays.stream(FacilityType.values())
+                .map(facility -> VenueDictItem.builder()
                         .value(facility.getValue())
                         .description(facility.getDescription())
                         .build())
@@ -538,6 +549,49 @@ public class VenueServiceImpl implements IVenueService {
                 .filter(price -> price != null)
                 .min(BigDecimal::compareTo)
                 .orElse(new BigDecimal("999"));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteReview(DeleteVenueReviewDto dto) {
+        // 1. 查询评论是否存在
+        VenueReview review = venueReviewMapper.selectById(dto.getReviewId());
+        if (review == null) {
+            throw new GloboxApplicationException("评论不存在");
+        }
+
+        // 2. 验证是否已删除
+        if (review.getDeleted() != null && review.getDeleted()) {
+            throw new GloboxApplicationException("评论已被删除");
+        }
+
+        // 3. 验证权限：只能删除自己的评论
+        if (!review.getUserId().equals(dto.getUserId())) {
+            throw new GloboxApplicationException("无权删除他人评论");
+        }
+
+        // 4. 执行软删除 - 使用 LambdaUpdateWrapper 显式更新字段
+        LocalDateTime now = LocalDateTime.now();
+        int deleteOperatorType = dto.getDeleteOperatorType() != null ?
+                dto.getDeleteOperatorType() : ReviewDeleteOperatorType.USER_SELF.getValue();
+
+        int updateCount = venueReviewMapper.update(null,
+                new LambdaUpdateWrapper<VenueReview>()
+                        .eq(VenueReview::getReviewId, dto.getReviewId())
+                        .set(VenueReview::getDeleted, true)
+                        .set(VenueReview::getDeletedAt, now)
+                        .set(VenueReview::getDeleteOperatorType, deleteOperatorType)
+                        .set(VenueReview::getUpdatedAt, now)
+        );
+
+        log.info("删除场馆评论 reviewId={}, deleteOperatorType={}, updateCount={}",
+                dto.getReviewId(), deleteOperatorType, updateCount);
+
+        // 5. 如果是一级评论，需要重新计算场馆评分
+        if (review.getParentReviewId() == null &&
+                review.getReviewType().equals(ReviewType.USER_COMMENT.getValue())) {
+            updateVenueRating(review.getVenueId());
+        }
     }
 
 }

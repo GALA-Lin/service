@@ -88,6 +88,17 @@ public class NotificationMessageVO {
     private LocalDateTime createdAt;
 
     /**
+     * 附加实体类型编码（对应 NotificationEntityTypeEnum）
+     */
+    private Integer attachedEntityType;
+
+    /**
+     * 附加实体信息（当 attachedEntityType != NONE 时填充）
+     * 根据 attachedEntityType 的值存放不同类型的实体信息
+     */
+    private MessageUserInfo entityInfo;
+
+    /**
      * 从 PushRecords 实体转换为 VO
      */
     public static NotificationMessageVO fromEntity(PushRecords record) {
@@ -117,6 +128,7 @@ public class NotificationMessageVO {
                 .customData(customDataMap)
                 .isRead(record.getIsRead() != null && record.getIsRead() == 1)
                 .createdAt(record.getCreatedAt())
+                .attachedEntityType(record.getAttachedEntityType())
                 .build();
     }
 }

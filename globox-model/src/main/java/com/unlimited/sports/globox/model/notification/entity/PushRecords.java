@@ -104,6 +104,19 @@ public class PushRecords  implements Serializable {
     private String customData;
 
     /**
+     * 附加实体类型编码（对应 NotificationEntityTypeEnum）
+     */
+    @TableField("attached_entity_type")
+    @Builder.Default
+    private Integer attachedEntityType = 0;
+
+    /**
+     * 附加实体ID（需要查询的实体ID）
+     */
+    @TableField("attached_entity_id")
+    private Long attachedEntityId;
+
+    /**
      * 推送状态：0=待发送, 1=已发送, 2=已送达, 3=失败, 4=已过滤
      */
     private PushStatusEnum status;

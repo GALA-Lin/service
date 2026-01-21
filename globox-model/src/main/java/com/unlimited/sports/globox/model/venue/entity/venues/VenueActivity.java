@@ -40,6 +40,9 @@ public class VenueActivity {
      */
     private Long courtId;
 
+    @TableField("merchant_batch_id")
+    private Long merchantBatchId;
+
     /**
      * 活动类型ID（外键，指向activity_type表）
      */

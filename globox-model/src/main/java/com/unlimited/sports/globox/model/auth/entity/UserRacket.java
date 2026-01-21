@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 用户球拍关联表
+ * User racket relation.
  */
 @Data
 @TableName("user_racket")
@@ -36,9 +36,9 @@ public class UserRacket {
     private Boolean isPrimary;
 
     /**
-     * 是否已注销
+     * 是否已删除
      */
-    private Boolean cancelled;
+    private Boolean deleted;
 
     /**
      * 创建时间

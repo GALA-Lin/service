@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 用户球风标签关联表
+ * User style tag relation.
  */
 @Data
 @TableName("user_style_tag")
@@ -31,9 +31,9 @@ public class UserStyleTag {
     private Long tagId;
 
     /**
-     * 是否已注销
+     * 是否已删除
      */
-    private Boolean cancelled;
+    private Boolean deleted;
 
     /**
      * 创建时间

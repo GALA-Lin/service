@@ -101,12 +101,15 @@ public interface IBookingService {
      * @param dto 价格请求DTO
      * @param templates 槽位模板列表
      * @param venue 场馆对象（外部已查询）
+     * @param courtNameMap 场地名称映射表
+     * @param userName 用户昵称
      * @return 价格结果DTO
      */
     PricingResultDto executeBookingInTransaction(
             PricingRequestDto dto,
             List<VenueBookingSlotTemplate> templates,
             Venue venue,
-            Map<Long, String> courtNameMap);
+            Map<Long, String> courtNameMap,
+            String userName);
 
 }

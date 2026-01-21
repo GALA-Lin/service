@@ -2,12 +2,15 @@ package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.result.GovernanceCode;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
+import com.unlimited.sports.globox.common.enums.notification.NotificationEntityTypeEnum;
+import com.unlimited.sports.globox.dubbo.governance.SensitiveWordsDubboService;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
@@ -23,6 +26,7 @@ import com.unlimited.sports.globox.social.mapper.SocialNoteCommentMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.service.CommentService;
 import com.unlimited.sports.globox.social.util.CursorUtils;
+import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
@@ -64,8 +68,14 @@ public class CommentServiceImpl implements CommentService {
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
 
+    @DubboReference(group = "rpc")
+    private SensitiveWordsDubboService sensitiveWordsDubboService;
+
     @Autowired
     private NotificationSender notificationSender;
+
+    @Autowired
+    private SocialNotificationUtil socialNotificationUtil;
 
     @Override
     public R<CursorPaginationResult<CommentItemVo>> getCommentList(Long noteId, String cursor, Integer size, Long userId) {
@@ -144,6 +154,10 @@ public class CommentServiceImpl implements CommentService {
             throw new GloboxApplicationException(SocialCode.COMMENT_CONTENT_EMPTY);
         }
 
+        // 1.1 敏感词校验（仅评论内容）
+        RpcResult<Void> rpcResult = sensitiveWordsDubboService.checkSensitiveWords(request.getContent());
+        Assert.rpcResultOk(rpcResult);
+
         // 2. 校验笔记存在且已发布
         SocialNote note = noteMapper.selectById(noteId);
         if (note == null || note.getStatus() != SocialNote.Status.PUBLISHED) {
@@ -193,7 +207,7 @@ public class CommentServiceImpl implements CommentService {
         // 6. 原子更新笔记评论数
         noteMapper.incrementCommentCount(noteId);
 
-        // 7. 发送通知（评论作者不是笔记作者时才发送）
+        // 7. 发送通知（评论作者不是笔记作者时才发送，展示评论者信息）
         if (!note.getUserId().equals(userId)) {
             try {
                 Map<String, Object> customData = new HashMap<>();
@@ -204,13 +218,22 @@ public class CommentServiceImpl implements CommentService {
                         note.getUserId(),
                         NotificationEventEnum.SOCIAL_NOTE_COMMENTED,
                         noteId,
-                        customData
+                        customData,
+                        NotificationEntityTypeEnum.USER,
+                        userId
                 );
             } catch (Exception e) {
-                log.warn("发送评论通知失败：noteId={}, commentId={}, error={}", 
+                log.warn("发送评论通知失败：noteId={}, commentId={}, error={}",
                         noteId, comment.getCommentId(), e.getMessage());
                 // 通知失败不影响评论创建
             }
+        }
+
+        // 8. 如果是回复评论，发送通知给被回复的用户（且被回复的用户不是自己）
+        if (replyToUserId != null && !replyToUserId.equals(userId)) {
+            socialNotificationUtil.sendCommentRepliedNotification(
+                    noteId, parentId, comment.getContent(), replyToUserId, userId
+            );
         }
 
         log.info("评论创建成功：userId={}, noteId={}, commentId={}", userId, noteId, comment.getCommentId());
@@ -332,6 +355,20 @@ public class CommentServiceImpl implements CommentService {
             // 6. 原子更新评论点赞数
             comment.setLikeCount(comment.getLikeCount() + 1);
             commentMapper.updateById(comment);
+
+            // 7. 发送评论被点赞通知给评论作者
+            Map<String, Object> customData = new HashMap<>();
+            customData.put("noteId", noteId);
+            customData.put("commentId", commentId);
+
+            notificationSender.sendNotification(
+                    comment.getUserId(),
+                    NotificationEventEnum.SOCIAL_COMMENT_LIKED,
+                    noteId,
+                    customData,
+                    NotificationEntityTypeEnum.USER,
+                    userId
+            );
         }
 
         return R.ok("点赞成功");

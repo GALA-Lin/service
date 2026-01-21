@@ -590,6 +590,8 @@ public class BookingServiceImpl implements IBookingService {
      * @param dto 价格请求DTO
      * @param templates 槽位模板列表
      * @param venue 场馆对象（外部已查询）
+     * @param courtNameMap 场地名称映射表
+     * @param userName 用户昵称
      * @return 价格结果DTO
      */
     @Override
@@ -598,12 +600,13 @@ public class BookingServiceImpl implements IBookingService {
             PricingRequestDto dto,
             List<VenueBookingSlotTemplate> templates,
             Venue venue,
-            Map<Long, String> courtNameMap) {
+            Map<Long, String> courtNameMap,
+            String userName) {
         // 二次验证- 确保槽位仍然可用
         validateSlotsAvailability(dto.getSlotIds(),dto.getBookingDate());
         // 原子性地更新槽位状态，防止超卖
         List<VenueBookingSlotRecord> records = lockBookingSlots(
-                templates, dto.getUserId(), dto.getBookingDate());
+                templates, dto.getUserId(), dto.getBookingDate(), userName, dto.getUserPhone());
         if (records == null) {
             log.warn("占用槽位失败 - 槽位已被其他用户占用 userId: {}", dto.getUserId());
             throw new GloboxApplicationException(VenueCode.SLOT_OCCUPIED);
@@ -687,12 +690,17 @@ public class BookingServiceImpl implements IBookingService {
 
     /**
      * 占用预订槽位
-     * 将槽位状态改为LOCKED_IN，并记录操作人信息
+     * 将槽位状态改为LOCKED_IN，并记录操作人信息和用户信息
      *
+     * @param templates 槽位模板列表
+     * @param userId 用户ID
+     * @param bookingDate 预订日期
+     * @param userName 用户昵称
+     * @param userPhone 用户手机号
      * @return 返回占用的槽位记录列表（按templates顺序）
      */
-    private List<VenueBookingSlotRecord> lockBookingSlots(List<VenueBookingSlotTemplate> templates, Long userId, LocalDate bookingDate) {
-        log.info("开始占用槽位 - userId: {}, 槽位数: {}", userId, templates.size());
+    private List<VenueBookingSlotRecord> lockBookingSlots(List<VenueBookingSlotTemplate> templates, Long userId, LocalDate bookingDate, String userName, String userPhone) {
+        log.info("开始占用槽位 - userId: {}, 槽位数: {}, userName: {}", userId, templates.size(), userName);
 
         if (templates.isEmpty()) {
             return Collections.emptyList();
@@ -729,8 +737,11 @@ public class BookingServiceImpl implements IBookingService {
                             .slotTemplateId(template.getBookingSlotTemplateId())
                             .bookingDate(bookingDate.atStartOfDay())
                             .status(BookingSlotStatus.LOCKED_IN.getValue())
+                            .lockedType(OperatorSourceEnum.USER.getCode())
                             .operatorId(userId)
                             .operatorSource(OperatorSourceEnum.USER)
+                            .userName(userName)
+                            .userPhone(userPhone)
                             .build();
                     templateToRecordMap.put(template.getBookingSlotTemplateId(), record);
                     return record;
@@ -743,8 +754,11 @@ public class BookingServiceImpl implements IBookingService {
                         .filter(r -> r.getSlotTemplateId().equals(template.getBookingSlotTemplateId()))
                         .peek(record -> {
                             record.setStatus(BookingSlotStatus.LOCKED_IN.getValue());
+                            record.setLockedType(OperatorSourceEnum.USER.getCode());
                             record.setOperatorId(userId);
                             record.setOperatorSource(OperatorSourceEnum.USER);
+                            record.setUserName(userName);
+                            record.setUserPhone(userPhone);
                             templateToRecordMap.put(template.getBookingSlotTemplateId(), record);
                         })
                         .findFirst()

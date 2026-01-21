@@ -40,6 +40,9 @@ public enum UserAuthCode implements ResultCode {
     WECHAT_AUTH_FAILED(2033, "微信授权失败"),
     WECHAT_CODE_EXPIRED(2034, "微信授权code已过期"),
     TEMP_TOKEN_EXPIRED(2035, "临时凭证已过期，请重新授权"),
+    IDENTITY_ALREADY_BOUND(2036, "该身份已绑定其他账号"),
+    WECHAT_CONFIG_INVALID(2037, "微信配置缺失或不匹配"),
+    CLIENT_TYPE_UNSUPPORTED(2038, "不支持的客户端类型"),
     
     // 用户资料相关 2040-2059
     INVALID_PARAM(2040, "参数无效"),

@@ -24,12 +24,15 @@ import com.unlimited.sports.globox.order.mapper.OrderActivitiesMapper;
 import com.unlimited.sports.globox.order.mapper.OrderItemsMapper;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
+import com.unlimited.sports.globox.order.util.CoachNotificationHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
@@ -60,6 +63,8 @@ public class PaymentSuccessConsumer {
     @Autowired
     private OrderActivitiesMapper orderActivitiesMapper;
 
+    @Autowired
+    private CoachNotificationHelper coachNotificationHelper;
 
     /**
      * 支付成功回调 消费者
@@ -198,9 +203,12 @@ public class PaymentSuccessConsumer {
                 Wrappers.<OrderItems>lambdaQuery()
                         .eq(OrderItems::getOrderNo, orderNo));
 
-        if (orderItems == null) {
+        if (ObjectUtils.isEmpty(orderItems)) {
             throw new GloboxApplicationException(OrderCode.ORDER_ITEM_NOT_EXIST);
         }
+
+        // 获取预约日期
+        LocalDate bookingDate = orderItems.get(0).getBookingDate();
 
         OrderPaidMessage paidMessage = OrderPaidMessage.builder()
                 .orderNo(orderNo)
@@ -246,7 +254,26 @@ public class PaymentSuccessConsumer {
                     OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
                     OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
                     paidMessage);
+            // 发送订单已支付通知给教练 - "您收到新的预约"
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            try {
+                                coachNotificationHelper.sendCoachAppointmentPaid(
+                                        orderNo,
+                                        order.getSellerId(),
+                                        order.getBuyerId(),
+                                        bookingDate.toString(),
+                                        order.getPayAmount()
+                                );
+                            } catch (Exception e) {
+                                log.error("[支付成功回调] 发送教练订单已支付通知失败, orderNo={}", orderNo, e);
+                            }
+                        }
+                    });
         }
+
 
         // 找出最晚时间
         LocalTime localTime = orderItems
@@ -254,8 +281,6 @@ public class PaymentSuccessConsumer {
                 .map(OrderItems::getEndTime)
                 .max(LocalTime::compareTo)
                 .orElse(LocalTime.of(23, 0));
-
-        LocalDate bookingDate = orderItems.get(0).getBookingDate();
 
         long delayMillis = LocalDateUtils.delayMillis(bookingDate, localTime);
         int delay = Math.toIntExact(delayMillis / 1000);

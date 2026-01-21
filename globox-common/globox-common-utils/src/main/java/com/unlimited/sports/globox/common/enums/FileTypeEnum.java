@@ -98,7 +98,21 @@ public enum FileTypeEnum {
             "球星卡肖像",
             new String[]{".jpg", ".jpeg", ".png", ".webp"},
             10 * 1024 * 1024L  // 10MB
-    );
+    ),
+
+
+    /**
+     * 举报工单 - 媒体证据
+     */
+    COMPLAINT_EVIDENCE(
+            "report-evidence",
+            "举报工单证据",
+            new String[] {".jpg", ".jpeg", ".png", ".webp"},
+            10 * 1024 * 1024L  // 10MB
+    ),
+
+
+    ;
 
     /**
      * 类型代码（用于文件路径）

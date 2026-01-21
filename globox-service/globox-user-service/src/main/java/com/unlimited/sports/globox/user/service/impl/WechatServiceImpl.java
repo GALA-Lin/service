@@ -81,7 +81,7 @@ public class WechatServiceImpl implements WechatService {
     private WechatProperties.MiniappConfig resolveWechatConfig(String clientType) {
         if (!StringUtils.hasText(clientType)) {
             log.error("【微信服务】clientType为空");
-            throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+            throw new GloboxApplicationException(UserAuthCode.CLIENT_TYPE_UNSUPPORTED);
         }
 
         switch (clientType) {
@@ -90,7 +90,7 @@ public class WechatServiceImpl implements WechatService {
                 if (miniapp == null || !StringUtils.hasText(miniapp.getAppId())
                         || !StringUtils.hasText(miniapp.getAppSecret())) {
                     log.error("【微信服务】miniapp配置不完整：app-id或app-secret为空");
-                    throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+                    throw new GloboxApplicationException(UserAuthCode.WECHAT_CONFIG_INVALID);
                 }
                 return miniapp;
             case "app":
@@ -98,7 +98,7 @@ public class WechatServiceImpl implements WechatService {
                 if (uniapp == null || !StringUtils.hasText(uniapp.getAppId())
                         || !StringUtils.hasText(uniapp.getAppSecret())) {
                     log.error("【微信服务】uniapp配置不完整：app-id或app-secret为空");
-                    throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+                    throw new GloboxApplicationException(UserAuthCode.WECHAT_CONFIG_INVALID);
                 }
                 // 返回 MiniappConfig 类型，但实际使用 uniapp 的配置
                 // 由于 MiniappConfig 和 UniappConfig 结构相同，这里创建一个临时对象
@@ -109,7 +109,7 @@ public class WechatServiceImpl implements WechatService {
                 return uniappAsMiniapp;
             default:
                 log.error("【微信服务】不支持的clientType：{}，仅支持 third-party-jsapi 和 app", clientType);
-                throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+                throw new GloboxApplicationException(UserAuthCode.CLIENT_TYPE_UNSUPPORTED);
         }
     }
 

@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.venue.service;
 
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.model.venue.dto.DeleteVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
@@ -38,6 +39,13 @@ public interface IVenueService {
      * @param dto 评论信息，包含场馆ID、用户ID、父评论ID（可选）、评分、内容、图片等
      */
     void postReview(PostVenueReviewDto dto);
+
+    /**
+     * 删除用户自己的评论
+     *
+     * @param dto 删除请求，包含评论ID、用户ID和删除操作人类型
+     */
+    void deleteReview(DeleteVenueReviewDto dto);
 
     /**
      * 获取场馆搜索过滤字典数据

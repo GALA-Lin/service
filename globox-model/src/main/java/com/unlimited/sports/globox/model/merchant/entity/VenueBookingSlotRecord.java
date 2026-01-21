@@ -46,13 +46,19 @@ public class VenueBookingSlotRecord {
     private Integer status;
 
     /**
-     * 锁定类型：1=用户订单，2=商家锁场
+     * 锁定类型：1=商家锁场，2=用户订单
      */
     @TableField("locked_type")
     private Integer lockedType;
 
     @TableField("lock_reason")
     private String lockReason;
+
+    /**
+     * 批次标识（商家批量锁场时使用）
+     */
+    @TableField("merchant_batch_id")
+    private Long merchantBatchId;
 
     /**
      * 关联订单ID（占用时）
@@ -71,6 +77,21 @@ public class VenueBookingSlotRecord {
      */
     @TableField("operator_id")
     private Long operatorId;
+
+    /**
+     * 使用人名称
+     * - 商家锁场：手动输入
+     * - 用户下单：从用户表查询的昵称/手动输入
+     */
+    @TableField("user_name")
+    private String userName;
+
+    /**
+     * 使用人手机号
+     * 手动输入
+     */
+    @TableField("user_phone")
+    private String userPhone;
 
     /**
      * 创建时间

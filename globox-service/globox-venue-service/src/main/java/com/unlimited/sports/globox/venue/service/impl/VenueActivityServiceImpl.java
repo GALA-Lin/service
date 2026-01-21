@@ -57,7 +57,7 @@ public class VenueActivityServiceImpl extends ServiceImpl<VenueActivityMapper, V
     }
 
     /**
-     * 查询指定场馆指定日期的所有活动(正常状态）
+     * 查询指定场馆指定日期的所有活动
      * 用于批量获取活动信息
      */
     @Override
@@ -67,8 +67,8 @@ public class VenueActivityServiceImpl extends ServiceImpl<VenueActivityMapper, V
         }
         List<VenueActivity> venueActivities = venueActivityMapper.selectList(new LambdaQueryWrapper<VenueActivity>()
                 .eq(VenueActivity::getVenueId, venueId)
-                .eq(VenueActivity::getActivityDate, activityDate)
-                .eq(VenueActivity::getStatus, VenueActivityStatusEnum.NORMAL.getValue()));
+                .eq(VenueActivity::getActivityDate, activityDate));
+//                .eq(VenueActivity::getStatus, VenueActivityStatusEnum.NORMAL.getValue()));
 
         return venueActivities == null ? List.of() : venueActivities;
     }

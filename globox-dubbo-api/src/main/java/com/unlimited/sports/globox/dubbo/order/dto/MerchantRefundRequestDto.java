@@ -28,8 +28,5 @@ public class MerchantRefundRequestDto implements Serializable {
     private Long orderNo;
 
     @NotNull
-    private List<Long> orderItemIds;
-
-    @NotNull
     private String remark;
 }

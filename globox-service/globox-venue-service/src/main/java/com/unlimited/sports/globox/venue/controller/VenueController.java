@@ -5,14 +5,10 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.venue.dto.*;
+import com.unlimited.sports.globox.model.venue.enums.ReviewDeleteOperatorType;
+import com.unlimited.sports.globox.model.venue.vo.*;
 import com.unlimited.sports.globox.venue.service.IVenueSearchService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
-import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
-import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
-import com.unlimited.sports.globox.model.venue.vo.VenueItemVo;
-import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
-import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
-import com.unlimited.sports.globox.model.venue.vo.VenueListResponse;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -144,6 +140,31 @@ public class VenueController {
     }
 
     /**
+     * 删除场馆评论（用户只能删除自己的评论）
+     *
+     * @param reviewId 评论ID
+     * @param userIdStr 用户ID
+     * @return 成功标识
+     */
+    @DeleteMapping("/reviews/{reviewId}")
+    public R<Void> deleteReview(@PathVariable Long reviewId,
+                                @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) String userIdStr) {
+        long userId;
+        try {
+            userId = Long.parseLong(userIdStr);
+        } catch (NumberFormatException e) {
+            throw new GloboxApplicationException("获取用户ID失败");
+        }
+
+        DeleteVenueReviewDto dto = new DeleteVenueReviewDto();
+        dto.setReviewId(reviewId);
+        dto.setUserId(userId);
+        dto.setDeleteOperatorType(ReviewDeleteOperatorType.USER_SELF.getValue());
+        venueService.deleteReview(dto);
+        return R.ok(null);
+    }
+
+    /**
      * 获取场馆搜索过滤字典数据
      *
      * @return 包含场地类型、地面类型、场地片数、距离、设施等字典数据
@@ -158,16 +179,11 @@ public class VenueController {
      * 转换字典项列表
      * 将VenueDictVo.DictItem列表转换为VenueListResponse.DictItem列表
      */
-    private List<VenueListResponse.DictItem> convertDictItems(List<VenueDictVo.DictItem> dictItems) {
+    private List<VenueDictItem> convertDictItems(List<VenueDictItem> dictItems) {
         if (dictItems == null) {
             return Collections.emptyList();
         }
-        return dictItems.stream()
-                .map(item -> VenueListResponse.DictItem.builder()
-                        .value(item.getValue())
-                        .description(item.getDescription())
-                        .build())
-                .collect(Collectors.toList());
+        return dictItems;
     }
 
     /**

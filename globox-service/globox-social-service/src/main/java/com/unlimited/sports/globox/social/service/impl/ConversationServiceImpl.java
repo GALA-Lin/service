@@ -135,7 +135,7 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
             // 先检查会话是否已存在
             Conversation existing = conversationMapper.selectByUserPair(userId, friendId);
             if (existing != null) {
-                resetUnreadCount(existing.getConversationId(), userId);
+//                resetUnreadCount(existing.getConversationId(), userId);
                 return existing;
             }
 

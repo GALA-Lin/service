@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.merchant.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisDistributedLock;
+import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.merchant.mapper.*;
 import com.unlimited.sports.globox.merchant.service.MerchantSlotLockService;
 import com.unlimited.sports.globox.model.merchant.entity.*;
@@ -12,6 +13,7 @@ import com.unlimited.sports.globox.venue.constants.BookingCacheConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +23,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.unlimited.sports.globox.model.merchant.enums.OperatorSourceEnum.*;
+import static com.unlimited.sports.globox.model.merchant.enums.OperatorSourceEnum.MERCHANT;
 import static com.unlimited.sports.globox.model.merchant.enums.SlotRecordStatusEnum.*;
 
 @Slf4j
@@ -35,8 +37,12 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
     private final VenueMapper venueMapper;
     private final RedisDistributedLock redisDistributedLock;
 
+    @Autowired
+    private final IdGenerator idGenerator;
+
     @Override
-    public void lockSlotByMerchant(Long templateId, LocalDate bookingDate, String reason, Long merchantId) {
+    public void lockSlotByMerchant(Long templateId, LocalDate bookingDate, String reason,
+                                   String userName, String userPhone, Long merchantId, Long id) {
         // 1. 验证权限（在获取锁之前，快速失败）
         validateMerchantPermission(templateId, merchantId);
 
@@ -57,8 +63,9 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             log.info("【锁包事务】成功获取分布式锁 - merchantId: {}, templateId: {}, date: {}",
                     merchantId, templateId, bookingDate);
 
-            // 4. 在事务中执行锁定操作
-            executeSlotLockInTransaction(templateId, bookingDate, reason, merchantId);
+            // 4. 单个锁场不需要批次ID（传null）
+            executeSlotLockInTransaction(templateId, bookingDate, reason, userName, userPhone,
+                    null, merchantId,id);
 
             log.info("事务执行成功 - merchantId: {}, templateId: {}", merchantId, templateId);
 
@@ -73,7 +80,8 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
 
     @Transactional(rollbackFor = Exception.class)
     public void executeSlotLockInTransaction(Long templateId, LocalDate bookingDate,
-                                             String reason, Long merchantId) {
+                                             String reason, String userName, String userPhone,
+                                             Long batchId, Long merchantId,Long employeeId) {
         // 1. 查询模板（事务内再次验证）
         VenueBookingSlotTemplate template = templateMapper.selectById(templateId);
         if (template == null) {
@@ -100,10 +108,14 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             record.setStatus(UNAVAILABLE.getCode());
             record.setLockedType(MERCHANT.getCode());
             record.setLockReason(reason);
+            record.setMerchantBatchId(batchId); // 设置批次ID
+            record.setUserName(userName); // 设置使用人姓名
+            record.setUserPhone(userPhone); // 设置使用人手机号
+            record.setOperatorId(employeeId);
             recordMapper.updateById(record);
 
-            log.info("更新时段记录为锁定状态 - recordId: {}, templateId: {}, date: {}",
-                    record.getBookingSlotRecordId(), templateId, bookingDate);
+            log.info("更新时段记录为锁定状态 - recordId: {}, templateId: {}, date: {}, batchId: {}",
+                    record.getBookingSlotRecordId(), templateId, bookingDate, batchId);
         } else {
             // 记录不存在，创建新记录并直接设为锁定状态
             record = new VenueBookingSlotRecord();
@@ -112,20 +124,25 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             record.setStatus(UNAVAILABLE.getCode());
             record.setLockedType(MERCHANT.getCode());
             record.setLockReason(reason);
+            record.setMerchantBatchId(batchId); // 设置批次ID
             record.setOperatorSource(MERCHANT.getCode());
+            record.setOperatorId(merchantId);
+            record.setUserName(userName); // 设置使用人姓名
+            record.setUserPhone(userPhone); // 设置使用人手机号
             recordMapper.insert(record);
 
-            log.info("创建新记录并锁定 - templateId: {}, date: {}, recordId: {}",
-                    templateId, bookingDate, record.getBookingSlotRecordId());
+            log.info("创建新记录并锁定 - templateId: {}, date: {}, recordId: {}, batchId: {}",
+                    templateId, bookingDate, record.getBookingSlotRecordId(), batchId);
         }
 
-        log.info("商家ID: {} 锁定了模板ID: {}, 日期: {}, 原因: {}",
-                merchantId, templateId, bookingDate, reason);
+        log.info("商家ID: {} 锁定了模板ID: {}, 日期: {}, 原因: {}, 使用人: {} ({}), 批次ID: {}",
+                merchantId, templateId, bookingDate, reason, userName, userPhone, batchId);
     }
 
     @Override
     public void lockSlotsBatchByMerchant(List<Long> templateIds, LocalDate bookingDate,
-                                         String reason, Long merchantId) {
+                                         String reason, String userName, String userPhone,
+                                         Long merchantId, Long id) {
         if (templateIds == null || templateIds.isEmpty()) {
             throw new GloboxApplicationException("请选择要锁定的时段");
         }
@@ -139,7 +156,11 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             validateMerchantPermission(templateId, merchantId);
         }
 
-        // 2. 构建所有锁的key
+        // 2. 生成批次ID（使用雪花算法）
+        Long batchId =idGenerator.nextId();
+        log.info("生成批次ID: {} - merchantId: {}, 时段数: {}", batchId, merchantId, templateIds.size());
+
+        // 3. 构建所有锁的key
         List<String> lockKeys = templateIds.stream()
                 .map(templateId -> buildLockKey(templateId, bookingDate))
                 .collect(Collectors.toList());
@@ -147,7 +168,7 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
         List<RLock> locks = null;
 
         try {
-            // 3. 批量获取所有时段的锁
+            // 4. 批量获取所有时段的锁
             locks = redisDistributedLock.tryLockMultiple(lockKeys, 1, -1L, TimeUnit.SECONDS);
             if (locks == null) {
                 log.warn("批量获取分布式锁失败 - merchantId: {}, 时段数: {}",
@@ -157,14 +178,15 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             log.info("【锁包事务】成功批量获取分布式锁 - merchantId: {}, 时段数: {}",
                     merchantId, templateIds.size());
 
-            // 4. 在事务中批量执行锁定操作
-            executeBatchSlotLockInTransaction(templateIds, bookingDate, reason, merchantId);
+            // 5. 在事务中批量执行锁定操作（传入批次ID）
+            executeBatchSlotLockInTransaction(templateIds, bookingDate, reason, userName,
+                    userPhone, batchId, merchantId,id);
 
-            log.info("批量锁定事务执行成功 - merchantId: {}, 时段数: {}",
-                    merchantId, templateIds.size());
+            log.info("批量锁定事务执行成功 - merchantId: {}, 时段数: {}, 批次ID: {}",
+                    merchantId, templateIds.size(), batchId);
 
         } finally {
-            // 5. 释放所有锁
+            // 6. 释放所有锁
             if (locks != null) {
                 redisDistributedLock.unlockMultiple(locks);
                 log.info("【锁包事务】释放批量分布式锁 - merchantId: {}", merchantId);
@@ -174,14 +196,16 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
 
     @Transactional(rollbackFor = Exception.class)
     public void executeBatchSlotLockInTransaction(List<Long> templateIds, LocalDate bookingDate,
-                                                  String reason, Long merchantId) {
+                                                  String reason, String userName, String userPhone,
+                                                  Long batchId, Long merchantId,Long employeeId) {
         int successCount = 0;
         List<String> failedTemplates = new ArrayList<>();
 
         for (Long templateId : templateIds) {
             try {
                 // 使用单个锁定的事务逻辑（但不再获取锁，因为外层已经获取）
-                executeSlotLockInTransaction(templateId, bookingDate, reason, merchantId);
+                executeSlotLockInTransaction(templateId, bookingDate, reason, userName,
+                        userPhone, batchId, merchantId,employeeId);
                 successCount++;
             } catch (Exception e) {
                 log.warn("锁定模板ID: {}, 日期: {} 失败: {}",
@@ -190,9 +214,10 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             }
         }
 
-        log.info("商家ID: {} 批量锁定完成，成功: {}/{}, 失败模板: {}",
+        log.info("商家ID: {} 批量锁定完成，成功: {}/{}, 失败模板: {}, 批次ID: {}",
                 merchantId, successCount, templateIds.size(),
-                failedTemplates.isEmpty() ? "无" : String.join(",", failedTemplates));
+                failedTemplates.isEmpty() ? "无" : String.join(",", failedTemplates),
+                batchId);
 
         // 如果全部失败，抛出异常回滚事务
         if (successCount == 0) {
@@ -259,10 +284,13 @@ public class MerchantSlotLockServiceImpl implements MerchantSlotLockService {
             throw new GloboxApplicationException("该时段不是商家锁定的，无法解锁");
         }
 
-        // 3. 更新状态为可用
+        // 3. 更新状态为可用，清空批次ID和使用人信息
         record.setStatus(AVAILABLE.getCode());
         record.setLockedType(null);
         record.setLockReason(null);
+        record.setMerchantBatchId(null); // 清空批次ID
+        record.setUserName(null); // 清空使用人姓名
+        record.setUserPhone(null); // 清空使用人手机号
         recordMapper.updateById(record);
 
         log.info("商家ID: {} 解锁了模板ID: {}, 日期: {}", merchantId, templateId, bookingDate);

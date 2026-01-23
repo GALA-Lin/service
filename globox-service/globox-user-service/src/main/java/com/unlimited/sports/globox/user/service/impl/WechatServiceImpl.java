@@ -92,6 +92,7 @@ public class WechatServiceImpl implements WechatService {
                     log.error("【微信服务】miniapp配置不完整：app-id或app-secret为空");
                     throw new GloboxApplicationException(UserAuthCode.WECHAT_CONFIG_INVALID);
                 }
+                log.info("wechat config miniapp: appId={}, apiUrl={}", miniapp.getAppId(), miniapp.getApiUrl());
                 return miniapp;
             case "app":
                 WechatProperties.UniappConfig uniapp = wechatProperties.getUniapp();
@@ -106,6 +107,7 @@ public class WechatServiceImpl implements WechatService {
                 uniappAsMiniapp.setApiUrl(uniapp.getApiUrl());
                 uniappAsMiniapp.setAppId(uniapp.getAppId());
                 uniappAsMiniapp.setAppSecret(uniapp.getAppSecret());
+                log.info("wechat config uniapp: appId={}, apiUrl={}", uniappAsMiniapp.getAppId(), uniappAsMiniapp.getApiUrl());
                 return uniappAsMiniapp;
             default:
                 log.error("【微信服务】不支持的clientType：{}，仅支持 third-party-jsapi 和 app", clientType);
@@ -140,6 +142,7 @@ public class WechatServiceImpl implements WechatService {
                 : "https://api.weixin.qq.com/sns/jscode2session";
         String appId = config.getAppId();
         String appSecret = config.getAppSecret();
+        log.info("wechat jscode2session params: clientType={}, appId={}, apiUrl={}", clientType, appId, apiUrl);
 
         // 4) 构建请求
         String url;
@@ -228,6 +231,8 @@ public class WechatServiceImpl implements WechatService {
 
         // 3) 根据clientType解析配置（严格模式：jsapi等不支持的类型会直接报错）
         WechatProperties.MiniappConfig config = resolveWechatConfig(clientType);
+        log.info("【微信服务】getPhoneNumber配置: clientType={}, appId={}, apiUrl={}",
+                clientType, config.getAppId(), config.getApiUrl());
 
         try {
             // 4) 获取access_token
@@ -267,7 +272,8 @@ public class WechatServiceImpl implements WechatService {
                 int errcode = jsonNode.get("errcode").asInt();
                 if (errcode != 0) {
                     String errmsg = jsonNode.has("errmsg") ? jsonNode.get("errmsg").asText() : "unknown error";
-                    log.error("【微信API】获取手机号失败：phoneCode={}, errcode={}, errmsg={}", phoneCode, errcode, errmsg);
+                    log.error("【微信API】获取手机号失败：phoneCode={}, errcode={}, errmsg={}, appId={}",
+                            phoneCode, errcode, errmsg, config.getAppId());
                     if (errcode == 40029 || errcode == 40163) {
                         throw new GloboxApplicationException(UserAuthCode.WECHAT_CODE_EXPIRED);
                     }

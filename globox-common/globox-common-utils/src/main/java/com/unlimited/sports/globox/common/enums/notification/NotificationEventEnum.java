@@ -23,6 +23,7 @@ public enum NotificationEventEnum {
     // 订场者事件
     VENUE_BOOKING_REMINDER(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_BOOKING_REMINDER", "订场即将开始提醒"), // 订单详情
     ACTIVITY_BOOKING_REMINDER(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "ACTIVITY_BOOKING_REMINDER", "活动即将开始提醒"), //订单详情
+    VENUE_REFUND_SUCCESS(NotificationModuleEnum.VENUE_BOOKING, NotificationRoleEnum.VENUE_BOOKER, "VENUE_REFUND_SUCCESS", "退款已到账"), // 订单详情
 
 
 
@@ -35,6 +36,7 @@ public enum NotificationEventEnum {
     COACH_CLASS_BOOKER_REMINDER(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_CLASS_BOOKER_REMINDER", "您的课程即将开始"), // 订单详情
     COACH_REFUND_APPROVED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_REFUND_APPROVED", "退款申请已通过"), // 订单详情
     COACH_REFUND_REJECTED(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_REFUND_REJECTED", "退款申请已拒绝"), // 订单详情
+    COACH_REFUND_SUCCESS(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_REFUND_SUCCESS", "退款已到账"), // 订单详情
     COACH_ORDER_CANCELLED_BY_PROVIDER(NotificationModuleEnum.COACH_BOOKING, NotificationRoleEnum.COACH_BOOKER, "COACH_ORDER_CANCELLED_BY_PROVIDER", "订单已被教练取消"), // 订单详情
 
 

@@ -22,6 +22,7 @@ import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.entity.VenueBusinessHours;
 import com.unlimited.sports.globox.model.venue.dto.DeleteVenueReviewDto;
+import com.unlimited.sports.globox.model.venue.dto.GetActivitiesByVenueDto;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
@@ -39,6 +40,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplateP
 import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
+import com.unlimited.sports.globox.model.venue.vo.ActivityListVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDictItem;
@@ -592,6 +594,51 @@ public class VenueServiceImpl implements IVenueService {
                 review.getReviewType().equals(ReviewType.USER_COMMENT.getValue())) {
             updateVenueRating(review.getVenueId());
         }
+    }
+
+    @Override
+    public List<ActivityListVo> getVenueActivityList(GetActivitiesByVenueDto dto) {
+        // 查询指定场馆和日期的所有正常活动
+        List<VenueActivity> activities = venueActivityMapper.selectList(
+                new LambdaQueryWrapper<VenueActivity>()
+                        .eq(VenueActivity::getVenueId, dto.getVenueId())
+                        .eq(VenueActivity::getActivityDate, dto.getActivityDate())
+                        .eq(VenueActivity::getStatus, VenueActivityStatusEnum.NORMAL.getValue())
+                        .orderByAsc(VenueActivity::getStartTime)
+        );
+
+        if (activities.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 转换为VO列表
+        return activities.stream()
+                .map(activity -> {
+                    // 解析图片URL列表
+                    List<String> imageUrls = (activity.getImageUrls() != null && !activity.getImageUrls().isEmpty())
+                            ? activity.getImageUrls()
+                            : Collections.emptyList();
+
+                    return ActivityListVo.builder()
+                            .activityId(activity.getActivityId())
+                            .venueId(activity.getVenueId())
+                            .courtId(activity.getCourtId())
+                            .activityTypeId(activity.getActivityTypeId())
+                            .activityTypeDesc(activity.getActivityTypeDesc())
+                            .activityName(activity.getActivityName())
+                            .imageUrls(imageUrls)
+                            .activityDate(activity.getActivityDate())
+                            .startTime(activity.getStartTime())
+                            .endTime(activity.getEndTime())
+                            .maxParticipants(activity.getMaxParticipants())
+                            .currentParticipants(activity.getCurrentParticipants())
+                            .unitPrice(activity.getUnitPrice())
+                            .description(activity.getDescription())
+                            .registrationDeadline(activity.getRegistrationDeadline())
+                            .minNtrpLevel(activity.getMinNtrpLevel())
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 
 }

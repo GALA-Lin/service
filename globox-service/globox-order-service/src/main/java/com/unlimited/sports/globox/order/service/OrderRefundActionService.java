@@ -4,8 +4,6 @@ import com.unlimited.sports.globox.common.enums.order.OperatorTypeEnum;
 import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 
-import java.math.BigDecimal;
-
 /**
  * 订单退款实际动作执行
  */
@@ -27,5 +25,8 @@ public interface OrderRefundActionService {
             OperatorTypeEnum operatorType,
             SellerTypeEnum sellerType);
 
-    void refundSuccess(PaymentRefundMessage message);
+
+    void refundSuccessMQHandler(PaymentRefundMessage message);
+
+    void refundSuccessAction(Long orderNo, String outRequestNo);
 }

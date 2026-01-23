@@ -34,4 +34,9 @@ public class ActivityReminderMessage implements Serializable {
      * 消费时检查参与者记录的created_at必须等于此时间
      */
     private LocalDateTime registrationTime;
+
+    /**
+     * 订单号
+     */
+    private Long orderNo;
 }

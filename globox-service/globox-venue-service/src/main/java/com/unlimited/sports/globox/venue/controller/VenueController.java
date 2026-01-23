@@ -9,6 +9,7 @@ import com.unlimited.sports.globox.model.venue.enums.ReviewDeleteOperatorType;
 import com.unlimited.sports.globox.model.venue.vo.*;
 import com.unlimited.sports.globox.venue.service.IVenueSearchService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/venue/venues")
 public class VenueController {
@@ -96,6 +98,19 @@ public class VenueController {
     @GetMapping("/activities/{activityId}")
     public R<VenueActivityDetailVo> getActivityDetail(@PathVariable Long activityId) {
         VenueActivityDetailVo result = venueService.getActivityDetail(activityId);
+        return R.ok(result);
+    }
+
+    /**
+     * 根据场馆和日期查询活动列表
+     *
+     * @param dto 查询条件，包含场馆ID和活动日期
+     * @return 活动列表，按时间排序
+     */
+    @GetMapping("/activities/list")
+    public R<List<ActivityListVo>> getVenueActivityList(@Valid GetActivitiesByVenueDto dto) {
+        log.info("获取活动list: {}",dto);
+        List<ActivityListVo> result = venueService.getVenueActivityList(dto);
         return R.ok(result);
     }
 

@@ -63,11 +63,6 @@ public class LockedSlotVo {
     private String lockReason;
 
     /**
-     * 关联订单ID（用户订单锁定时有值）
-     */
-    private Long orderId;
-
-    /**
      * 关联订单号（用户订单锁定时有值）
      */
     private String orderNo;

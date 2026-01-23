@@ -132,11 +132,13 @@ public class PaymentSuccessConsumer {
                 return;
             }
 
+            String outRequestNo = UUID.randomUUID().toString().replace("-", "");
             if (order.getOrderStatus().equals(OrderStatusEnum.CANCELLED)) {
                 // 需要触发退款
                 UserRefundMessage refundMessage = UserRefundMessage.builder()
                         .orderNo(orderNo)
                         .outTradeNo(message.getOutTradeNo())
+                        .outRequestNo(outRequestNo)
                         .refundReason("订单已取消，无需支付")
                         .fullRefund(true)
                         .refundAmount(message.getTotalAmount())

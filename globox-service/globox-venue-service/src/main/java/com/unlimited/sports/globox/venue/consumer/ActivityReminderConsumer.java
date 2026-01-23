@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.VenueMQConstants;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.message.venue.ActivityReminderMessage;
 import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
@@ -137,6 +138,8 @@ public class ActivityReminderConsumer {
                             .put("activityDate", activity.getActivityDate())
                             .put("startTime", activity.getStartTime())
                             .put("endTime", activity.getEndTime())
+                            .put("orderNo", message.getOrderNo())
+                            .put("sellerType", SellerTypeEnum.VENUE.getCode())
                             .build()
             );
 

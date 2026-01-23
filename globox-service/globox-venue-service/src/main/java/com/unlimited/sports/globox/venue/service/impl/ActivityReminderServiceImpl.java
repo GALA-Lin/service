@@ -43,7 +43,7 @@ public class ActivityReminderServiceImpl implements IActivityReminderService {
     private int reminderAdvanceSeconds;
 
     @Override
-    public void sendActivityReminderMessage(Long userId, Long activityId) {
+    public void sendActivityReminderMessage(Long userId, Long activityId, Long orderNo) {
         if (activityId == null) {
             log.warn("[活动提醒] 活动ID为空 - userId={}", userId);
             return;
@@ -86,6 +86,7 @@ public class ActivityReminderServiceImpl implements IActivityReminderService {
                     .userId(userId)
                     .participantId(participant.getParticipantId())
                     .registrationTime(participant.getCreatedAt())
+                    .orderNo(orderNo)
                     .build();
 
             // 发送延迟消息
@@ -96,11 +97,11 @@ public class ActivityReminderServiceImpl implements IActivityReminderService {
                     (int) delaySeconds
             );
 
-            log.info("[活动提醒] 延迟消息已发送 - userId={}, activityId={}, activityName={}, 延迟{}秒",
-                    userId, activityId, activity.getActivityName(), delaySeconds);
+            log.info("[活动提醒] 延迟消息已发送 - userId={}, activityId={}, orderNo={}, activityName={}, 延迟{}秒",
+                    userId, activityId, orderNo, activity.getActivityName(), delaySeconds);
 
         } catch (Exception e) {
-            log.error("[活动提醒] 发送延迟消息失败 - userId={}, activityId={}", userId, activityId, e);
+            log.error("[活动提醒] 发送延迟消息失败 - userId={}, activityId={}, orderNo={}", userId, activityId, orderNo, e);
         }
     }
 }

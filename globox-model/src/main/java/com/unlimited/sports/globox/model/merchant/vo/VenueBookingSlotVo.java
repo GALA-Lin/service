@@ -70,7 +70,6 @@ public class VenueBookingSlotVo {
      */
     private Long userId;
 
-
     // ===== 普通槽位字段（slotType=1时使用）=====
 
     /**
@@ -109,9 +108,9 @@ public class VenueBookingSlotVo {
     private String lockReason;
 
     /**
-     * 关联订单ID（如果有）
+     * 关联订单号（如果有）- 修改为 Long 类型
      */
-    private String orderId;
+    private Long orderNo;
 
     /**
      * 是否是本人预定的槽位（仅当slotType=1时使用）
@@ -151,7 +150,6 @@ public class VenueBookingSlotVo {
      * 活动单人价格
      */
     private BigDecimal unitPrice;
-
 
     /**
      * 锁场批次
@@ -232,8 +230,8 @@ public class VenueBookingSlotVo {
                 .merchantBatchId(record != null ? record.getMerchantBatchId() : null)
                 .userName(record != null ? record.getUserName() : null)
                 .userPhone(record != null ? record.getUserPhone() : null)
-                .orderId(record != null && record.getOrderId() != null ? String.valueOf(record.getOrderId()) : null)
-                .displayName(displayName) //商家锁场操作人昵称
+                .orderNo(record != null ? record.getOrderNo() : null)
+                .displayName(displayName)
                 .build();
     }
 

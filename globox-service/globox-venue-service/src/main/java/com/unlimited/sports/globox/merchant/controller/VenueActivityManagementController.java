@@ -6,11 +6,17 @@ import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
 import com.unlimited.sports.globox.model.merchant.vo.ActivityCreationResultVo;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
+import com.unlimited.sports.globox.model.venue.dto.UpdateActivityDto;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+
+import java.time.LocalDate;
+import java.util.List;
 
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
@@ -53,6 +59,91 @@ public class VenueActivityManagementController {
                 result.getActivityId(), result.getMerchantBatchId(),
                 result.getOccupiedSlots().size());
 
+        return R.ok(result);
+    }
+
+
+    /**
+     * 更新活动
+     *
+     * @param employeeId 员工ID
+     * @param roleStr    员工角色
+     * @param activityId 活动ID
+     * @param dto        更新活动请求
+     * @return 更新后的活动详情
+     */
+    @PutMapping("/{activityId}")
+    public R<ActivityCreationResultVo> updateActivity(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @PathVariable Long activityId,
+            @Valid @RequestBody UpdateActivityDto dto) {
+
+        log.info("商家更新活动 - employeeId: {}, role: {}, activityId: {}",
+                employeeId, roleStr, activityId);
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        ActivityCreationResultVo result = activityManagementService.updateActivity(activityId, dto, context);
+
+        log.info("活动更新成功 - activityId: {}", activityId);
+
+        return R.ok(result);
+    }
+
+
+    @PostMapping("/cancel")
+    public R<Void> cancelActivity(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @Valid @RequestBody CancelActivityRequest request) {
+
+        log.info("商家发起取消活动 - employeeId: {}, activityId: {}", employeeId, request.getActivityId());
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        activityManagementService.cancelActivity(request.getActivityId(), context, request.getCancelReason());
+
+        return R.ok();
+    }
+
+    @Data
+    public static class CancelActivityRequest {
+        @NotNull(message = "活动ID不能为空")
+        private Long activityId;
+
+        private String cancelReason;
+    }
+
+    /**
+     * 查询商家所有活动列表
+     */
+    @GetMapping("/list")
+    public R<List<ActivityCreationResultVo>> listMerchantActivities(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+
+        log.info("商家查询活动列表 - employeeId: {}", employeeId);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        List<ActivityCreationResultVo> result = activityManagementService.getMerchantActivities(context);
+        return R.ok(result);
+    }
+
+    /**
+     * 根据场馆查询活动
+     */
+    @GetMapping("/{venueId}/list")
+    public R<List<ActivityCreationResultVo>> getActivitiesByVenue(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @PathVariable Long venueId,
+            @RequestParam(required = false)LocalDate activityDate) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        // 验证场馆访问权限
+        merchantAuthUtil.validateVenueAccess(context, venueId);
+
+        List<ActivityCreationResultVo> result = activityManagementService.getActivitiesByVenueId(venueId,activityDate);
         return R.ok(result);
     }
 }

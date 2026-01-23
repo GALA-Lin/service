@@ -6,23 +6,29 @@ import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
-import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
+import com.unlimited.sports.globox.common.utils.NotificationSender;
+import com.unlimited.sports.globox.order.util.CoachNotificationHelper;
+import com.unlimited.sports.globox.order.util.VenueNotificationHelper;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeRequestDto;
 import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeResultVo;
+import com.unlimited.sports.globox.dubbo.payment.PaymentForOrderDubboService;
+import com.unlimited.sports.globox.dubbo.payment.dto.UserRefundRequestDto;
 import com.unlimited.sports.globox.model.order.entity.*;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
+import io.seata.spring.annotation.GlobalTransactional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -33,7 +39,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 订单退款实际动作执行
@@ -69,17 +74,31 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
     @Autowired
     private OrderExtraChargeLinksMapper orderExtraChargeLinksMapper;
 
+    @Lazy
+    @Autowired
+    private OrderRefundActionService thisService;
+
     @Autowired
     private MQService mqService;
 
     @DubboReference(group = "rpc")
     private MerchantRefundRuleDubboService merchantRefundRuleDubboService;
 
+    @DubboReference(group = "rpc")
+    private PaymentForOrderDubboService paymentForOrderDubboService;
+
     @Autowired
     private JsonUtils jsonUtils;
 
+    @Autowired
+    private CoachNotificationHelper coachNotificationHelper;
+
+    @Autowired
+    private VenueNotificationHelper venueNotificationHelper;
+
     @Override
     @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @GlobalTransactional
     @Transactional(rollbackFor = Exception.class)
     public int refundAction(Long orderNo,
             Long refundApplyId,
@@ -403,23 +422,25 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
         LocalDate bookingDate = items.get(0).getBookingDate();
 
         BigDecimal finalTotalRefundAmount = totalRefundAmount;
+
+        // 直接发起退款 rpc
+        UserRefundRequestDto requestDto = UserRefundRequestDto.builder()
+                .refundReason(apply.getReasonCode().getCode() + ":" + apply.getReasonDetail())
+                .outTradeNo(order.getOutTradeNo())
+                .outRequestNo(outRequestNo)
+                .orderNo(order.getOrderNo())
+                .fullRefund(fullRefundAfterThis)
+                .refundAmount(finalTotalRefundAmount)
+                .build();
+        RpcResult<Void> result = paymentForOrderDubboService.userRefund(requestDto);
+        Assert.rpcResultOk(result);
+
+        // 退款状态修改
+        thisService.refundSuccessAction(orderNo, outRequestNo);
+
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-
-                UserRefundMessage refundMessage = UserRefundMessage.builder()
-                        .refundReason(apply.getReasonCode().getCode() + ":" + apply.getReasonDetail())
-                        .outTradeNo(order.getOutTradeNo())
-                        .outRequestNo(outRequestNo)
-                        .orderNo(order.getOrderNo())
-                        .fullRefund(fullRefundAfterThis)
-                        .refundAmount(finalTotalRefundAmount)
-                        .build();
-
-                mqService.send(
-                        OrderMQConstants.EXCHANGE_TOPIC_ORDER_REFUND_APPLY_TO_PAYMENT,
-                        OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT,
-                        refundMessage);
 
                 UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
                         .userId(order.getBuyerId())
@@ -446,22 +467,9 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
         return approvedCount;
     }
 
-    @Override
+
     @Transactional(rollbackFor = Exception.class)
-    public void refundSuccess(PaymentRefundMessage message) {
-        Assert.isNotEmpty(message, OrderCode.PARAM_ERROR);
-        Long orderNo = message.getOrderNo();
-        String outRequestNo = message.getOutRequestNo();
-
-        Assert.isNotEmpty(orderNo, OrderCode.PARAM_ERROR);
-
-        if (!message.isOrderCancelled()) {
-            Assert.isTrue(outRequestNo != null && !outRequestNo.isBlank(), OrderCode.PARAM_ERROR);
-        } else {
-            // 订单已经到了被取消的状态，不需要其他操作
-            return;
-        }
-
+    public void refundSuccessAction(Long orderNo, String outRequestNo) {
         LocalDateTime now = LocalDateTime.now();
 
         // 1) 锁定退款申请（用 out_request_no 精确定位，FOR UPDATE 防并发）
@@ -645,5 +653,30 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
 
         log.info("[REFUND_SUCCESS] handled. orderNo={}, refundApplyId={}, outRequestNo={}, newOrderStatus={}",
                 orderNo, refundApplyId, outRequestNo, newOrderStatus);
+
+        // 13) 发送退款成功通知给用户
+        if (SellerTypeEnum.VENUE.equals(order.getSellerType())) {
+            venueNotificationHelper.sendVenueRefundSuccess(orderNo, order.getBuyerId(), apply.getRefundAmount());
+        } else if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
+            coachNotificationHelper.sendCoachRefundSuccess(orderNo, order.getBuyerId(), apply.getRefundAmount());
+        }
+    }
+
+    @Override
+    public void refundSuccessMQHandler(PaymentRefundMessage message) {
+        Assert.isNotEmpty(message, OrderCode.PARAM_ERROR);
+        Long orderNo = message.getOrderNo();
+        String outRequestNo = message.getOutRequestNo();
+
+        Assert.isNotEmpty(orderNo, OrderCode.PARAM_ERROR);
+
+        if (!message.isOrderCancelled()) {
+            Assert.isTrue(outRequestNo != null && !outRequestNo.isBlank(), OrderCode.PARAM_ERROR);
+        } else {
+            // 订单已经到了被取消的状态，不需要其他操作
+            return;
+        }
+
+        thisService.refundSuccessAction(orderNo, outRequestNo);
     }
 }

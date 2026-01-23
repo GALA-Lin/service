@@ -61,11 +61,10 @@ public class VenueBookingSlotRecord {
     private Long merchantBatchId;
 
     /**
-     * 关联订单ID（占用时）
+     * 关联订单号（占用时）
      */
-    @TableField("order_id")
-    private Long orderId;
-
+    @TableField("order_no")
+    private Long orderNo;
     /**
      * 操作人来源：1-商家端 2=用户端
      */

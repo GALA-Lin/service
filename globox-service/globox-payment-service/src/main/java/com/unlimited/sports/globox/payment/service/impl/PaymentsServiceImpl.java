@@ -7,13 +7,14 @@ import com.unlimited.sports.globox.common.enums.ThirdPartyJsapiEnum;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
-import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.result.PaymentsCode;
+import com.unlimited.sports.globox.common.result.ResultCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.dubbo.order.OrderForPaymentDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.PaymentGetOrderResultDto;
+import com.unlimited.sports.globox.dubbo.payment.dto.UserRefundRequestDto;
 import com.unlimited.sports.globox.model.payment.dto.SubmitRequestDto;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
@@ -24,6 +25,7 @@ import com.unlimited.sports.globox.payment.service.PaymentsService;
 import com.unlimited.sports.globox.payment.mapper.PaymentsMapper;
 import com.unlimited.sports.globox.payment.service.WechatPayMoonCourtJsapiService;
 import com.unlimited.sports.globox.payment.service.WechatPayService;
+import io.seata.spring.annotation.GlobalTransactional;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
@@ -230,61 +232,66 @@ public class PaymentsServiceImpl implements PaymentsService {
         }
     }
 
+    @Override
+    @GlobalTransactional
+    @Transactional(rollbackFor = Exception.class)
+    public ResultCode refund(UserRefundRequestDto dto) {
+        return thisService.refundAction(dto);
+    }
+
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public boolean refund(UserRefundMessage message) {
+    public ResultCode refundAction(UserRefundRequestDto dto) {
         // 根据 orderId 查询支付信息
-        Payments payments = thisService.getPaymentByOutTradeNo(message.getOutTradeNo());
+        Payments payments = thisService.getPaymentByOutTradeNo(dto.getOutTradeNo());
 
         // 判断
         if (payments == null) {
-            return false;
+            return PaymentsCode.PAYMENT_INFO_NOT_EXIST;
         }
 
-        payments.setOutRequestNo(message.getOutRequestNo());
+        payments.setOutRequestNo(dto.getOutRequestNo());
 
         BigDecimal refunded = payments.getRefundAmount() == null ? BigDecimal.ZERO : payments.getRefundAmount();
-        BigDecimal currentRefundAmount = refunded.add(message.getRefundAmount());
+        BigDecimal currentRefundAmount = refunded.add(dto.getRefundAmount());
         payments.setRefundAmount(currentRefundAmount);
 
         BigDecimal remain = payments.getTotalAmount().subtract(currentRefundAmount);
 
         if (remain.compareTo(BigDecimal.ZERO) < 0) {
-            log.error("申请退款的金额大于订单可退金额，payments:{}", jsonUtils.objectToJson(payments));
-            return false;
+            log.warn("申请退款的金额大于订单可退金额，payments:{}", jsonUtils.objectToJson(payments));
+            return PaymentsCode.PAYMENT_REFUND_AMOUNT_ERROR;
 
         }
 
         // 是否整单退款
-        payments.setPaymentStatus(message.isFullRefund() ? PaymentStatusEnum.CLOSED : PaymentStatusEnum.PARTIALLY_REFUNDED);
+        payments.setPaymentStatus(dto.isFullRefund() ? PaymentStatusEnum.CLOSED : PaymentStatusEnum.PARTIALLY_REFUNDED);
 
-        thisService.updatePayment(payments);
-
-        boolean success = false;
+        ResultCode resultCode;
         // 具体支付平台实现
         if (PaymentTypeEnum.ALIPAY.equals(payments.getPaymentType())) {
             // 支付宝退款实现
-            success = alipayService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+            resultCode = alipayService.refund(payments, dto.getRefundAmount(), dto.getRefundReason());
         } else if (PaymentTypeEnum.WECHAT_PAY.equals(payments.getPaymentType())) {
             if (payments.getThirdPartyJsapi() != null) {
                 // 三方小程序退款
                 if (payments.getThirdPartyJsapi().equals(ThirdPartyJsapiEnum.MOON_COURT)) {
-                    success = wechatPayMoonCourtJsapiService.refund(payments,
-                            message.getRefundAmount(),
-                            message.getRefundReason());
+                    resultCode = wechatPayMoonCourtJsapiService.refund(payments,
+                            dto.getRefundAmount(),
+                            dto.getRefundReason());
                 } else {
-                    throw new GloboxApplicationException(PaymentsCode.THIRD_PARTY_TYPE_NOT_EXIST);
+                    resultCode = PaymentsCode.THIRD_PARTY_TYPE_NOT_EXIST;
                 }
             } else {
                 // 微信支付退款实现
-                success = wechatPayService.refund(payments, message.getRefundAmount(), message.getRefundReason());
+                resultCode = wechatPayService.refund(payments, dto.getRefundAmount(), dto.getRefundReason());
             }
         } else {
             // 不支持的退款方式
-            throw new GloboxApplicationException(PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE);
+            resultCode = PaymentsCode.NOT_SUPPORTED_PAYMENT_TYPE;
         }
 
-        return success;
+        thisService.updatePayment(payments);
+        return resultCode;
     }
 }

@@ -75,14 +75,14 @@ public class VenuePaymentSuccessConsumer {
             if (Boolean.TRUE.equals(isActivity)) {
                 // 活动订单，recordIds.get(0) 是活动ID
                 Long activityId = recordIds.get(0);
-                activityReminderService.sendActivityReminderMessage(userId, activityId);
-                log.info("[场馆支付成功] 活动提醒延迟消息已发送 - userId={}, activityId={}",
-                        userId, activityId);
+                activityReminderService.sendActivityReminderMessage(userId, activityId, orderNo);
+                log.info("[场馆支付成功] 活动提醒延迟消息已发送 - userId={}, activityId={}, orderNo={}",
+                        userId, activityId, orderNo);
             } else {
                 // 普通订场订单，recordIds 是槽位记录ID列表
-                venueBookingReminderService.sendBookingReminderMessages(userId, recordIds);
-                log.info("[场馆支付成功] 订场提醒延迟消息已发送 - userId={}, recordIds={}",
-                        userId, recordIds);
+                venueBookingReminderService.sendBookingReminderMessages(userId, recordIds, orderNo);
+                log.info("[场馆支付成功] 订场提醒延迟消息已发送 - userId={}, recordIds={}, orderNo={}",
+                        userId, recordIds, orderNo);
             }
 
             // 1. 构建请求参数

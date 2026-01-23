@@ -2,6 +2,9 @@ package com.unlimited.sports.globox.merchant.service.impl;
 
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.dubbo.order.OrderForMerchantDubboService;
+import com.unlimited.sports.globox.dubbo.order.dto.MerchantGetOrderDetailsRequestDto;
+import com.unlimited.sports.globox.dubbo.order.dto.MerchantGetOrderResultDto;
 import com.unlimited.sports.globox.merchant.mapper.*;
 import com.unlimited.sports.globox.merchant.service.VenueSlotRecordService;
 import com.unlimited.sports.globox.model.merchant.entity.*;
@@ -19,6 +22,7 @@ import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenuePriceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +52,9 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
     private final IVenueActivityService venueActivityService;
 
     private final VenueStaffMapper venueStaffMapper;
+
+    @DubboReference(group = "rpc")
+    private OrderForMerchantDubboService orderForMerchantDubboService;
 
     /**
      * 为指定日期生成槽位记录
@@ -252,7 +259,7 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                         vo.setUserName(record.getUserName());
                         vo.setUserPhone(record.getUserPhone());
                         vo.setLockReason(record.getLockReason());
-                        vo.setOrderId(String.valueOf(record.getOrderId()));
+                        vo.setOrderNo(record.getOrderNo());
                     }
 
                     return vo;
@@ -393,7 +400,6 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                 .map(VenueActivity::getActivityId)
                 .collect(Collectors.toList());
 
-
         Map<Long, Long> activityLockedSlots = allActivityIds.isEmpty() ?
                 Map.of() :
                 venueActivityService.getActivityLockedSlotsByIds(allActivityIds, date);
@@ -402,6 +408,32 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
 
         log.info("查询到活动数量: {}", allActivities.size());
         log.info("活动占用槽位映射内容: {}", activityLockedSlots);
+
+        Set<Long> orderNos = allRecords.stream()
+                .map(VenueBookingSlotRecord::getOrderNo)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, MerchantGetOrderResultDto> orderDetailMap = new HashMap<>();
+        if (!orderNos.isEmpty()) {
+            for (Long orderNo : orderNos) {
+                try {
+                    var result = orderForMerchantDubboService.getOrderDetails(
+                            MerchantGetOrderDetailsRequestDto.builder()
+                                    .orderNo(orderNo)
+                                    .merchantId(venue.getMerchantId())
+                                    .venueId(venueId)
+                                    .build()
+                    );
+                    if (result != null && result.getData() != null) {
+                        orderDetailMap.put(orderNo, result.getData());
+                    }
+                } catch (Exception e) {
+                    log.warn("获取订单详情失败 - orderNo: {}", orderNo, e);
+                }
+            }
+        }
+
         // 10. 为每个场地构建槽位可用性信息
         List<VenueSlotAvailabilityVo> result = new ArrayList<>();
 
@@ -435,8 +467,8 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
             long availableCount = slots.stream().filter(VenueBookingSlotVo::getIsAvailable).count();
 
             // 转换为 SlotAvailabilityVo 格式以兼容商家端接口返回值
-            // 注意：convertToSlotAvailabilityVo 内部会从 BookingSlotVo 提取 lockedType 和 lockReason
-            List<SlotAvailabilityVo> merchantSlots = convertToSlotAvailabilityVo(slots);
+            List<SlotAvailabilityVo> merchantSlots = convertToSlotAvailabilityVo(slots, orderDetailMap);
+
 
             result.add(VenueSlotAvailabilityVo.builder()
                     .courtId(court.getCourtId())
@@ -454,34 +486,57 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
     /**
      * 转换 BookingSlotVo 为 SlotAvailabilityVo（兼容商家端接口）
      */
-    private List<SlotAvailabilityVo> convertToSlotAvailabilityVo(List<VenueBookingSlotVo> bookingSlots) {
+    private List<SlotAvailabilityVo> convertToSlotAvailabilityVo(
+            List<VenueBookingSlotVo> bookingSlots,
+            Map<Long, MerchantGetOrderResultDto> orderDetailMap) {
+
         return bookingSlots.stream()
-                .map(slot -> SlotAvailabilityVo.builder()
-                        .startTime(slot.getStartTime())
-                        .endTime(slot.getEndTime())
-                        .templateId(slot.getTemplateId())
-                        .bookingSlotId(slot.getBookingSlotId())
-                        .status(slot.getStatus())
-                        .available(slot.getIsAvailable())
-                        .price(slot.getPrice())
-                        .statusRemark(slot.getStatusDesc())
-                        .lockedType(slot.getLockedType())
-                        .lockReason(slot.getLockReason())
-                        .displayName(slot.getDisplayName())
-                        .orderId(slot.getOrderId())
-                        .merchantBatchId(slot.getMerchantBatchId())
-                        .userName(slot.getUserName())
-                        .userPhone(slot.getUserPhone())
-                        // 活动相关字段
-                        .slotType(slot.getSlotType())
-                        .activityName(slot.getActivityName())
-                        .imageUrls(slot.getImageUrls()) // 映射图片URL
-                        .currentParticipants(slot.getCurrentParticipants())
-                        .maxParticipants(slot.getMaxParticipants())
-                        .build())
+                .map(slot -> {
+                    SlotAvailabilityVo vo = SlotAvailabilityVo.builder()
+                            .startTime(slot.getStartTime())
+                            .endTime(slot.getEndTime())
+                            .templateId(slot.getTemplateId())
+                            .bookingSlotId(slot.getBookingSlotId())
+                            .status(slot.getStatus())
+                            .available(slot.getIsAvailable())
+                            .price(slot.getPrice())
+                            .statusRemark(slot.getStatusDesc())
+                            .lockedType(slot.getLockedType())
+                            .lockReason(slot.getLockReason())
+                            .displayName(slot.getDisplayName())
+                            .orderNo(slot.getOrderNo())
+                            .merchantBatchId(slot.getMerchantBatchId())
+                            .userName(slot.getUserName())
+                            .userPhone(slot.getUserPhone())
+                            // 活动相关字段
+                            .slotType(slot.getSlotType())
+                            .activityName(slot.getActivityName())
+                            .imageUrls(slot.getImageUrls())
+                            .currentParticipants(slot.getCurrentParticipants())
+                            .maxParticipants(slot.getMaxParticipants())
+                            .build();
+
+                    // 【新增】如果有订单号，添加订单详情
+                    if (slot.getOrderNo() != null && orderDetailMap.containsKey(slot.getOrderNo())) {
+                        MerchantGetOrderResultDto orderDto = orderDetailMap.get(slot.getOrderNo());
+                        vo.setOrderDetail(SlotAvailabilityVo.OrderDetailInfo.builder()
+                                .orderNo(orderDto.getOrderNo())
+                                .userId(orderDto.getUserId())
+                                .venueName(orderDto.getVenueName())
+                                .totalPrice(orderDto.getTotalPrice())
+                                .paymentStatus(orderDto.getPaymentStatus().getCode())
+                                .paymentStatusName(orderDto.getPaymentStatusName())
+                                .orderStatus(orderDto.getOrderStatus().getCode())
+                                .orderStatusName(orderDto.getOrderStatusName())
+                                .isActivity(orderDto.isActivity())
+                                .activityTypeName(orderDto.getActivityTypeName())
+                                .build());
+                    }
+
+                    return vo;
+                })
                 .collect(Collectors.toList());
     }
-
     /**
      * 根据时间范围过滤槽位（BookingSlotVo 版本）
      */

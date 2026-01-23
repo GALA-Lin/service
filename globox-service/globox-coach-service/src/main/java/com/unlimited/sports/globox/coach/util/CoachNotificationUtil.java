@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.coach.util;
 import com.unlimited.sports.globox.common.constants.CoachMQConstants;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEntityTypeEnum;
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.message.coach.CoachClassReminderMessage;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
@@ -63,6 +64,7 @@ public class CoachNotificationUtil {
             Map<String, Object> coachCustomData = new HashMap<>();
             coachCustomData.put("orderNo", orderNo);
             coachCustomData.put("reminderType", "PROVIDER");
+            coachCustomData.put("sellerType", SellerTypeEnum.COACH.getCode());
 
             notificationSender.sendNotification(coachId, NotificationEventEnum.COACH_CLASS_PROVIDER_REMINDER, orderNo, coachCustomData);
 
@@ -71,6 +73,7 @@ public class CoachNotificationUtil {
             bookerCustomData.put("orderNo", orderNo);
             bookerCustomData.put("coachName", coachName);
             bookerCustomData.put("reminderType", "BOOKER");
+            bookerCustomData.put("sellerType", SellerTypeEnum.COACH.getCode());
 
             notificationSender.sendNotification(buyerId, NotificationEventEnum.COACH_CLASS_BOOKER_REMINDER, orderNo, bookerCustomData);
 
@@ -271,6 +274,7 @@ public class CoachNotificationUtil {
             Map<String, Object> customData = new HashMap<>();
             customData.put("orderNo", orderNo);
             customData.put("coachName", coachName);
+            customData.put("sellerType", SellerTypeEnum.COACH.getCode());
 
             notificationSender.sendNotification(studentId, NotificationEventEnum.COACH_APPOINTMENT_CONFIRMED, orderNo, customData,
                     NotificationEntityTypeEnum.USER, coachId);
@@ -288,6 +292,7 @@ public class CoachNotificationUtil {
             Map<String, Object> customData = new HashMap<>();
             customData.put("orderNo", orderNo);
             customData.put("approvedAt", LocalDateTime.now().toString());
+            customData.put("sellerType", SellerTypeEnum.COACH.getCode());
 
             notificationSender.sendNotification(studentId, NotificationEventEnum.COACH_REFUND_APPROVED, orderNo, customData,
                     NotificationEntityTypeEnum.USER, coachId);
@@ -306,6 +311,7 @@ public class CoachNotificationUtil {
             customData.put("orderNo", orderNo);
             customData.put("rejectedAt", LocalDateTime.now().toString());
             customData.put("remark", remark != null ? remark : "教练拒绝退款申请");
+            customData.put("sellerType", SellerTypeEnum.COACH.getCode());
 
             notificationSender.sendNotification(studentId, NotificationEventEnum.COACH_REFUND_REJECTED, orderNo, customData,
                     NotificationEntityTypeEnum.USER, coachId);
@@ -323,30 +329,13 @@ public class CoachNotificationUtil {
             Map<String, Object> customData = new HashMap<>();
             customData.put("orderNo", orderNo);
             customData.put("cancelledAt", LocalDateTime.now().toString());
+            customData.put("sellerType", SellerTypeEnum.COACH.getCode());
 
             notificationSender.sendNotification(studentId, NotificationEventEnum.COACH_ORDER_CANCELLED_BY_PROVIDER, orderNo, customData,
                     NotificationEntityTypeEnum.USER, coachId);
             log.info("[学员通知] 订单被教练取消通知发送成功 - orderNo={}, studentId={}, coachId={}", orderNo, studentId, coachId);
         } catch (Exception e) {
             log.error("[学员通知] 订单被教练取消通知发送失败 - orderNo={}, studentId={}", orderNo, studentId, e);
-        }
-    }
-
-    /**
-     * 发送COACH_PROVIDER_APPOINTMENT_CANCELLED通知（教练取消未支付订单后发送给学员，展示教练信息）
-     */
-    public void sendCoachAppointmentCancelled(Long orderNo, Long studentId, Long coachId, String coachName) {
-        try {
-            Map<String, Object> customData = new HashMap<>();
-            customData.put("orderNo", orderNo);
-            customData.put("coachName", coachName);
-            customData.put("cancelledAt", LocalDateTime.now().toString());
-
-            notificationSender.sendNotification(studentId, NotificationEventEnum.COACH_PROVIDER_APPOINTMENT_CANCELLED, orderNo, customData,
-                    NotificationEntityTypeEnum.USER, coachId);
-            log.info("[学员通知] 订单取消通知发送成功 - orderNo={}, studentId={}, coachId={}", orderNo, studentId, coachId);
-        } catch (Exception e) {
-            log.error("[学员通知] 订单取消通知发送失败 - orderNo={}, studentId={}", orderNo, studentId, e);
         }
     }
 }

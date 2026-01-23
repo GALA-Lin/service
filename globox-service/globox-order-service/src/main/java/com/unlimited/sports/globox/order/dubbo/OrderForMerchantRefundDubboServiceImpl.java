@@ -17,6 +17,8 @@ import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import com.unlimited.sports.globox.order.service.OrderRefundService;
+import io.seata.spring.annotation.GlobalTransactional;
+import io.seata.tm.api.transaction.Propagation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -382,6 +384,20 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
      * @return 返回商家退款的结果，包括订单状态、退款申请状态等信息
      */
     @Override
+    @GlobalTransactional(
+            // 当前全局事务的名称
+            name = "merchant-refund",
+            // 回滚异常
+            rollbackFor = Exception.class,
+            // 全局锁重试间隔
+            lockRetryInterval = 5000,
+            // 全局锁重试次数
+            lockRetryTimes = 5,
+            // 超时时间
+            timeoutMills = 30000,
+            //事务传播
+            propagation = Propagation.REQUIRES_NEW
+    )
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     public RpcResult<SellerRefundResultDto> refund(MerchantRefundRequestDto dto) {
         List<Long> itemList = orderItemsMapper.selectList(

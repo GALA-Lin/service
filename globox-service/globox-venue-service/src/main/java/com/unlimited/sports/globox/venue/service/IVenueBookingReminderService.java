@@ -13,6 +13,7 @@ public interface IVenueBookingReminderService {
      *
      * @param userId 用户ID
      * @param recordIds 槽位记录ID列表
+     * @param orderNo 订单号
      */
-    void sendBookingReminderMessages(Long userId, List<Long> recordIds);
+    void sendBookingReminderMessages(Long userId, List<Long> recordIds, Long orderNo);
 }

@@ -89,5 +89,21 @@ public class CoachNotificationHelper {
         }
     }
 
+    /**
+     * 发送COACH_REFUND_SUCCESS通知（退款成功到账，通知学员"退款已到账"）
+     */
+    public void sendCoachRefundSuccess(Long orderNo, Long buyerId, BigDecimal refundAmount) {
+        try {
+            Map<String, Object> customData = new HashMap<>();
+            customData.put("orderNo", orderNo);
+            customData.put("refundAmount", refundAmount.toString());
+            customData.put("refundCompletedAt", LocalDateTime.now().toString());
+
+            notificationSender.sendNotification(buyerId, NotificationEventEnum.COACH_REFUND_SUCCESS, orderNo, customData);
+            log.info("[Coach通知] 退款成功到账，通知学员, orderNo={}, buyerId={}, refundAmount={}", orderNo, buyerId, refundAmount);
+        } catch (Exception e) {
+            log.error("[Coach通知] 退款成功通知发送失败, orderNo={}, buyerId={}", orderNo, buyerId, e);
+        }
+    }
 
 }

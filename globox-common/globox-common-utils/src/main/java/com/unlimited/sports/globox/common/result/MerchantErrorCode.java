@@ -10,6 +10,12 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum MerchantErrorCode implements ResultCode {
+
+    /**
+     * 需要商家Owner权限
+     */
+    NEED_OWNER(6000,"需要商家主管权限"),
+
     /**
      * 退款申请时间晚于活动开始时间
      */

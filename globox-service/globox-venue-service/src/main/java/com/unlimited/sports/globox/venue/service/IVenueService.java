@@ -2,12 +2,16 @@ package com.unlimited.sports.globox.venue.service;
 
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.model.venue.dto.DeleteVenueReviewDto;
+import com.unlimited.sports.globox.model.venue.dto.GetActivitiesByVenueDto;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueReviewListDto;
 import com.unlimited.sports.globox.model.venue.dto.PostVenueReviewDto;
+import com.unlimited.sports.globox.model.venue.vo.ActivityListVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDetailVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueDictVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueReviewVo;
+
+import java.util.List;
 
 /**
  * 场馆服务接口
@@ -61,5 +65,14 @@ public interface IVenueService {
      * @return 活动详情，包含基本信息和参与者列表
      */
     VenueActivityDetailVo getActivityDetail(Long activityId);
+
+    /**
+     * 根据场馆和日期查询活动列表
+     * 只返回状态正常的活动，按时间排序
+     *
+     * @param dto 查询条件，包含场馆ID和活动日期
+     * @return 活动列表，按startTime排序
+     */
+    List<ActivityListVo> getVenueActivityList(GetActivitiesByVenueDto dto);
 
 }

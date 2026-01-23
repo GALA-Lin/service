@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.VenueMQConstants;
 import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.message.venue.VenueBookingReminderMessage;
 import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
@@ -73,8 +74,9 @@ public class VenueBookingReminderConsumer {
         Long userId = message.getUserId();
         List<Long> recordIds = message.getRecordIds();
         LocalDateTime occupyTime = message.getOccupyTime();
+        Long orderNo = message.getOrderNo();
 
-        log.info("[订场提醒] 接收到延迟消息 - userId={}, recordIds={}, occupyTime={}", userId, recordIds, occupyTime);
+        log.info("[订场提醒] 接收到延迟消息 - userId={}, recordIds={}, occupyTime={}, orderNo={}", userId, recordIds, occupyTime, orderNo);
 
         // 校验参数
         if (recordIds == null || recordIds.isEmpty()) {
@@ -165,6 +167,8 @@ public class VenueBookingReminderConsumer {
                             .put("courtName", court.getName())
                             .put("startTime", firstTemplate.getStartTime())
                             .put("endTime", lastTemplate.getEndTime())
+                            .put("orderNo", orderNo)
+                            .put("sellerType", SellerTypeEnum.VENUE.getCode())
                             .build()
             );
 

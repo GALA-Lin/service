@@ -1,6 +1,8 @@
 package com.unlimited.sports.globox.model.merchant.vo;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.NonNull;
 
 import java.time.LocalDate;
@@ -12,6 +14,8 @@ import java.time.LocalTime;
  * @Description: 营业时间视图
  */
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class VenueBusinessHoursVo {
 
     /**

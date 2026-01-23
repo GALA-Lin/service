@@ -61,10 +61,12 @@ import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -126,6 +128,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Autowired
     private UserProfileDefaultProperties userProfileDefaultProperties;
+
+    @Autowired
+    private Environment environment;
 
     @Value("${user.jwt.secret}")
     private String jwtSecret;
@@ -200,8 +205,6 @@ public class AuthServiceImpl implements AuthService {
     public R<LoginResponse> phoneLogin(PhoneLoginRequest request) {
         String phone = request.getPhone();
         String code = request.getCode();
-
-        log.info("jwtSecret={}", jwtSecret);
 
         // 1. 验证手机号格式
         Assert.isTrue(PhoneUtils.isValidPhone(phone), UserAuthCode.INVALID_PHONE);
@@ -305,16 +308,20 @@ public class AuthServiceImpl implements AuthService {
             log.error("【微信登录】缺少X-Client-Type请求头，期望值：app 或 third-party-jsapi");
             throw new GloboxApplicationException(UserAuthCode.CLIENT_TYPE_UNSUPPORTED);
         }
+        log.info("wechat login start: clientType={}, hasCode={}", clientType, StringUtils.hasText(code));
 
         // 2. 调用微信API换取openid/unionid
         WechatUserInfo wechatUserInfo = wechatService.getOpenIdAndUnionId(code, clientType);
         String openid = wechatUserInfo.getOpenid();
         String unionid = wechatUserInfo.getUnionid();
-        // DEV ONLY: log openid for debugging, remove before release.
+        // TODO: DEV ONLY: log openid for debugging, remove before release.
         log.info("DEV ONLY wechat openid={}", openid);
+        log.info("wechat unionid={}", unionid);
 
         // 2. 优先使用unionid，如果没有则使用openid
         String identifier = unionid != null ? unionid : openid;
+        log.info("wechat login request: clientType={}, identifier={}, openid={}, unionid={}",
+                clientType, identifier, openid, unionid);
 
         // 3. 查询auth_identity表，判断是否已绑定
         LambdaQueryWrapper<AuthIdentity> identityQuery = new LambdaQueryWrapper<>();
@@ -333,6 +340,10 @@ public class AuthServiceImpl implements AuthService {
             boolean reactivated = loginResult.reactivated();
 
             boolean isThirdParty = isThirdPartyClient();
+            if (!isThirdParty) {
+                log.info("app wechat identity hit: identityId={}, userId={}, identifier={}",
+                        identity.getIdentityId(), authUser.getUserId(), identifier);
+            }
 
             // 生成JWT Token
             Map<String, Object> claims = new HashMap<>();
@@ -342,7 +353,7 @@ public class AuthServiceImpl implements AuthService {
             String refreshToken = null;
             if (isThirdParty) {
                 claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
-                claims.put("openid", openid);
+                claims.put("openid", openid);  // 只有第三方小程序才加入openid
                 if (!StringUtils.hasText(thirdPartyJwtSecret)) {
                     log.error("第三方小程序 JWT secret 未配置");
                     throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
@@ -415,6 +426,7 @@ public class AuthServiceImpl implements AuthService {
 
             
             if (isApp) {
+                log.info("app wechat identity miss: identifier={}, openid={}, unionid={}", identifier, openid, unionid);
                 // App端：直接创建新用户并登录 - 使用统一方法
                 LoginUserResult loginResult = loginOrRegisterByIdentity(
                         AuthIdentity.IdentityType.WECHAT,
@@ -436,7 +448,7 @@ public class AuthServiceImpl implements AuthService {
                 String refreshToken = null;
                 if (isThirdParty) {
                     claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
-                    claims.put("openid", openid);
+                    claims.put("openid", openid);  // 只有第三方小程序才加入openid
                     if (!StringUtils.hasText(thirdPartyJwtSecret)) {
                         log.error("第三方小程序 JWT secret 未配置");
                         throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
@@ -496,19 +508,22 @@ public class AuthServiceImpl implements AuthService {
                         .avatarUrl(userInfo.getAvatarUrl())
                         .build();
 
-                log.info("App微信登录成功（新用户）：userId={}, openid={}", authUser.getUserId(), openid);
+                log.info("App微信登录成功（新用户）：userId={}, identifier={}, openid={}, unionid={}",
+                        authUser.getUserId(), identifier, openid, unionid);
                 return R.ok(response);
             } else {
                 // 小程序/第三方：生成临时凭证，需要绑定手机号
                 String tempToken = UUID.randomUUID().toString();
-                redisService.saveWechatTempToken(tempToken, identifier, 5); // TTL=5分钟
+                // 保存临时凭证，格式：identifier|openid|clientType
+                String tempTokenValue = identifier + "|" + openid + "|" + clientType;
+                redisService.saveWechatTempToken(tempToken, tempTokenValue, 5); // TTL=5分钟
 
                 WechatLoginResponse response = WechatLoginResponse.builder()
                         .needBindPhone(true)
                         .tempToken(tempToken)
                         .build();
 
-                log.info("微信未绑定，返回临时凭证：openid={}", openid);
+                log.info("微信未绑定，返回临时凭证：openid={}, clientType={}", openid, clientType);
                 return R.ok(response);
             }
         }
@@ -523,9 +538,17 @@ public class AuthServiceImpl implements AuthService {
         String nickname = request.getNickname();
         String avatarUrl = request.getAvatarUrl();
 
-        // 1. 验证临时凭证
-        String identifier = redisService.getWechatTempToken(tempToken);
-        Assert.isNotEmpty(identifier, UserAuthCode.TEMP_TOKEN_EXPIRED);
+        // 1. 验证临时凭证并解析
+        String tempTokenValue = redisService.getWechatTempToken(tempToken);
+        Assert.isNotEmpty(tempTokenValue, UserAuthCode.TEMP_TOKEN_EXPIRED);
+        
+        // 解析临时凭证（格式：identifier|openid|clientType）
+        String[] parts = tempTokenValue.split("\\|");
+        String identifier = parts[0];
+        String openid = parts.length > 1 ? parts[1] : null;
+        String savedClientType = parts.length > 2 ? parts[2] : null;
+        
+        log.info("wechatBindPhone: identifier={}, openid={}, clientType={}", identifier, openid, savedClientType);
 
         // 2. 验证手机号格式
         Assert.isTrue(PhoneUtils.isValidPhone(phone), UserAuthCode.INVALID_PHONE);
@@ -590,7 +613,7 @@ public class AuthServiceImpl implements AuthService {
                 wechatIdentity.setVerified(true);
                 wechatIdentity.setCancelled(false);
                 authIdentityMapper.insert(wechatIdentity);
-                log.info("小程序手机号登录绑定微信身份：userId={}, identifier={}, phone={}", userId, identifier, phone);
+                log.info("小程序手机号登录：userId={}, identifier={}, phone={}", userId, identifier, phone);
             }
 
             log.info("微信绑定到现有账号：userId={}, phone={}", userId, phone);
@@ -619,7 +642,7 @@ public class AuthServiceImpl implements AuthService {
             wechatIdentity.setVerified(true);
             wechatIdentity.setCancelled(false);
             authIdentityMapper.insert(wechatIdentity);
-            log.info("小程序手机号登录绑定微信身份（新用户）：userId={}, identifier={}, phone={}", userId, identifier, phone);
+            log.info("小程序手机号登录（新用户）：userId={}, identifier={}, phone={}", userId, identifier, phone);
 
             log.info("新用户注册成功（微信登录）：userId={}, phone={}", userId, phone);
         }
@@ -627,29 +650,54 @@ public class AuthServiceImpl implements AuthService {
         // 8. 删除临时凭证
         redisService.deleteWechatTempToken(tempToken);
 
-        // 9. 生成JWT双Token
+        // 9. 根据clientType生成JWT Token
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", AuthUser.UserRole.USER);
 
-        String accessToken = JwtUtil.generateToken(
-                String.valueOf(userId),
-                claims,
-                jwtSecret,
-                accessTokenExpire
-        );
+        String accessToken;
+        String refreshToken;
+        boolean isThirdParty = ClientType.THIRD_PARTY_JSAPI.getValue().equalsIgnoreCase(savedClientType);
 
-        String refreshToken = JwtUtil.generateToken(
-                String.valueOf(userId),
-                claims,
-                jwtSecret,
-                refreshTokenExpire
-        );
+        if (isThirdParty && StringUtils.hasText(openid)) {
+            // 第三方小程序：使用 third-party.jwt.* 配置，并加入openid
+            claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
+            claims.put("openid", openid);
+            if (!StringUtils.hasText(thirdPartyJwtSecret)) {
+                log.error("第三方小程序 JWT secret 未配置");
+                throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
+            }
+            accessToken = JwtUtil.generateToken(
+                    String.valueOf(userId),
+                    claims,
+                    thirdPartyJwtSecret,
+                    thirdPartyAccessTokenExpire
+            );
+            // 第三方小程序不生成 refreshToken
+            refreshToken = null;
+            log.info("第三方小程序绑定手机号成功：userId={}, phone={}, openid={}", userId, phone, openid);
+        } else {
+            // 普通小程序/App：使用 user.jwt.* 配置
+            accessToken = JwtUtil.generateToken(
+                    String.valueOf(userId),
+                    claims,
+                    jwtSecret,
+                    accessTokenExpire
+            );
 
-        // 10. 保存Refresh Token到Redis
-        redisService.saveRefreshToken(userId, refreshToken, refreshTokenExpire);
+            refreshToken = JwtUtil.generateToken(
+                    String.valueOf(userId),
+                    claims,
+                    jwtSecret,
+                    refreshTokenExpire
+            );
+
+            // 10. 保存Refresh Token到Redis
+            redisService.saveRefreshToken(userId, refreshToken, refreshTokenExpire);
+        }
 
         // 11. 记录登录日志
-        recordLoginLog(userId, phone, AuthIdentity.IdentityType.WECHAT, true, null);
+        String loginIdentifier = StringUtils.hasText(openid) ? openid : phone;
+        recordLoginLog(userId, loginIdentifier, AuthIdentity.IdentityType.WECHAT, true, null);
 
         // 12. 注册设备（如果提供了设备信息）
         registerDeviceIfPresent(userId, AuthUser.UserRole.USER.name(), request.getDeviceInfo());
@@ -664,7 +712,6 @@ public class AuthServiceImpl implements AuthService {
                 .reactivated(false)
                 .build();
 
-        log.info("微信绑定手机号成功：userId={}, phone={}", userId, phone);
         return R.ok(response);
     }
 
@@ -678,21 +725,21 @@ public class AuthServiceImpl implements AuthService {
 
         // 1. 获取客户端类型
         String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        log.info("wechat phone login start: clientType={}, hasWxCode={}, hasPhoneCode={}, profiles={}",
+                clientType, StringUtils.hasText(wxCode), StringUtils.hasText(phoneCode),
+                Arrays.toString(environment.getActiveProfiles()));
+
         if (!StringUtils.hasText(clientType)) {
             log.error("【微信手机号登录】缺少X-Client-Type请求头，期望值：app 或 third-party-jsapi");
             throw new GloboxApplicationException(UserAuthCode.CLIENT_TYPE_UNSUPPORTED);
         }
 
-        // 2. 使用wxCode获取openid/unionid（避免重复使用wxCode）
+        // 2. 获取openid（用于第三方小程序）
         WechatUserInfo wechatUserInfo = wechatService.getOpenIdAndUnionId(wxCode, clientType);
         String openid = wechatUserInfo.getOpenid();
-        String unionid = wechatUserInfo.getUnionid();
-        // TODO: DEV ONLY: 开发环境打印openid,正式上线请移除
-        log.info("DEV ONLY wechat openid={}", openid);
-        // 优先使用unionid，如果没有则使用openid
-        String identifier = unionid != null ? unionid : openid;
+        log.info("wechat phone login openid={}", openid);
 
-        // 3. 使用phoneCode获取手机号（不再重复消耗wxCode）
+        // 3. 使用phoneCode获取手机号
         String phone = wechatService.getPhoneNumber(wxCode, phoneCode, clientType);
 
         // 4. 验证手机号格式
@@ -711,43 +758,20 @@ public class AuthServiceImpl implements AuthService {
         boolean isNewUser = false;
 
         if (phoneIdentity != null) {
-            // 6a. 已注册：先使用统一方法确保手机号账号正常，再检查微信绑定
+            // 6a. 已注册：仅使用手机号账号登录
             LoginUserResult phoneLoginResult = loginOrRegisterByIdentity(
                     AuthIdentity.IdentityType.PHONE,
                     phone,
                     null
             );
             userId = phoneLoginResult.authUser().getUserId();
-
-            // 检查该微信是否已绑定其他账号
-            assertIdentityNotBoundToOtherUser(AuthIdentity.IdentityType.WECHAT, identifier, userId);
-
-            // 如果微信未绑定，创建绑定记录
-            LambdaQueryWrapper<AuthIdentity> wechatCheckQuery = new LambdaQueryWrapper<>();
-            wechatCheckQuery.eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.WECHAT)
-                    .eq(AuthIdentity::getIdentifier, identifier);
-            AuthIdentity existingWechatIdentity = authIdentityMapper.selectOne(wechatCheckQuery);
-            
-            if (existingWechatIdentity == null) {
-                AuthIdentity wechatIdentity = new AuthIdentity();
-                wechatIdentity.setIdentityId(UUID.randomUUID().toString());
-                wechatIdentity.setUserId(userId);
-                wechatIdentity.setIdentityType(AuthIdentity.IdentityType.WECHAT);
-                wechatIdentity.setIdentifier(identifier);
-                wechatIdentity.setCredential(null);
-                wechatIdentity.setVerified(true);
-                wechatIdentity.setCancelled(false);
-                authIdentityMapper.insert(wechatIdentity);
-            }
-
-            log.info("第三方小程序微信登录：绑定到现有账号：userId={}, phone={}", userId, phone);
+            log.info("第三方小程序手机号登录：使用现有账号：userId={}, phone={}", userId, phone);
         } else {
-            // 6b. 未注册：先创建手机号账号，再添加微信绑定
+            // 6b. 未注册：创建手机号账号
             isNewUser = true;
 
-            // 使用统一方法创建手机号账号
-            String nicknameToUse = (nickname != null && !nickname.trim().isEmpty()) 
-                    ? nickname 
+            String nicknameToUse = (nickname != null && !nickname.trim().isEmpty())
+                    ? nickname
                     : "用户" + phone.substring(phone.length() - 4);
             LoginUserResult phoneLoginResult = loginOrRegisterByIdentity(
                     AuthIdentity.IdentityType.PHONE,
@@ -756,18 +780,7 @@ public class AuthServiceImpl implements AuthService {
             );
             userId = phoneLoginResult.authUser().getUserId();
 
-            // 添加微信身份绑定
-            AuthIdentity wechatIdentity = new AuthIdentity();
-            wechatIdentity.setIdentityId(UUID.randomUUID().toString());
-            wechatIdentity.setUserId(userId);
-            wechatIdentity.setIdentityType(AuthIdentity.IdentityType.WECHAT);
-            wechatIdentity.setIdentifier(identifier);
-            wechatIdentity.setCredential(null);
-            wechatIdentity.setVerified(true);
-            wechatIdentity.setCancelled(false);
-            authIdentityMapper.insert(wechatIdentity);
-
-            log.info("第三方小程序新用户注册成功：userId={}, phone={}", userId, phone);
+            log.info("第三方小程序新用户注册成功（手机号登录）：userId={}, phone={}", userId, phone);
         }
 
         // 7. 查询用户资料（用于返回用户信息）
@@ -784,7 +797,7 @@ public class AuthServiceImpl implements AuthService {
         if (isThirdParty) {
             // 第三方小程序：使用 third-party.jwt.* 配置
             claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
-            claims.put("openid", openid);
+            claims.put("openid", openid);  // 只有第三方小程序才加入openid
             if (!StringUtils.hasText(thirdPartyJwtSecret)) {
                 log.error("第三方小程序 JWT secret 未配置");
                 throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
@@ -1353,6 +1366,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(rollbackFor = Exception.class)
     public R<WechatLoginResponse> createWechatUserAndLogin(String identifier, String openid,
                                                             DeviceInfo deviceInfo, String clientType) {
+        log.info("wechat login create flow: clientType={}, identifier={}, openid={}", clientType, identifier, openid);
         // 1. 检查该微信是否已绑定其他账号（防止并发创建）
         LambdaQueryWrapper<AuthIdentity> wechatCheckQuery = new LambdaQueryWrapper<>();
         wechatCheckQuery.eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.WECHAT)
@@ -1360,7 +1374,8 @@ public class AuthServiceImpl implements AuthService {
         AuthIdentity existingWechatIdentity = authIdentityMapper.selectOne(wechatCheckQuery);
         if (existingWechatIdentity != null) {
             // 如果已存在，走已绑定流程
-            log.info("微信已绑定，走已绑定流程：identifier={}", identifier);
+            log.info("wechat identity exists: identityId={}, userId={}, identifier={}",
+                    existingWechatIdentity.getIdentityId(), existingWechatIdentity.getUserId(), identifier);
             AuthUser authUser = ensureUserActiveForLogin(existingWechatIdentity,
                     buildDefaultNicknameForWechat(existingWechatIdentity.getUserId())).authUser();
 
@@ -1373,7 +1388,7 @@ public class AuthServiceImpl implements AuthService {
             String refreshToken = null;
             if (isThirdParty) {
                 claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
-                claims.put("openid", openid);
+                claims.put("openid", openid);  // 只有第三方小程序才加入openid
                 if (!StringUtils.hasText(thirdPartyJwtSecret)) {
                     log.error("第三方小程序 JWT secret 未配置");
                     throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
@@ -1455,6 +1470,8 @@ public class AuthServiceImpl implements AuthService {
         wechatIdentity.setVerified(true);
         wechatIdentity.setCancelled(false);
         authIdentityMapper.insert(wechatIdentity);
+        log.info("wechat identity created: identityId={}, userId={}, identifier={}",
+                wechatIdentity.getIdentityId(), userId, identifier);
 
         // 创建user_profile，使用默认昵称
         UserProfile profile = new UserProfile();
@@ -1480,7 +1497,7 @@ public class AuthServiceImpl implements AuthService {
         String refreshToken = null;
         if (isThirdParty) {
             claims.put("clientType", ClientType.THIRD_PARTY_JSAPI.getValue());
-            claims.put("openid", openid);
+            claims.put("openid", openid);  // 只有第三方小程序才加入openid
             if (!StringUtils.hasText(thirdPartyJwtSecret)) {
                 log.error("第三方小程序 JWT secret 未配置");
                 throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
@@ -1635,6 +1652,8 @@ public class AuthServiceImpl implements AuthService {
 
         if (identity != null) {
             // 已注册，确保用户状态正常并返回
+            log.info("身份命中：identityId={}, userId={}, type={}, identifier={}",
+                    identity.getIdentityId(), identity.getUserId(), type, identifier);
             String defaultNickname = buildDefaultNickname(type, identifier, identity.getUserId());
             return ensureUserActiveForLogin(identity, defaultNickname);
         }
@@ -1659,6 +1678,8 @@ public class AuthServiceImpl implements AuthService {
         newIdentity.setVerified(true);
         newIdentity.setCancelled(false);
         authIdentityMapper.insert(newIdentity);
+        log.info("身份创建：identityId={}, userId={}, type={}, identifier={}",
+                newIdentity.getIdentityId(), userId, type, identifier);
 
         // 4. 创建用户资料
         UserProfile profile = new UserProfile();

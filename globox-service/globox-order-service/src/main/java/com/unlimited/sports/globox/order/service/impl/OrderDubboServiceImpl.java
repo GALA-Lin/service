@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.lock.RedisLock;
-import com.unlimited.sports.globox.common.message.order.OrderNotifyMerchantConfirmMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
@@ -16,6 +15,7 @@ import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
+import io.seata.spring.annotation.GlobalTransactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,6 +29,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 订单模块远程服务通用功能
@@ -57,8 +58,9 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
     @Autowired
     private MQService mqService;
+
     @Autowired
-    private OrderActivitiesMapper orderActivitiesMapper;
+    private ExecutorService businessExecutorService;
 
     /**
      * 服务提供方取消未支付订单
@@ -558,6 +560,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      */
     @Override
     @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @GlobalTransactional
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerRefundResultDto> refund(Long orderNo, Long SellerId, Long operatorId, List<Long> reqItemIds, SellerTypeEnum sellerType, String remark) {
         LocalDateTime now = LocalDateTime.now();
@@ -648,17 +651,12 @@ public class OrderDubboServiceImpl implements OrderDubboService {
                 .build();
         orderStatusLogsMapper.insert(logEntity);
 
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                orderRefundActionService.refundAction(orderNo,
-                        refundApplyId,
-                        true,
-                        null,
-                        SellerTypeEnum.COACH.equals(order.getSellerType()) ? OperatorTypeEnum.COACH : OperatorTypeEnum.MERCHANT,
-                        order.getSellerType());
-            }
-        });
+        orderRefundActionService.refundAction(orderNo,
+                refundApplyId,
+                true,
+                operatorId,
+                SellerTypeEnum.COACH.equals(order.getSellerType()) ? OperatorTypeEnum.COACH : OperatorTypeEnum.MERCHANT,
+                order.getSellerType());
 
         SellerRefundResultDto resultDto = SellerRefundResultDto.builder()
                 .orderNo(orderNo)

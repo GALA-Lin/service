@@ -36,4 +36,9 @@ public class VenueBookingReminderMessage implements Serializable {
      * 消费时检查槽位的update_time必须等于此时间，确保通知给正确的用户
      */
     private LocalDateTime occupyTime;
+
+    /**
+     * 订单号
+     */
+    private Long orderNo;
 }

@@ -1,7 +1,5 @@
 package com.unlimited.sports.globox.model.merchant.vo;
 
-import com.baomidou.mybatisplus.annotation.TableField;
-import lombok.Builder;
 import lombok.Data;
 
 /**
@@ -34,7 +32,6 @@ public class MerchantInfoVo {
     /**
      * 员工名称
      */
-    @TableField("display_name")
     private String displayName;
 
     /**

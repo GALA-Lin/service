@@ -23,6 +23,8 @@ import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import com.unlimited.sports.globox.order.service.OrderRefundService;
 import com.unlimited.sports.globox.order.util.CoachNotificationHelper;
+import io.seata.spring.annotation.GlobalTransactional;
+import io.seata.tm.api.transaction.Propagation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,6 +93,20 @@ public class OrderRefundServiceImpl implements OrderRefundService {
      */
     @Override
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @GlobalTransactional(
+            // 当前全局事务的名称
+            name = "user-refund",
+            // 回滚异常
+            rollbackFor = Exception.class,
+            // 全局锁重试间隔
+            lockRetryInterval = 5000,
+            // 全局锁重试次数
+            lockRetryTimes = 5,
+            // 超时时间
+            timeoutMills = 30000,
+            //事务传播
+            propagation = Propagation.REQUIRES_NEW
+    )
     @Transactional(rollbackFor = Exception.class)
     public ApplyRefundResultVo applyRefund(ApplyRefundRequestDto dto) {
 
@@ -258,30 +274,22 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .build();
         orderStatusLogsMapper.insert(logEntity);
 
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                if (autoRefund) {
-                    businessExecutorService.submit(() -> {
-                        // 自动退款时，调用退款方法
-                        orderRefundActionService.refundAction(orderNo,
-                                refundApplyId,
-                                true,
-                                null,
-                                OperatorTypeEnum.USER,
-                                order.getSellerType());
-                    });
-                    // 如果是教练订单自动退款（教练未确认订单），发送订单已取消通知给教练
-                    if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
-                        coachNotificationHelper.sendCoachOrderCancelledByStudent(orderNo, order.getSellerId(), userId);
-                    }
-                } else if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
-                    // 教练订单需要审批时，通知教练有退款申请
-                    coachNotificationHelper.sendCoachRefundRequest(orderNo, order.getSellerId(), userId);
-                }
+        if (autoRefund) {
+            // 调用退款方法
+            orderRefundActionService.refundAction(orderNo,
+                    refundApplyId,
+                    true,
+                    null,
+                    OperatorTypeEnum.USER,
+                    order.getSellerType());
+            // 如果是教练订单自动退款（教练未确认订单），发送订单已取消通知给教练
+            if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
+                coachNotificationHelper.sendCoachOrderCancelledByStudent(orderNo, order.getSellerId(), userId);
             }
-        });
-
+        } else if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
+            // 教练订单需要审批时，通知教练有退款申请
+            coachNotificationHelper.sendCoachRefundRequest(orderNo, order.getSellerId(), userId);
+        }
 
         // 11. 返回结果
         return ApplyRefundResultVo.builder()

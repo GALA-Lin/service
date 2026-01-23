@@ -17,7 +17,6 @@ import java.util.List;
 @Builder
 public class SlotAvailabilityVo {
 
-
     /**
      * 槽位模板ID
      */
@@ -69,9 +68,9 @@ public class SlotAvailabilityVo {
     private String lockReason;
 
     /**
-     * 关联订单ID
+     * 关联订单号
      */
-    private String orderId;
+    private Long orderNo;
 
     /**
      * 锁场批次
@@ -93,13 +92,19 @@ public class SlotAvailabilityVo {
      */
     private String userPhone;
 
-    // ========== 活动相关字段（新增） ==========
+    // ========== 订单详情字段（新增） ==========
+
+    /**
+     * 订单详情（如果是用户订单）
+     */
+    private OrderDetailInfo orderDetail;
+
+    // ========== 活动相关字段 ==========
 
     /**
      * 槽位类型：1-普通槽位，2-活动槽位
      */
     private Integer slotType;
-
 
     /**
      * 活动名称
@@ -120,6 +125,68 @@ public class SlotAvailabilityVo {
      * 最大参与人数
      */
     private Integer maxParticipants;
+
+    /**
+     * 订单详情内部类
+     */
+    @Data
+    @Builder
+    public static class OrderDetailInfo {
+        /**
+         * 订单号
+         */
+        private Long orderNo;
+
+        /**
+         * 用户ID
+         */
+        private Long userId;
+
+        /**
+         * 用户昵称
+         */
+        private String userNickname;
+
+        /**
+         * 场馆名称
+         */
+        private String venueName;
+
+        /**
+         * 订单总价
+         */
+        private BigDecimal totalPrice;
+
+        /**
+         * 支付状态
+         */
+        private Integer paymentStatus;
+
+        /**
+         * 支付状态名称
+         */
+        private String paymentStatusName;
+
+        /**
+         * 订单状态
+         */
+        private Integer orderStatus;
+
+        /**
+         * 订单状态名称
+         */
+        private String orderStatusName;
+
+        /**
+         * 是否活动订单
+         */
+        private Boolean isActivity;
+
+        /**
+         * 活动类型名称
+         */
+        private String activityTypeName;
+    }
 
     /**
      * 快速构建可用时段

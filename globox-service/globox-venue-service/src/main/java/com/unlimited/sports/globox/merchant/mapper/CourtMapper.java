@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.model.merchant.entity.Court;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -35,5 +36,8 @@ public interface CourtMapper extends BaseMapper<Court> {
             "</foreach>" +
             "</script>")
     List<Court> selectByIds(@Param("courtIds") List<Long> courtIds);
+
+    @Update("UPDATE courts SET status = 0 WHERE venue_id = #{venueId}")
+    int disableCourtsByVenueId(@Param("venueId") Long venueId);
 
 }

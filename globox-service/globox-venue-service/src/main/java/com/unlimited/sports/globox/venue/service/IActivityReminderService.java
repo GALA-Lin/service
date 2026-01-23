@@ -11,6 +11,7 @@ public interface IActivityReminderService {
      *
      * @param userId 用户ID
      * @param activityId 活动ID
+     * @param orderNo 订单号
      */
-    void sendActivityReminderMessage(Long userId, Long activityId);
+    void sendActivityReminderMessage(Long userId, Long activityId, Long orderNo);
 }

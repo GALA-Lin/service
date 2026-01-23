@@ -59,7 +59,7 @@ public class CoachPricingRequestDto implements Serializable {
     /**
      * 联系电话
      */
-    @NotNull(message = "手机号不能为空")
+//    @NotNull(message = "手机号不能为空")
     private String userPhone;
 
     /**

@@ -23,19 +23,6 @@ public class AlipayConfig {
      * 注入阿里支付连接对象
      */
     @Bean
-    @Profile("dev")
-    public AlipayClient alipayDevClient() {
-        return new DefaultAlipayClient(alipayProperties.getAlipayUrl(),
-                alipayProperties.getAppId(), alipayProperties.getAppPrivateKey(), alipayProperties.getFormat(),
-                alipayProperties.getCharset(), alipayProperties.getAlipayPublicKey(), alipayProperties.getSignType());
-    }
-
-
-    /**
-     * 注入阿里支付连接对象
-     */
-    @Bean
-    @Profile("!dev")
     public AlipayClient alipayClient() throws IOException {
         String privateKey = Files.readString(Path.of(alipayProperties.getAppPrivateKey()), StandardCharsets.UTF_8)
                 .trim();

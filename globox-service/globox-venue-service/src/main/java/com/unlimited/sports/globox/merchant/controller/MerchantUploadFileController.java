@@ -2,10 +2,12 @@ package com.unlimited.sports.globox.merchant.controller;
 
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.cos.vo.BatchUploadResultVo;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.venue.service.IFileUploadService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,26 +35,25 @@ public class MerchantUploadFileController {
     private IFileUploadService fileUploadService;
 
     @PostMapping("/image")
-    public R<FileUploadVo> MerchantUploadImage(
+    public R<BatchUploadResultVo> batchUploadImages(
             @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
             @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("files") MultipartFile[] files) {
 
+        // 权限验证
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
 
-        log.info("开始上传图片，文件名: {}, 大小: {} bytes, {}操作人 , {}商家",
-                file.getOriginalFilename(), file.getSize(),context.getEmployeeId(), context.getMerchantId());
+        log.info("开始批量上传图片 - 操作人: {}, 商家: {}, 文件数量: {}",
+                context.getEmployeeId(), context.getMerchantId(),
+                files != null ? files.length : 0);
 
-        String fileUrl = fileUploadService.uploadFile(file, FileTypeEnum.ACTIVITY_IMAGE);
+        // 批量上传文件
+        BatchUploadResultVo result = fileUploadService.batchUploadFiles(files, FileTypeEnum.ACTIVITY_IMAGE);
 
-        FileUploadVo vo = new FileUploadVo(
-                fileUrl,
-                file.getOriginalFilename(),
-                file.getSize()
-        );
+        log.info("批量图片上传完成 - 操作人: {}, 成功: {}, 失败: {}",
+                context.getEmployeeId(), result.getSuccessCount(), result.getFailureCount());
 
-        log.info("图片上传成功: {}", fileUrl);
-        return R.ok(vo);
+        return R.ok(result);
     }
 
 }

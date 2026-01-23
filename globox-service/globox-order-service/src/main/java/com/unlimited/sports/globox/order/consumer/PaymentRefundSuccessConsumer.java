@@ -12,7 +12,6 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 退款成功事件 消费者
@@ -28,7 +27,6 @@ public class PaymentRefundSuccessConsumer {
      * 退款成功回调 消费者
      */
     @RabbitListener(queues = PaymentMQConstants.QUEUE_PAYMENT_REFUND_SUCCESS_ORDER)
-    @Transactional(rollbackFor = Exception.class)
     @RedisLock(value = "#message.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @RabbitRetryable(
             finalExchange = PaymentMQConstants.EXCHANGE_PAYMENT_REFUND_SUCCESS_FINAL_DLX,
@@ -40,7 +38,7 @@ public class PaymentRefundSuccessConsumer {
 
         log.info("收到支付退款消息");
 
-        orderRefundActionService.refundSuccess(message);
+        orderRefundActionService.refundSuccessMQHandler(message);
 
     }
 }

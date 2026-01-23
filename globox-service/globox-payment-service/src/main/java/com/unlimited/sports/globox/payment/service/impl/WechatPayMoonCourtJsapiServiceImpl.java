@@ -1,7 +1,10 @@
 package com.unlimited.sports.globox.payment.service.impl;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.result.ApplicationCode;
+import com.unlimited.sports.globox.common.result.CustomMessageCode;
 import com.unlimited.sports.globox.common.result.PaymentsCode;
+import com.unlimited.sports.globox.common.result.ResultCode;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
@@ -121,7 +124,7 @@ public class WechatPayMoonCourtJsapiServiceImpl implements WechatPayMoonCourtJsa
     }
 
     @Override
-    public boolean refund(Payments payments, BigDecimal refundAmount, String refundReason) {
+    public ResultCode refund(Payments payments, BigDecimal refundAmount, String refundReason) {
         CreateRequest request = new CreateRequest();
         AmountReq amount = new AmountReq();
         amount.setTotal(AmountUtils.toLong(payments.getTotalAmount()));
@@ -137,7 +140,7 @@ public class WechatPayMoonCourtJsapiServiceImpl implements WechatPayMoonCourtJsa
             refund = moonCourtRefundService.create(request);
         } catch (Exception e) {
             log.error("请求微信退款失败：{}", e.getMessage(), e);
-            throw new GloboxApplicationException(PaymentsCode.PAYMENT_WECHAT_PAY_FAILED);
+            return PaymentsCode.PAYMENT_WECHAT_PAY_FAILED;
         }
 
         if (refund.getStatus().equals(Status.ABNORMAL)) {
@@ -148,14 +151,14 @@ public class WechatPayMoonCourtJsapiServiceImpl implements WechatPayMoonCourtJsa
                 1. 可前往商户平台-交易中心，手动处理此笔退款
                 2. 通过发起异常退款接口进行处理（用户需要输入新的银行卡号）
              */
-            return true;
+            return ApplicationCode.SUCCESS;
         } else if (refund.getStatus().equals(Status.CLOSED)
                 || refund.getStatus().equals(Status.PROCESSING)
                 || refund.getStatus().equals(Status.SUCCESS)) {
-            return true;
+            return ApplicationCode.SUCCESS;
         } else {
             log.error("微信退款失败，未知的状态：{}, refund :{}", refund.getStatus(), jsonUtils.objectToJson(refund));
-            throw new GloboxApplicationException("微信退款失败 refund: 【%s】".formatted(jsonUtils.objectToJson(refund)));
+            return PaymentsCode.PAYMENT_WECHAT_PAY_FAILED;
         }
     }
 }

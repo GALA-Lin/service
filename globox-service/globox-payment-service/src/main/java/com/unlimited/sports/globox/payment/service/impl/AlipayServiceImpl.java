@@ -11,7 +11,6 @@ import com.alipay.api.request.AlipayTradeCloseRequest;
 import com.alipay.api.request.AlipayTradeQueryRequest;
 import com.alipay.api.request.AlipayTradeRefundRequest;
 import com.alipay.api.response.AlipayTradeAppPayResponse;
-import com.alipay.api.response.AlipayTradeCloseResponse;
 import com.alipay.api.response.AlipayTradeQueryResponse;
 import com.alipay.api.response.AlipayTradeRefundResponse;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
@@ -19,7 +18,10 @@ import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
+import com.unlimited.sports.globox.common.result.ApplicationCode;
+import com.unlimited.sports.globox.common.result.CustomMessageCode;
 import com.unlimited.sports.globox.common.result.PaymentsCode;
+import com.unlimited.sports.globox.common.result.ResultCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.common.utils.LocalDateUtils;
@@ -34,7 +36,6 @@ import com.unlimited.sports.globox.service.RedisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
 
@@ -188,7 +189,7 @@ public class AlipayServiceImpl implements AlipayService {
      * @return 如果退款请求处理成功，则返回true；否则返回false
      */
     @Override
-    public boolean refund(Payments payments, BigDecimal refundAmount, String refundReason) {
+    public ResultCode refund(Payments payments, BigDecimal refundAmount, String refundReason) {
 
         // 退款申请
         AlipayTradeRefundRequest request = new AlipayTradeRefundRequest();
@@ -206,14 +207,14 @@ public class AlipayServiceImpl implements AlipayService {
             System.out.println(diagnosisUrl);
         } catch (AlipayApiException e) {
             log.error("向支付宝申请退款失败:{}", e.getMessage(), e);
-            throw new GloboxApplicationException(e);
+            return PaymentsCode.PAYMENT_REFUND_FAILED;
         }
         if (response.isSuccess()) {
             // 修改支付记录表
             paymentsService.updatePayment(payments);
-            return true;
+            return ApplicationCode.SUCCESS;
         } else {
-            return false;
+            return CustomMessageCode.create(PaymentsCode.PAYMENT_REFUND_FAILED, response.getMsg());
         }
     }
 

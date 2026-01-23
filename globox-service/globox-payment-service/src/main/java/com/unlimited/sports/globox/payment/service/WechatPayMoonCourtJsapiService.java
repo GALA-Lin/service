@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.payment.service;
 
+import com.unlimited.sports.globox.common.result.ResultCode;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.wechat.pay.java.service.payments.model.Transaction;
@@ -36,5 +37,5 @@ public interface WechatPayMoonCourtJsapiService {
     void cancel(Payments payments);
 
 
-    boolean refund(Payments payments, BigDecimal refundAmount, String refundReason);
+    ResultCode refund(Payments payments, BigDecimal refundAmount, String refundReason);
 }

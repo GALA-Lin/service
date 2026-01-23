@@ -5,10 +5,7 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisDistributedLock;
 import com.unlimited.sports.globox.common.result.VenueCode;
 import com.unlimited.sports.globox.common.utils.IdGenerator;
-import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
-import com.unlimited.sports.globox.merchant.mapper.MerchantMapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
-import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
+import com.unlimited.sports.globox.merchant.mapper.*;
 import com.unlimited.sports.globox.merchant.service.VenueActivityManagementService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
@@ -17,10 +14,12 @@ import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
 import com.unlimited.sports.globox.model.merchant.vo.ActivityCreationResultVo;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
+import com.unlimited.sports.globox.model.venue.dto.UpdateActivityDto;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
 import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivitySlotLock;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.model.venue.enums.OrganizerTypeEnum;
@@ -43,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -68,6 +68,8 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
     private final RedisDistributedLock redisDistributedLock;
     private final IVenueActivitySlotLockService activitySlotLockService;
     private final IdGenerator idGenerator;  // 注入雪花算法ID生成器
+
+    private final ParticipantMapper participantMapper;
 
     /**
      * 自注入，用于解决@Transactional自调用问题
@@ -209,6 +211,262 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
             }
         }
     }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ActivityCreationResultVo updateActivity(Long activityId, UpdateActivityDto dto, MerchantAuthContext context) {
+        log.info("开始更新活动 - activityId: {}, employeeId: {}, role: {}",
+                activityId, context.getEmployeeId(), context.getRole());
+
+        // 1. 查询活动详情
+        VenueActivity activity = venueActivityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new GloboxApplicationException("活动不存在");
+        }
+
+        // 2. 权限校验：确保该活动属于当前商户及其场馆
+        validateActivityPermission(activity, context);
+
+        // 3. 状态校验：只有待开始的活动可以更新
+        if (!VenueActivityStatusEnum.NORMAL.getValue().equals(activity.getStatus())) {
+            VenueActivityStatusEnum statusEnum = VenueActivityStatusEnum.fromValue(activity.getStatus());
+            throw new GloboxApplicationException(
+                    String.format("活动当前状态为【%s】，无法更新",
+                            statusEnum != null ? statusEnum.getDesc() : "未知"));
+        }
+
+        // 4. 如果修改了最大参与人数，需要校验是否小于当前参与人数
+        if (dto.getMaxParticipants() != null) {
+            if (dto.getMaxParticipants() < activity.getCurrentParticipants()) {
+                throw new GloboxApplicationException(
+                        String.format("最大参与人数不能小于当前参与人数（%d人）",
+                                activity.getCurrentParticipants()));
+            }
+        }
+
+        // 5. 如果修改了报名截止时间，需要校验不能早于当前时间
+        if (dto.getRegistrationDeadline() != null) {
+            if (dto.getRegistrationDeadline().isBefore(LocalDateTime.now())) {
+                throw new GloboxApplicationException("报名截止时间不能早于当前时间");
+            }
+
+            // 报名截止时间不能晚于活动开始时间
+            LocalDateTime activityStartTime = LocalDateTime.of(
+                    activity.getActivityDate(), activity.getStartTime());
+            if (dto.getRegistrationDeadline().isAfter(activityStartTime)) {
+                throw new GloboxApplicationException("报名截止时间不能晚于活动开始时间");
+            }
+        }
+
+        // 6. 更新活动信息（只更新非空字段）
+        boolean needUpdate = false;
+
+        if (dto.getActivityName() != null && !dto.getActivityName().equals(activity.getActivityName())) {
+            activity.setActivityName(dto.getActivityName());
+            needUpdate = true;
+        }
+
+        if (dto.getDescription() != null && !dto.getDescription().equals(activity.getDescription())) {
+            activity.setDescription(dto.getDescription());
+            needUpdate = true;
+        }
+
+        if (dto.getImageUrls() != null && !dto.getImageUrls().equals(activity.getImageUrls())) {
+            activity.setImageUrls(dto.getImageUrls());
+            needUpdate = true;
+        }
+
+        if (dto.getMaxParticipants() != null && !dto.getMaxParticipants().equals(activity.getMaxParticipants())) {
+            activity.setMaxParticipants(dto.getMaxParticipants());
+            needUpdate = true;
+        }
+        
+
+        if (dto.getRegistrationDeadline() != null && !dto.getRegistrationDeadline().equals(activity.getRegistrationDeadline())) {
+            activity.setRegistrationDeadline(dto.getRegistrationDeadline());
+            needUpdate = true;
+        }
+
+        if (dto.getContactPhone() != null && !dto.getContactPhone().equals(activity.getContactPhone())) {
+            activity.setContactPhone(dto.getContactPhone());
+            needUpdate = true;
+        }
+
+        if (dto.getMinNtrpLevel() != null && !dto.getMinNtrpLevel().equals(activity.getMinNtrpLevel())) {
+            activity.setMinNtrpLevel(dto.getMinNtrpLevel());
+            needUpdate = true;
+        }
+
+        // 7. 如果没有任何字段需要更新，直接返回当前活动信息
+        if (!needUpdate) {
+            log.info("活动信息无变化，跳过更新 - activityId: {}", activityId);
+            return convertActivityToVo(activity);
+        }
+
+        // 8. 执行更新
+        int updateCount = venueActivityMapper.updateById(activity);
+        if (updateCount == 0) {
+            throw new GloboxApplicationException("活动更新失败");
+        }
+
+        log.info("活动更新成功 - activityId: {}",
+                activityId);
+
+        // 9. 返回更新后的活动详情
+        return convertActivityToVo(activity);
+    }
+
+    /**
+     * 校验活动操作权限
+     */
+    private void validateActivityPermission(VenueActivity activity, MerchantAuthContext context) {
+        if (context.isStaff()) {
+            // 员工只能操作自己场馆的活动
+            if (!activity.getVenueId().equals(context.getVenueId())) {
+                throw new GloboxApplicationException("无权操作该活动");
+            }
+        } else if (context.isOwner()) {
+            // 老板需要确认活动属于其旗下场馆
+            Venue venue = venueMapper.selectById(activity.getVenueId());
+            if (venue == null || !venue.getMerchantId().equals(context.getMerchantId())) {
+                throw new GloboxApplicationException("无权操作该活动");
+            }
+        } else {
+            throw new GloboxApplicationException("无效的角色类型");
+        }
+    }
+
+    /**
+     * 取消活动
+     * @param activityId
+     * @param context
+     * @param cancelReason
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelActivity(Long activityId, MerchantAuthContext context, String cancelReason) {
+        // 1. 查询活动详情
+        VenueActivity activity = venueActivityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new GloboxApplicationException("活动不存在");
+        }
+
+        // 2. 权限校验：确保该活动属于当前商户及其场馆
+        if (!activity.getVenueId().equals(context.getVenueId()) && !context.isOwner()) {
+            // 如果是员工，校验所属场馆；如果是老板，校验所属商户（此处根据你的业务逻辑调整）
+            throw new GloboxApplicationException("无权操作此活动");
+        }
+
+        // 3. 校验报名情况：查询是否有有效报名者 (delete_version = 0)
+        // 根据 VenueActivityParticipant 结构定义
+        Long participantCount = participantMapper.selectCount(
+                new LambdaQueryWrapper<VenueActivityParticipant>()
+                        .eq(VenueActivityParticipant::getActivityId, activityId)
+                        .eq(VenueActivityParticipant::getDeleteVersion, 0L)
+        );
+
+        if (participantCount > 0) {
+            log.warn("取消活动失败 - 活动已有{}人报名, activityId: {}", participantCount, activityId);
+            throw new GloboxApplicationException("该活动当前已有用户报名，请先处理用户退款并取消报名");
+        }
+
+        // 4. 执行取消逻辑
+        // a. 更新活动状态为已取消 (status = 2)
+        activity.setStatus(VenueActivityStatusEnum.CANCELLED.getValue()); // 假设 2 是已取消
+        venueActivityMapper.updateById(activity);
+
+        // b. 释放槽位锁定：删除关联的 VenueActivitySlotLock 记录
+        // 这样该时段的槽位在 validateSlotNotOccupiedByActivity 校验时就能通过
+        activitySlotLockMapper.delete(
+                new LambdaQueryWrapper<VenueActivitySlotLock>()
+                        .eq(VenueActivitySlotLock::getActivityId, activityId)
+        );
+
+        log.info("活动已成功取消并释放槽位 - activityId: {}, 操作人: {}",
+                activityId, context.getEmployeeId());
+    }
+    // 在实现类中添加/修改以下方法
+
+    @Override
+    public List<ActivityCreationResultVo> getMerchantActivities(MerchantAuthContext context) {
+        LambdaQueryWrapper<VenueActivity> queryWrapper = new LambdaQueryWrapper<>();
+
+        // 根据角色权限过滤
+        if (context.isStaff()) {
+            queryWrapper.eq(VenueActivity::getVenueId, context.getVenueId());
+        } else {
+            // 老板查询该商户名下的所有活动（通常 organizerId 对应 merchantId）
+            queryWrapper.eq(VenueActivity::getOrganizerId, context.getMerchantId());
+        }
+
+        // 排序：日期和开始时间倒序
+        queryWrapper.orderByDesc(VenueActivity::getActivityDate)
+                .orderByDesc(VenueActivity::getStartTime);
+
+        List<VenueActivity> activities = venueActivityMapper.selectList(queryWrapper);
+
+        // 使用统一的转换逻辑
+        return activities.stream()
+                .map(this::convertActivityToVo)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<ActivityCreationResultVo> getActivitiesByVenueId(Long venueId, LocalDate activityDate) {
+        LambdaQueryWrapper<VenueActivity> wrapper = new LambdaQueryWrapper<VenueActivity>()
+                .eq(VenueActivity::getVenueId, venueId);
+
+        log.info("【活动列表查询】场馆：{}, 日期：{}", venueId, activityDate);
+
+        // 如果传了 activityDate，则按日期筛选
+        if (activityDate != null) {
+            wrapper.eq(VenueActivity::getActivityDate, activityDate);
+        }
+
+        wrapper.orderByDesc(VenueActivity::getActivityDate)
+                .orderByDesc(VenueActivity::getStartTime);
+
+        List<VenueActivity> activities = venueActivityMapper.selectList(wrapper);
+
+        return activities.stream()
+                .map(this::convertActivityToVo)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 统一将实体转换为 VO 的逻辑，修复类型不匹配问题
+     */
+    private ActivityCreationResultVo convertActivityToVo(VenueActivity activity) {
+        // 1. 查询场地
+        Court court = courtMapper.selectById(activity.getCourtId());
+
+        // 2. 查询该活动关联的槽位记录
+        List<VenueActivitySlotLock> locks = activitySlotLockMapper.selectList(
+                new LambdaQueryWrapper<VenueActivitySlotLock>()
+                        .eq(VenueActivitySlotLock::getActivityId, activity.getActivityId())
+        );
+
+        // 3. 获取槽位 ID 列表
+        List<Long> slotIds = locks.stream()
+                .map(VenueActivitySlotLock::getSlotTemplateId)
+                .collect(Collectors.toList());
+
+        // 4. 【关键修复】根据 ID 列表查询完整的模板对象列表
+        List<VenueBookingSlotTemplate> templates = Collections.emptyList();
+        if (!slotIds.isEmpty()) {
+            templates = slotTemplateMapper.selectBatchIds(slotIds);
+        }
+
+        // 5. 调用 buildActivityCreationResult，此时参数类型匹配 (List<VenueBookingSlotTemplate>)
+        return buildActivityCreationResult(
+                activity,
+                court,
+                templates,
+                null, // DTO 在查询场景下传 null
+                activity.getMerchantBatchId()
+        );
+    }
+
 
     /**
      * 构建活动创建结果

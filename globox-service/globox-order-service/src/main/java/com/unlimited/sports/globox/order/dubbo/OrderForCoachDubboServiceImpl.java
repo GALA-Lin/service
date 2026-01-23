@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.RefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
+import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
@@ -14,12 +15,15 @@ import com.unlimited.sports.globox.dubbo.order.dto.*;
 import com.unlimited.sports.globox.model.order.entity.OrderActivities;
 import com.unlimited.sports.globox.model.order.entity.OrderItems;
 import com.unlimited.sports.globox.model.order.entity.Orders;
+import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.mapper.OrderActivitiesMapper;
 import com.unlimited.sports.globox.order.mapper.OrderItemsMapper;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderService;
+import io.seata.spring.annotation.GlobalTransactional;
+import io.seata.tm.api.transaction.Propagation;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -338,6 +342,21 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
      * @return 返回商家退款的结果，包括订单状态、退款申请状态等信息
      */
     @Override
+    @GlobalTransactional(
+            // 当前全局事务的名称
+            name = "coach-refund",
+            // 回滚异常
+            rollbackFor = Exception.class,
+            // 全局锁重试间隔
+            lockRetryInterval = 5000,
+            // 全局锁重试次数
+            lockRetryTimes = 5,
+            // 超时时间
+            timeoutMills = 30000,
+            //事务传播
+            propagation = Propagation.REQUIRES_NEW
+    )
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     public RpcResult<SellerRefundResultDto> refund(CoachRefundRequestDto dto) {
         List<OrderItems> orderItems = orderItemsMapper.selectList(
                 Wrappers.<OrderItems>lambdaQuery()

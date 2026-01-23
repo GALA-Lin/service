@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.payment.service;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.result.ResultCode;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
@@ -45,7 +46,7 @@ public interface WechatPayService {
      * @param refundReason 退款原因说明
      * @return 如果退款请求处理成功，则返回true；否则返回false
      */
-    boolean refund(Payments payments, BigDecimal refundAmount, String refundReason);
+    ResultCode refund(Payments payments, BigDecimal refundAmount, String refundReason);
 
 
     /**

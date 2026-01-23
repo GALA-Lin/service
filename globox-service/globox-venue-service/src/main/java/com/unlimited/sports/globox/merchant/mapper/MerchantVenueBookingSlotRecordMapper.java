@@ -62,7 +62,7 @@ public interface MerchantVenueBookingSlotRecordMapper extends BaseMapper<VenueBo
     int updateStatusById(
             @Param("recordId") Long recordId,
             @Param("status") Integer status,
-            @Param("orderId") String orderId,
+            @Param("orderNo") String orderNo,
             @Param("operatorId") Long operatorId  // 注意：实际对应数据库的operator_id字段
     );
 
@@ -87,7 +87,7 @@ public interface MerchantVenueBookingSlotRecordMapper extends BaseMapper<VenueBo
     /**
      * 根据订单ID查询相关的时段记录
      */
-    List<VenueBookingSlotVo> selectSlotsByOrderId(@Param("orderId") String orderId);
+    List<VenueBookingSlotVo> selectSlotsByOrderNo(@Param("orderNo") String orderNo);
 
     /**
      * 根据场地和日期查询所有记录（包含详细信息）
@@ -103,7 +103,7 @@ public interface MerchantVenueBookingSlotRecordMapper extends BaseMapper<VenueBo
     int batchUpdateStatus(
             @Param("recordIds") List<Long> recordIds,
             @Param("status") Integer status,
-            @Param("orderId") String orderId,
+            @Param("orderNo") String orderNo,
             @Param("operatorId") Long operatorId
     );
 

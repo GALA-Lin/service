@@ -2,7 +2,8 @@ package com.unlimited.sports.globox.payment.service;
 
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
-import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
+import com.unlimited.sports.globox.common.result.ResultCode;
+import com.unlimited.sports.globox.dubbo.payment.dto.UserRefundRequestDto;
 import com.unlimited.sports.globox.model.payment.dto.SubmitRequestDto;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
@@ -73,5 +74,7 @@ public interface PaymentsService {
     GetPaymentStatusResultVo getPaymentStatus(String outTradeNo, PaymentTypeEnum paymentType);
 
 
-    boolean refund(UserRefundMessage message);
+    ResultCode refundAction(UserRefundRequestDto dto);
+
+    ResultCode refund(UserRefundRequestDto dto);
 }

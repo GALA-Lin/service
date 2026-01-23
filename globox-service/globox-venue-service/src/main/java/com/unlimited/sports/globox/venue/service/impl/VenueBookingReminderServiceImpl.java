@@ -46,7 +46,7 @@ public class VenueBookingReminderServiceImpl implements IVenueBookingReminderSer
     private int reminderAdvanceSeconds;
 
     @Override
-    public void sendBookingReminderMessages(Long userId, List<Long> recordIds) {
+    public void sendBookingReminderMessages(Long userId, List<Long> recordIds, Long orderNo) {
         if (recordIds == null || recordIds.isEmpty()) {
             log.warn("[订场提醒] 槽位记录ID列表为空 - userId={}", userId);
             return;
@@ -93,7 +93,7 @@ public class VenueBookingReminderServiceImpl implements IVenueBookingReminderSer
 
                         // 为每个连续时间段构建消息
                         return continuousGroups.stream()
-                                .map(group -> buildReminderMessage(userId, group, templateMap))
+                                .map(group -> buildReminderMessage(userId, group, templateMap, orderNo))
                                 .filter(Objects::nonNull);
                     })
                     .toList();
@@ -144,7 +144,8 @@ public class VenueBookingReminderServiceImpl implements IVenueBookingReminderSer
     private ReminderMessageToBeSent buildReminderMessage(
             Long userId,
             List<VenueBookingSlotRecord> records,
-            Map<Long, VenueBookingSlotTemplate> templateMap) {
+            Map<Long, VenueBookingSlotTemplate> templateMap,
+            Long orderNo) {
 
         if (records.isEmpty()) {
             return null;
@@ -198,6 +199,7 @@ public class VenueBookingReminderServiceImpl implements IVenueBookingReminderSer
                             .userId(userId)
                             .recordIds(groupedRecordIds)
                             .occupyTime(occupyTime)
+                            .orderNo(orderNo)
                             .build();
 
                     return new ReminderMessageToBeSent(message, (int) delaySeconds,

@@ -21,7 +21,7 @@ public class AuthUser {
     /**
      * 用户ID（自增主键）
      */
-    @TableId(value = "user_id", type = IdType.AUTO)
+    @TableId(value = "user_id", type = IdType.ASSIGN_ID)
     private Long userId;
     
     /**

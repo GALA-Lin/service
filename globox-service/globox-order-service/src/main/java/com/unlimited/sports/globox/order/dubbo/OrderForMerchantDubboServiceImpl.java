@@ -64,6 +64,7 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
                 page,
                 Wrappers.<Orders>lambdaQuery()
                         .eq(Orders::getSellerId, dto.getVenueId())
+                        .eq(!ObjectUtils.isEmpty(dto.getOrderNo()), Orders::getOrderNo, dto.getOrderNo())
                         .orderByDesc(Orders::getId));
 
         if (orderPage.getRecords().isEmpty()) {

@@ -37,4 +37,9 @@ public class MerchantGetOrderPageRequestDto implements Serializable {
     @NotNull(message = "每页大小不能为空")
     @Min(value = 1, message = "每页大小必须大于等于 1")
     private Integer pageSize = 10;
+
+    /**
+     * 订单号
+     */
+    private Long orderNo;
 }

@@ -32,6 +32,12 @@
 
         <dependency>
             <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-cos-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
             <artifactId>globox-dubbo-api</artifactId>
             <version>1.0</version>
         </dependency>

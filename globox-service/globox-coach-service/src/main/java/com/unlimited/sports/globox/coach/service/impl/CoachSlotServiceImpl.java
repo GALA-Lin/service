@@ -669,13 +669,14 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int batchUnlockSlots(List<Long> recordIds, Long userId) {
-        log.info("批量解锁时段(通过recordIds) - userId: {}, recordIds数量: {}",
-                userId, recordIds.size());
 
         if (recordIds == null || recordIds.isEmpty()) {
             log.warn("recordIds为空，无需解锁");
             return 0;
         }
+
+        log.info("批量解锁时段(通过recordIds) - userId: {}, recordIds数量: {}",
+                userId, recordIds.size());
 
         int unlockedCount = 0;
         List<String> failedRecords = new ArrayList<>();

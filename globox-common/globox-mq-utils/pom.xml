@@ -36,7 +36,7 @@
 
         <dependency>
             <groupId>com.unlimited.sports.globox</groupId>
-            <artifactId>globox-web-utils</artifactId>
+            <artifactId>globox-common-utils</artifactId>
             <version>1.0</version>
         </dependency>
 

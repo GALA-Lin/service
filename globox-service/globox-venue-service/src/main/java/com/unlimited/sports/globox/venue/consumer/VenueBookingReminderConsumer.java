@@ -25,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -66,11 +67,7 @@ public class VenueBookingReminderConsumer {
      */
     @RabbitHandler
     @Transactional(rollbackFor = Exception.class)
-    @RabbitRetryable(
-            finalExchange = VenueMQConstants.EXCHANGE_VENUE_BOOKING_REMINDER_FINAL_DLX,
-            finalRoutingKey = VenueMQConstants.ROUTING_VENUE_BOOKING_REMINDER_FINAL
-    )
-    public void onMessage(VenueBookingReminderMessage message, Channel channel, Message amqpMessage) {
+    public void onMessage(VenueBookingReminderMessage message, Channel channel, Message amqpMessage) throws IOException {
         Long userId = message.getUserId();
         List<Long> recordIds = message.getRecordIds();
         LocalDateTime occupyTime = message.getOccupyTime();
@@ -179,6 +176,9 @@ public class VenueBookingReminderConsumer {
         } catch (Exception e) {
             log.error("[订场提醒] 处理失败 - userId={}, recordIds={}", userId, recordIds, e);
             throw e;
+        } finally {
+            long deliveryTag = amqpMessage.getMessageProperties().getDeliveryTag();
+            channel.basicAck(deliveryTag, false);
         }
     }
 }

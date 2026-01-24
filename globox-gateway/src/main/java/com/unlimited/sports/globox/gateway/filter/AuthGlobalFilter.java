@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.gateway.filter;
 
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
+import com.unlimited.sports.globox.common.constants.RedisKeyConstants;
 import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.utils.JwtUtil;
 import com.unlimited.sports.globox.gateway.prop.AuthWhitelistProperties;
@@ -10,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.annotation.Order;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -36,6 +38,7 @@ public class AuthGlobalFilter implements GlobalFilter {
 
     private final AntPathMatcher matcher = new AntPathMatcher();
     private final AuthWhitelistProperties authWhitelistProperties;
+    private final StringRedisTemplate stringRedisTemplate;
 
     @Value("${auth.enabled:true}")
     private boolean authEnabled;
@@ -113,6 +116,22 @@ public class AuthGlobalFilter implements GlobalFilter {
             return unauthorized(exchange, "Token clientType mismatch");
         }
 
+        if (ClientType.APP.equals(clientType)) {
+            String jti = Optional.ofNullable(JwtUtil.getClaim(token, secret, "jti", Object.class))
+                    .map(Object::toString)
+                    .orElse(null);
+            if (StringUtils.hasText(jti)) {
+                String key = RedisKeyConstants.ACCESS_TOKEN_JTI_PREFIX + clientTypeValue + ":" + subject;
+                try {
+                    String cachedJti = stringRedisTemplate.opsForValue().get(key);
+                    if (!StringUtils.hasText(cachedJti) || !jti.equals(cachedJti)) {
+                        return unauthorized(exchange, "Token revoked");
+                    }
+                } catch (Exception ex) {
+                    return unauthorized(exchange, "Token revoked");
+                }
+            }
+        }
 
         // 5. 根据客户端类型注入对应的 headers
         ServerHttpRequest mutatedRequest = request.mutate()
@@ -134,6 +153,7 @@ public class AuthGlobalFilter implements GlobalFilter {
         headers.remove(RequestHeaderConstants.HEADER_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ROLE);
@@ -150,6 +170,7 @@ public class AuthGlobalFilter implements GlobalFilter {
             }
             case MERCHANT -> {
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID, subject);
+                headers.set(RequestHeaderConstants.HEADER_MERCHANT_USER_ID, subject);  // 兼容第三方服务的user_id需求
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_ROLE, role);
                 headers.set(RequestHeaderConstants.HEADER_EMPLOYEE_ID,staffId);
             }
@@ -179,6 +200,7 @@ public class AuthGlobalFilter implements GlobalFilter {
         headers.remove(RequestHeaderConstants.HEADER_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ROLE);

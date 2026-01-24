@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
@@ -52,7 +53,9 @@ public class UnlockSlotConsumer {
     @Transactional(rollbackFor = Exception.class)
     @RabbitRetryable(
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_UNLOCK_SLOT_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT_FINAL
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT_FINAL,
+            bizKey = "#message.orderNo",
+            bizType = MQBizTypeEnum.UNLOCK_SLOT_MERCHANT
     )
     public void onMessage(UnlockSlotMessage message, Channel channel, Message amqpMessage) {
 

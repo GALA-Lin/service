@@ -17,12 +17,6 @@ import java.util.Map;
 @Configuration
 public class VenueMQConfig {
 
-    @Value("${mq.consumer.retry.activity-reminder.retry-interval:1000}")
-    private int activityReminderRetryInterval;
-
-    @Value("${mq.consumer.retry.venue-booking-reminder.retry-interval:1000}")
-    private int venueBookingReminderRetryInterval;
-
     //  活动提醒相关配置
 
     /**
@@ -42,36 +36,10 @@ public class VenueMQConfig {
     }
 
     @Bean
-    public TopicExchange activityReminderRetryDlxExchange() {
-        return new TopicExchange(VenueMQConstants.EXCHANGE_ACTIVITY_BOOKING_REMINDER_RETRY_DLX, true, false);
-    }
-
-    @Bean
-    public TopicExchange activityReminderFinalDlxExchange() {
-        return new TopicExchange(VenueMQConstants.EXCHANGE_ACTIVITY_BOOKING_REMINDER_FINAL_DLX, true, false);
-    }
-
-    @Bean
     public Queue activityReminderQueue() {
         return QueueBuilder
                 .durable(VenueMQConstants.QUEUE_ACTIVITY_BOOKING_REMINDER)
-                .withArgument("x-dead-letter-exchange", VenueMQConstants.EXCHANGE_ACTIVITY_BOOKING_REMINDER_RETRY_DLX)
-                .withArgument("x-dead-letter-routing-key", VenueMQConstants.ROUTING_ACTIVITY_BOOKING_REMINDER_RETRY)
                 .build();
-    }
-
-    @Bean
-    public Queue activityReminderRetryQueue() {
-        return QueueBuilder.durable(VenueMQConstants.QUEUE_ACTIVITY_BOOKING_REMINDER_RETRY)
-                .withArgument("x-message-ttl", activityReminderRetryInterval)
-                .withArgument("x-dead-letter-exchange", VenueMQConstants.EXCHANGE_TOPIC_ACTIVITY_BOOKING_REMINDER)
-                .withArgument("x-dead-letter-routing-key", VenueMQConstants.ROUTING_ACTIVITY_BOOKING_REMINDER)
-                .build();
-    }
-
-    @Bean
-    public Queue activityReminderDlq() {
-        return QueueBuilder.durable(VenueMQConstants.QUEUE_ACTIVITY_BOOKING_REMINDER_DLQ).build();
     }
 
     // 主交换机 -> 主队列
@@ -81,22 +49,6 @@ public class VenueMQConfig {
                 .to(activityReminderDelayExchange())
                 .with(VenueMQConstants.ROUTING_ACTIVITY_BOOKING_REMINDER)
                 .noargs();
-    }
-
-    // Retry-DLX -> retry.queue
-    @Bean
-    public Binding bindActivityReminderRetryQueue() {
-        return BindingBuilder.bind(activityReminderRetryQueue())
-                .to(activityReminderRetryDlxExchange())
-                .with(VenueMQConstants.ROUTING_ACTIVITY_BOOKING_REMINDER_RETRY);
-    }
-
-    // Final-DLX -> 最终 DLQ
-    @Bean
-    public Binding bindActivityReminderDlq() {
-        return BindingBuilder.bind(activityReminderDlq())
-                .to(activityReminderFinalDlxExchange())
-                .with(VenueMQConstants.ROUTING_ACTIVITY_BOOKING_REMINDER_FINAL);
     }
 
     //  订场提醒相关配置
@@ -117,37 +69,12 @@ public class VenueMQConfig {
                 args);
     }
 
-    @Bean
-    public TopicExchange venueBookingReminderRetryDlxExchange() {
-        return new TopicExchange(VenueMQConstants.EXCHANGE_VENUE_BOOKING_REMINDER_RETRY_DLX, true, false);
-    }
-
-    @Bean
-    public TopicExchange venueBookingReminderFinalDlxExchange() {
-        return new TopicExchange(VenueMQConstants.EXCHANGE_VENUE_BOOKING_REMINDER_FINAL_DLX, true, false);
-    }
 
     @Bean
     public Queue venueBookingReminderQueue() {
         return QueueBuilder
                 .durable(VenueMQConstants.QUEUE_VENUE_BOOKING_REMINDER)
-                .withArgument("x-dead-letter-exchange", VenueMQConstants.EXCHANGE_VENUE_BOOKING_REMINDER_RETRY_DLX)
-                .withArgument("x-dead-letter-routing-key", VenueMQConstants.ROUTING_VENUE_BOOKING_REMINDER_RETRY)
                 .build();
-    }
-
-    @Bean
-    public Queue venueBookingReminderRetryQueue() {
-        return QueueBuilder.durable(VenueMQConstants.QUEUE_VENUE_BOOKING_REMINDER_RETRY)
-                .withArgument("x-message-ttl", venueBookingReminderRetryInterval)
-                .withArgument("x-dead-letter-exchange", VenueMQConstants.EXCHANGE_TOPIC_VENUE_BOOKING_REMINDER)
-                .withArgument("x-dead-letter-routing-key", VenueMQConstants.ROUTING_VENUE_BOOKING_REMINDER)
-                .build();
-    }
-
-    @Bean
-    public Queue venueBookingReminderDlq() {
-        return QueueBuilder.durable(VenueMQConstants.QUEUE_VENUE_BOOKING_REMINDER_DLQ).build();
     }
 
     // 主交换机 -> 主队列
@@ -157,21 +84,5 @@ public class VenueMQConfig {
                 .to(venueBookingReminderDelayExchange())
                 .with(VenueMQConstants.ROUTING_VENUE_BOOKING_REMINDER)
                 .noargs();
-    }
-
-    // Retry-DLX -> retry.queue
-    @Bean
-    public Binding bindVenueBookingReminderRetryQueue() {
-        return BindingBuilder.bind(venueBookingReminderRetryQueue())
-                .to(venueBookingReminderRetryDlxExchange())
-                .with(VenueMQConstants.ROUTING_VENUE_BOOKING_REMINDER_RETRY);
-    }
-
-    // Final-DLX -> 最终 DLQ
-    @Bean
-    public Binding bindVenueBookingReminderDlq() {
-        return BindingBuilder.bind(venueBookingReminderDlq())
-                .to(venueBookingReminderFinalDlxExchange())
-                .with(VenueMQConstants.ROUTING_VENUE_BOOKING_REMINDER_FINAL);
     }
 }

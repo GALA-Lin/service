@@ -18,7 +18,9 @@ public enum GovernanceCode implements ResultCode{
     REPORT_TARGET_TYPE_INVALID(8006, "举报对象类型无效"),
     REPORT_REASON_INVALID(8007, "举报原因无效"),
     REPORT_SNAPSHOT_CREATE_FAILED(8008, "举报工单快照创建失败"),
-    REPORT_EVIDENCE_CREATE_FAILED(8009, "举报证据保存失败");
+    REPORT_EVIDENCE_CREATE_FAILED(8009, "举报证据保存失败"),
+    DEAD_LETTER_BIZ_TYPE_NOT_EXIST(8010, "死信队列的业务类型不存在"),
+    ;
 
 
 

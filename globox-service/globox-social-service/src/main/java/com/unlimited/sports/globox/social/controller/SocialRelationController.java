@@ -95,33 +95,60 @@ public class SocialRelationController {
 
     @GetMapping("/following")
     @Operation(summary = "关注列表", description = "获取我的关注列表，按关注时间倒序，keyword 仅过滤当前页昵称")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<PaginationResult<FollowUserVo>> getFollowing(
+            @Parameter(description = "当前登录用户ID（由网关注入）")
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "目标用户ID（查看别人的关注列表时使用）")
             @RequestParam(value = "targetUserId", required = false) Long targetUserId,
+            @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "10")
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @Parameter(description = "关键词（过滤昵称）")
             @RequestParam(value = "keyword", required = false) String keyword) {
         return socialRelationService.getFollowing(userId, targetUserId, page, pageSize, keyword);
     }
 
     @GetMapping("/fans")
     @Operation(summary = "粉丝列表", description = "获取我的粉丝列表，按关注时间倒序，keyword 仅过滤当前页昵称")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<PaginationResult<FollowUserVo>> getFans(
+            @Parameter(description = "当前登录用户ID（由网关注入）")
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "目标用户ID（查看别人的粉丝列表时使用）")
             @RequestParam(value = "targetUserId", required = false) Long targetUserId,
+            @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "10")
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @Parameter(description = "关键词（过滤昵称）")
             @RequestParam(value = "keyword", required = false) String keyword) {
         return socialRelationService.getFans(userId, targetUserId, page, pageSize, keyword);
     }
 
     @GetMapping("/mutual")
     @Operation(summary = "互关列表", description = "获取我的互相关注列表，按关注时间倒序，keyword 仅过滤当前页昵称")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<PaginationResult<FollowUserVo>> getMutual(
+            @Parameter(description = "当前登录用户ID（由网关注入）")
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "目标用户ID（查看别人的互关列表时使用）")
             @RequestParam(value = "targetUserId", required = false) Long targetUserId,
+            @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "10")
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @Parameter(description = "关键词（过滤昵称）")
             @RequestParam(value = "keyword", required = false) String keyword) {
         return socialRelationService.getMutual(userId, targetUserId, page, pageSize, keyword);
     }
@@ -155,10 +182,18 @@ public class SocialRelationController {
 
     @GetMapping("/blocks")
     @Operation(summary = "我已拉黑的用户列表", description = "获取我拉黑的用户，按拉黑时间倒序，支持关键词过滤当前页昵称")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<PaginationResult<BlockUserVo>> getBlockedUsers(
+            @Parameter(description = "当前登录用户ID（由网关注入）")
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(value = "page", defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "10")
             @RequestParam(value = "pageSize", defaultValue = "10") Integer pageSize,
+            @Parameter(description = "关键词（过滤昵称）")
             @RequestParam(value = "keyword", required = false) String keyword) {
         return socialRelationService.getBlockedUsers(userId, page, pageSize, keyword);
     }

@@ -92,6 +92,14 @@ public interface AuthService {
     R<LoginResponse> refreshToken(TokenRefreshRequest request);
 
     /**
+     * 登出，使 access token 失效
+     *
+     * @return 响应结果
+     */
+    R<Void> logout();
+
+
+    /**
      * 注销账号校验
      *
      * @param request 注销请求（手机号、验证码）

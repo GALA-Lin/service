@@ -164,7 +164,7 @@ public class NoteController {
     }
 
     @PostMapping("/publish")
-    @Operation(summary = "直接发布笔记", description = "直接发布笔记（不含 noteId），新建 PUBLISHED 状态的笔记。正文和媒体列表必填")
+    @Operation(summary = "直接发布笔记", description = "直接发布笔记（不含 noteId），新建 PUBLISHED 状态的笔记。正文和媒体列表必填。笔记内容会进行敏感词过滤")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "发布成功，返回新创建的笔记ID"),
             @ApiResponse(responseCode = "3001", description = "正文不能为空"),
@@ -172,6 +172,7 @@ public class NoteController {
             @ApiResponse(responseCode = "3003", description = "图片最多9张，视频仅1条"),
             @ApiResponse(responseCode = "3004", description = "媒体类型不合法"),
             @ApiResponse(responseCode = "3005", description = "视频必须提供封面图"),
+            @ApiResponse(responseCode = "8004", description = "存在敏感词，请修改后重试"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<Long> directPublishNote(
@@ -183,7 +184,7 @@ public class NoteController {
     }
 
     @PostMapping("/draft/publish")
-    @Operation(summary = "草稿转正发布", description = "草稿转正发布。必须传 noteId（草稿ID），将该草稿状态改为 PUBLISHED。正文和媒体列表必填")
+    @Operation(summary = "草稿转正发布", description = "草稿转正发布。必须传 noteId（草稿ID），将该草稿状态改为 PUBLISHED。正文和媒体列表必填。笔记内容会进行敏感词过滤")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "发布成功，返回笔记ID"),
             @ApiResponse(responseCode = "3029", description = "笔记ID不能为空"),
@@ -194,6 +195,7 @@ public class NoteController {
             @ApiResponse(responseCode = "3005", description = "视频必须提供封面图"),
             @ApiResponse(responseCode = "3006", description = "笔记不存在或已删除"),
             @ApiResponse(responseCode = "3008", description = "笔记状态无效（必须是 DRAFT 状态）"),
+            @ApiResponse(responseCode = "8004", description = "存在敏感词，请修改后重试"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<Long> publishDraftNote(
@@ -221,7 +223,7 @@ public class NoteController {
     }
 
     @PutMapping("/{noteId}")
-    @Operation(summary = "更新笔记", description = "更新草稿或已发布笔记。草稿：标题/正文/媒体至少一项非空；已发布：正文必填。mediaList=null 不更新媒体，mediaList=[] 报错（清空请使用删除媒体接口）")
+    @Operation(summary = "更新笔记", description = "更新草稿或已发布笔记。草稿：标题/正文/媒体至少一项非空；已发布：正文必填。mediaList=null 不更新媒体，mediaList=[] 报错（清空请使用删除媒体接口）。已发布笔记的标题/正文修改时会进行敏感词过滤")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "更新成功"),
             @ApiResponse(responseCode = "3001", description = "正文不能为空（已发布笔记）"),
@@ -232,6 +234,7 @@ public class NoteController {
             @ApiResponse(responseCode = "3005", description = "视频必须提供封面图"),
             @ApiResponse(responseCode = "3006", description = "笔记不存在或已删除"),
             @ApiResponse(responseCode = "3007", description = "无权限操作"),
+            @ApiResponse(responseCode = "8004", description = "存在敏感词，请修改后重试"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<String> updateNote(

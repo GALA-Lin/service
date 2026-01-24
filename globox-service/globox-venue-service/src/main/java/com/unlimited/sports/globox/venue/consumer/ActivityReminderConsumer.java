@@ -26,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 
 /**
@@ -63,11 +64,7 @@ public class ActivityReminderConsumer {
      */
     @RabbitHandler
     @Transactional(rollbackFor = Exception.class)
-    @RabbitRetryable(
-            finalExchange = VenueMQConstants.EXCHANGE_ACTIVITY_BOOKING_REMINDER_FINAL_DLX,
-            finalRoutingKey = VenueMQConstants.ROUTING_ACTIVITY_BOOKING_REMINDER_FINAL
-    )
-    public void onMessage(ActivityReminderMessage message, Channel channel, Message amqpMessage) {
+    public void onMessage(ActivityReminderMessage message, Channel channel, Message amqpMessage) throws IOException {
         Long userId = message.getUserId();
         Long participantId = message.getParticipantId();
         LocalDateTime registrationTime = message.getRegistrationTime();
@@ -150,6 +147,9 @@ public class ActivityReminderConsumer {
         } catch (Exception e) {
             log.error("[活动提醒] 处理失败 - userId={}, participantId={}", userId, participantId, e);
             throw e;
+        } finally {
+            long deliveryTag = amqpMessage.getMessageProperties().getDeliveryTag();
+            channel.basicAck(deliveryTag, false);
         }
     }
 }

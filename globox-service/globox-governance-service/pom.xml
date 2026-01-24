@@ -26,6 +26,12 @@
 
         <dependency>
             <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-mq-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
             <artifactId>globox-redis-utils</artifactId>
             <version>1.0</version>
         </dependency>
@@ -40,6 +46,11 @@
             <groupId>com.unlimited.sports.globox</groupId>
             <artifactId>globox-cos-utils</artifactId>
             <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
         <dependency>

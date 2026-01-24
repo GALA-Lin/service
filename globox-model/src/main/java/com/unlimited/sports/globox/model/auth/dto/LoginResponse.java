@@ -24,7 +24,7 @@ public class LoginResponse {
     @Schema(description = "Access Token（格式：Bearer xxx）", example = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")
     private String token;
 
-    @Schema(description = "Refresh Token", example = "550e8400-e29b-41d4-a716-446655440000:abc123")
+    @Schema(description = "Refresh Token，用于刷新 access token。refreshToken 携带 clientType claim，用于单端校验与下线逻辑。App 端必须保留并按约刷新。", example = "550e8400-e29b-41d4-a716-446655440000:abc123")
     private String refreshToken;
 
     @Schema(description = "用户角色列表", example = "[\"player\"]")

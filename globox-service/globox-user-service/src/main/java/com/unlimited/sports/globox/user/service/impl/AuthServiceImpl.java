@@ -2,15 +2,18 @@ package com.unlimited.sports.globox.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
+import com.unlimited.sports.globox.common.enums.ClientType;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
-import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.HttpRequestUtils;
-import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
+import com.unlimited.sports.globox.common.utils.JwtUtil;
+import com.unlimited.sports.globox.dubbo.social.ChatDubboService;
+import com.unlimited.sports.globox.model.auth.dto.AppleLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountRequest;
 import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
@@ -22,14 +25,12 @@ import com.unlimited.sports.globox.model.auth.dto.PhoneLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.ResetPasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.SendCaptchaRequest;
 import com.unlimited.sports.globox.model.auth.dto.SetPasswordRequest;
-import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
 import com.unlimited.sports.globox.model.auth.dto.ThirdPartyLoginResponse;
+import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatBindPhoneRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatLoginResponse;
 import com.unlimited.sports.globox.model.auth.dto.WechatPhoneLoginRequest;
-import com.unlimited.sports.globox.model.auth.dto.AppleLoginRequest;
-import com.unlimited.sports.globox.model.auth.vo.WechatUserInfo;
 import com.unlimited.sports.globox.model.auth.entity.AuthIdentity;
 import com.unlimited.sports.globox.model.auth.entity.AuthUser;
 import com.unlimited.sports.globox.model.auth.entity.InternalTestWhitelist;
@@ -38,6 +39,7 @@ import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.entity.UserRacket;
 import com.unlimited.sports.globox.model.auth.entity.UserStyleTag;
 import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
+import com.unlimited.sports.globox.model.auth.vo.WechatUserInfo;
 import com.unlimited.sports.globox.user.mapper.AuthIdentityMapper;
 import com.unlimited.sports.globox.user.mapper.AuthUserMapper;
 import com.unlimited.sports.globox.user.mapper.UserLoginRecordMapper;
@@ -45,17 +47,15 @@ import com.unlimited.sports.globox.user.mapper.UserProfileMapper;
 import com.unlimited.sports.globox.user.mapper.UserRacketMapper;
 import com.unlimited.sports.globox.user.mapper.UserStyleTagMapper;
 import com.unlimited.sports.globox.user.prop.UserProfileDefaultProperties;
+import com.unlimited.sports.globox.user.service.AppleService;
 import com.unlimited.sports.globox.user.service.AuthService;
 import com.unlimited.sports.globox.user.service.IUserDeviceService;
-import com.unlimited.sports.globox.user.service.AppleService;
 import com.unlimited.sports.globox.user.service.RedisService;
 import com.unlimited.sports.globox.user.service.SmsService;
 import com.unlimited.sports.globox.user.service.WechatService;
 import com.unlimited.sports.globox.user.service.WhitelistService;
-import com.unlimited.sports.globox.common.utils.JwtUtil;
 import com.unlimited.sports.globox.user.util.PasswordUtils;
 import com.unlimited.sports.globox.user.util.PhoneUtils;
-import com.unlimited.sports.globox.dubbo.social.ChatDubboService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,14 +65,12 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import java.math.BigDecimal;
-
 /**
  * 认证服务实现
  *
@@ -257,26 +255,29 @@ public class AuthServiceImpl implements AuthService {
         boolean isNewUser = created || reactivated;
 
         // 7. 生成JWT Token
+        String clientTypeHeader = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = resolveClientTypeForAppLogin(clientTypeHeader);
+        log.info("手机号登录客户端类型: clientType={}, headerPresent={}", clientType, StringUtils.hasText(clientTypeHeader));
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", authUser.getRole());
-
-        String accessToken = JwtUtil.generateToken(
-                String.valueOf(authUser.getUserId()),
+        String accessToken = generateAccessToken(
+                authUser.getUserId(),
                 claims,
                 jwtSecret,
-                accessTokenExpire
+                accessTokenExpire,
+                clientType
         );
 
-        String refreshToken = JwtUtil.generateToken(
-                String.valueOf(authUser.getUserId()),
+        String refreshToken = generateRefreshToken(
+                authUser.getUserId(),
                 claims,
                 jwtSecret,
-                refreshTokenExpire
+                refreshTokenExpire,
+                clientType
         );
 
         // 8. 保存Refresh Token到Redis
-        redisService.saveRefreshToken(authUser.getUserId(), refreshToken, refreshTokenExpire);
-
+        saveRefreshTokenForClient(authUser.getUserId(), refreshToken, refreshTokenExpire, clientType);
         // 9. 记录登录日志
         recordLoginLog(authUser.getUserId(), phone, AuthIdentity.IdentityType.PHONE, true, null);
 
@@ -358,28 +359,31 @@ public class AuthServiceImpl implements AuthService {
                     log.error("第三方小程序 JWT secret 未配置");
                     throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
                 }
-                accessToken = JwtUtil.generateToken(
-                        String.valueOf(authUser.getUserId()),
+                accessToken = generateAccessToken(
+                        authUser.getUserId(),
                         claims,
                         thirdPartyJwtSecret,
-                        thirdPartyAccessTokenExpire
+                        thirdPartyAccessTokenExpire,
+                        clientType
                 );
             } else {
-                accessToken = JwtUtil.generateToken(
-                        String.valueOf(authUser.getUserId()),
+                accessToken = generateAccessToken(
+                        authUser.getUserId(),
                         claims,
                         jwtSecret,
-                        accessTokenExpire
+                        accessTokenExpire,
+                        clientType
                 );
 
-                refreshToken = JwtUtil.generateToken(
-                        String.valueOf(authUser.getUserId()),
+                refreshToken = generateRefreshToken(
+                        authUser.getUserId(),
                         claims,
                         jwtSecret,
-                        refreshTokenExpire
+                        refreshTokenExpire,
+                        clientType
                 );
                 // 保存Refresh Token到Redis
-                redisService.saveRefreshToken(authUser.getUserId(), refreshToken, refreshTokenExpire);
+                saveRefreshTokenForClient(authUser.getUserId(), refreshToken, refreshTokenExpire, clientType);
             }
 
             // 记录登录日志
@@ -453,27 +457,30 @@ public class AuthServiceImpl implements AuthService {
                         log.error("第三方小程序 JWT secret 未配置");
                         throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
                     }
-                    accessToken = JwtUtil.generateToken(
-                            String.valueOf(authUser.getUserId()),
+                    accessToken = generateAccessToken(
+                            authUser.getUserId(),
                             claims,
                             thirdPartyJwtSecret,
-                            thirdPartyAccessTokenExpire
+                            thirdPartyAccessTokenExpire,
+                            clientType
                     );
                 } else {
-                    accessToken = JwtUtil.generateToken(
-                            String.valueOf(authUser.getUserId()),
+                    accessToken = generateAccessToken(
+                            authUser.getUserId(),
                             claims,
                             jwtSecret,
-                            accessTokenExpire
+                            accessTokenExpire,
+                            clientType
                     );
 
-                    refreshToken = JwtUtil.generateToken(
-                            String.valueOf(authUser.getUserId()),
+                    refreshToken = generateRefreshToken(
+                            authUser.getUserId(),
                             claims,
                             jwtSecret,
-                            refreshTokenExpire
+                            refreshTokenExpire,
+                            clientType
                     );
-                    redisService.saveRefreshToken(authUser.getUserId(), refreshToken, refreshTokenExpire);
+                    saveRefreshTokenForClient(authUser.getUserId(), refreshToken, refreshTokenExpire, clientType);
                 }
 
                 // 记录登录日志
@@ -622,8 +629,8 @@ public class AuthServiceImpl implements AuthService {
             isNewUser = true;
 
             // 使用统一方法创建手机号账号
-            String nicknameToUse = (nickname != null && !nickname.trim().isEmpty()) 
-                    ? nickname 
+            String nicknameToUse = (nickname != null && !nickname.trim().isEmpty())
+                    ? nickname
                     : "用户" + phone.substring(phone.length() - 4);
             LoginUserResult phoneLoginResult = loginOrRegisterByIdentity(
                     AuthIdentity.IdentityType.PHONE,
@@ -666,33 +673,36 @@ public class AuthServiceImpl implements AuthService {
                 log.error("第三方小程序 JWT secret 未配置");
                 throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
             }
-            accessToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            accessToken = generateAccessToken(
+                    userId,
                     claims,
                     thirdPartyJwtSecret,
-                    thirdPartyAccessTokenExpire
+                    thirdPartyAccessTokenExpire,
+                    savedClientType
             );
             // 第三方小程序不生成 refreshToken
             refreshToken = null;
             log.info("第三方小程序绑定手机号成功：userId={}, phone={}, openid={}", userId, phone, openid);
         } else {
             // 普通小程序/App：使用 user.jwt.* 配置
-            accessToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            accessToken = generateAccessToken(
+                    userId,
                     claims,
                     jwtSecret,
-                    accessTokenExpire
+                    accessTokenExpire,
+                    savedClientType
             );
 
-            refreshToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            refreshToken = generateRefreshToken(
+                    userId,
                     claims,
                     jwtSecret,
-                    refreshTokenExpire
+                    refreshTokenExpire,
+                    savedClientType
             );
 
             // 10. 保存Refresh Token到Redis
-            redisService.saveRefreshToken(userId, refreshToken, refreshTokenExpire);
+            saveRefreshTokenForClient(userId, refreshToken, refreshTokenExpire, savedClientType);
         }
 
         // 11. 记录登录日志
@@ -783,6 +793,20 @@ public class AuthServiceImpl implements AuthService {
             log.info("第三方小程序新用户注册成功（手机号登录）：userId={}, phone={}", userId, phone);
         }
 
+        // 6c. 将 openid 持久化到 PHONE 类型 AuthIdentity 的 credential 字段（明文，不加 hash）
+        if (StringUtils.hasText(openid)) {
+            LambdaQueryWrapper<AuthIdentity> updateQuery = new LambdaQueryWrapper<>();
+            updateQuery.eq(AuthIdentity::getUserId, userId)
+                    .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
+                    .eq(AuthIdentity::getIdentifier, phone);
+            AuthIdentity phoneIdentityToUpdate = authIdentityMapper.selectOne(updateQuery);
+            if (phoneIdentityToUpdate != null) {
+                phoneIdentityToUpdate.setCredential(openid);
+                authIdentityMapper.updateById(phoneIdentityToUpdate);
+                log.info("微信手机号登录：已保存 openid 到 credential 字段，userId={}, phone={}", userId, phone);
+            }
+        }
+
         // 7. 查询用户资料（用于返回用户信息）
         UserProfile userProfile = userProfileMapper.selectById(userId);
 
@@ -802,29 +826,32 @@ public class AuthServiceImpl implements AuthService {
                 log.error("第三方小程序 JWT secret 未配置");
                 throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
             }
-            accessToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            accessToken = generateAccessToken(
+                    userId,
                     claims,
                     thirdPartyJwtSecret,
-                    thirdPartyAccessTokenExpire
+                    thirdPartyAccessTokenExpire,
+                    clientType
             );
             // 第三方小程序不生成 refreshToken
         } else {
             // App端：使用 user.jwt.* 配置
-            accessToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            accessToken = generateAccessToken(
+                    userId,
                     claims,
                     jwtSecret,
-                    accessTokenExpire
+                    accessTokenExpire,
+                    clientType
             );
-            refreshToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            refreshToken = generateRefreshToken(
+                    userId,
                     claims,
                     jwtSecret,
-                    refreshTokenExpire
+                    refreshTokenExpire,
+                    clientType
             );
             // 保存Refresh Token到Redis
-            redisService.saveRefreshToken(userId, refreshToken, refreshTokenExpire);
+            saveRefreshTokenForClient(userId, refreshToken, refreshTokenExpire, clientType);
         }
 
         // 9. 记录登录日志
@@ -861,8 +888,9 @@ public class AuthServiceImpl implements AuthService {
         Assert.isNotEmpty(token, UserAuthCode.TOKEN_INVALID);
 
         // 2. 验证Token有效性
+        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         Assert.isTrue(JwtUtil.validateToken(token, jwtSecret), UserAuthCode.TOKEN_INVALID);
-
+        assertAppAccessTokenActive(token, clientType, jwtSecret);
         // 3. 从Token中提取userId
         Long userId = Long.parseLong(JwtUtil.getSubject(token, jwtSecret));
 
@@ -955,28 +983,31 @@ public class AuthServiceImpl implements AuthService {
 
         // 8. 查询用户信息（并处理注销重用）
         AuthUser authUser = ensureUserActiveForLogin(identity, buildDefaultNicknameForPhone(phone)).authUser();
-
+        String clientTypeHeader = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = resolveClientTypeForAppLogin(clientTypeHeader);
+        log.info("密码登录客户端类型: clientType={}, headerPresent={}", clientType, StringUtils.hasText(clientTypeHeader));
         // 9. 生成JWT双Token（完全复用phoneLogin的逻辑）
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", authUser.getRole());
 
-        String accessToken = JwtUtil.generateToken(
-                String.valueOf(authUser.getUserId()),
+        String accessToken = generateAccessToken(
+                authUser.getUserId(),
                 claims,
                 jwtSecret,
-                accessTokenExpire
+                accessTokenExpire,
+                clientType
         );
 
-        String refreshToken = JwtUtil.generateToken(
-                String.valueOf(authUser.getUserId()),
+        String refreshToken = generateRefreshToken(
+                authUser.getUserId(),
                 claims,
                 jwtSecret,
-                refreshTokenExpire
+                refreshTokenExpire,
+                clientType
         );
 
         // 10. 保存Refresh Token到Redis
-        redisService.saveRefreshToken(authUser.getUserId(), refreshToken, refreshTokenExpire);
-
+        saveRefreshTokenForClient(authUser.getUserId(), refreshToken, refreshTokenExpire, clientType);
         // 11. 记录登录日志
         recordLoginLog(authUser.getUserId(), phone, AuthIdentity.IdentityType.PHONE, true, null);
 
@@ -1185,7 +1216,10 @@ public class AuthServiceImpl implements AuthService {
         Assert.isNotEmpty(token, UserAuthCode.TOKEN_INVALID);
 
         // 2. 验证Token有效性
+        String clientType = resolveClientTypeForAppLogin(
+                AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
         Assert.isTrue(JwtUtil.validateToken(token, jwtSecret), UserAuthCode.TOKEN_INVALID);
+        assertAppAccessTokenActive(token, clientType, jwtSecret);
 
         // 3. 从Token中提取userId
         Long userId = Long.parseLong(JwtUtil.getSubject(token, jwtSecret));
@@ -1237,11 +1271,14 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public R<LoginResponse> refreshToken(TokenRefreshRequest request) {
         String refreshToken = request.getRefreshToken();
+        // 客户端类型优先取请求头，缺失时用 refreshToken 中的 claim 回填
+        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
 
         // 1. 校验 JWT 签名和过期时间
         if (!JwtUtil.validateToken(refreshToken, jwtSecret)) {
             throw new GloboxApplicationException(UserAuthCode.REFRESH_TOKEN_INVALID);
         }
+        clientType = resolveClientTypeFromRefreshToken(clientType, refreshToken);
 
         // 2. 校验 Redis 中是否有效（是否已被吊销）
         if (!redisService.isRefreshTokenValid(refreshToken)) {
@@ -1266,22 +1303,24 @@ public class AuthServiceImpl implements AuthService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", authUser.getRole());
 
-        String newAccessToken = JwtUtil.generateToken(
-                String.valueOf(userId),
+        String newAccessToken = generateAccessToken(
+                userId,
                 claims,
                 jwtSecret,
-                accessTokenExpire
+                accessTokenExpire,
+                clientType
         );
 
-        String newRefreshToken = JwtUtil.generateToken(
-                String.valueOf(userId),
+        String newRefreshToken = generateRefreshToken(
+                userId,
                 claims,
                 jwtSecret,
-                refreshTokenExpire
+                refreshTokenExpire,
+                clientType
         );
 
         // 7. 保存新 refresh token 到 Redis
-        redisService.saveRefreshToken(userId, newRefreshToken, refreshTokenExpire);
+        saveRefreshTokenForClient(userId, newRefreshToken, refreshTokenExpire, clientType);
 
         // 8. 构建响应
         LoginResponse response = LoginResponse.builder()
@@ -1300,12 +1339,24 @@ public class AuthServiceImpl implements AuthService {
     /**
      * 记录登录日志（时间字段由数据库自动填充）
      *
-     * @param userId 用户ID（失败时可能为null）
-     * @param identifier 标识（手机号或openid等，会自动脱敏）
-     * @param identityType 登录方式类型
-     * @param success 是否成功
-     * @param failReason 失败原因
      */
+    @Override
+    public R<Void> logout() {
+        String userIdHeader = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_USER_ID);
+        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        Assert.isNotEmpty(userIdHeader, UserAuthCode.MISSING_USER_ID_HEADER);
+        Long userId = Long.parseLong(userIdHeader);
+        // 仅 App 端执行单端登出，避免影响其他端
+        if (StringUtils.hasText(clientType) && clientType.equalsIgnoreCase(ClientType.APP.getValue())) {
+            redisService.deleteAccessTokenJti(userId, clientType);
+            redisService.deleteRefreshTokensByClientType(userId, clientType);
+            log.info("app logout success: userId={}, clientType={}", userId, clientType);
+            return R.ok();
+        }
+        log.info("logout ignored (non-app): userId={}, clientType={}", userId, clientType);
+        return R.ok();
+    }
+
     private void recordLoginLog(Long userId, String identifier, AuthIdentity.IdentityType identityType,
                                 boolean success, String failReason) {
         UserLoginRecord record = new UserLoginRecord();
@@ -1393,27 +1444,30 @@ public class AuthServiceImpl implements AuthService {
                     log.error("第三方小程序 JWT secret 未配置");
                     throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
                 }
-                accessToken = JwtUtil.generateToken(
-                        String.valueOf(authUser.getUserId()),
+                accessToken = generateAccessToken(
+                        authUser.getUserId(),
                         claims,
                         thirdPartyJwtSecret,
-                        thirdPartyAccessTokenExpire
+                        thirdPartyAccessTokenExpire,
+                        clientType
                 );
             } else {
-                accessToken = JwtUtil.generateToken(
-                        String.valueOf(authUser.getUserId()),
+                accessToken = generateAccessToken(
+                        authUser.getUserId(),
                         claims,
                         jwtSecret,
-                        accessTokenExpire
+                        accessTokenExpire,
+                        clientType
                 );
 
-                refreshToken = JwtUtil.generateToken(
-                        String.valueOf(authUser.getUserId()),
+                refreshToken = generateRefreshToken(
+                        authUser.getUserId(),
                         claims,
                         jwtSecret,
-                        refreshTokenExpire
+                        refreshTokenExpire,
+                        clientType
                 );
-                redisService.saveRefreshToken(authUser.getUserId(), refreshToken, refreshTokenExpire);
+                saveRefreshTokenForClient(authUser.getUserId(), refreshToken, refreshTokenExpire, clientType);
             }
 
             recordLoginLog(authUser.getUserId(), openid, AuthIdentity.IdentityType.WECHAT, true, null);
@@ -1502,28 +1556,31 @@ public class AuthServiceImpl implements AuthService {
                 log.error("第三方小程序 JWT secret 未配置");
                 throw new GloboxApplicationException(UserAuthCode.WECHAT_AUTH_FAILED);
             }
-            accessToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            accessToken = generateAccessToken(
+                    userId,
                     claims,
                     thirdPartyJwtSecret,
-                    thirdPartyAccessTokenExpire
+                    thirdPartyAccessTokenExpire,
+                    clientType
             );
         } else {
-            accessToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            accessToken = generateAccessToken(
+                    userId,
                     claims,
                     jwtSecret,
-                    accessTokenExpire
+                    accessTokenExpire,
+                    clientType
             );
 
-            refreshToken = JwtUtil.generateToken(
-                    String.valueOf(userId),
+            refreshToken = generateRefreshToken(
+                    userId,
                     claims,
                     jwtSecret,
-                    refreshTokenExpire
+                    refreshTokenExpire,
+                    clientType
             );
             // 保存Refresh Token到Redis
-            redisService.saveRefreshToken(userId, refreshToken, refreshTokenExpire);
+            saveRefreshTokenForClient(userId, refreshToken, refreshTokenExpire, clientType);
         }
 
         // 4. 记录登录日志
@@ -1619,8 +1676,9 @@ public class AuthServiceImpl implements AuthService {
 
     /**
      * 登录用户结果
-     * @param authUser 用户对象
-     * @param created 是否为新创建的用户
+     *
+     * @param authUser    用户对象
+     * @param created     是否为新创建的用�?
      * @param reactivated 是否为重新激活的用户
      */
     private record LoginUserResult(AuthUser authUser, boolean created, boolean reactivated) {
@@ -1641,9 +1699,9 @@ public class AuthServiceImpl implements AuthService {
      * @param profileInit Profile初始化数据（可为null，使用默认值）
      * @return LoginUserResult 包含用户信息和是否重新激活标志
      */
-    private LoginUserResult loginOrRegisterByIdentity(AuthIdentity.IdentityType type, 
-                                                       String identifier, 
-                                                       ProfileInit profileInit) {
+    private LoginUserResult loginOrRegisterByIdentity(AuthIdentity.IdentityType type,
+                                                      String identifier,
+                                                      ProfileInit profileInit) {
         // 1. 查询auth_identity，判断该身份是否已注册
         LambdaQueryWrapper<AuthIdentity> identityQuery = new LambdaQueryWrapper<>();
         identityQuery.eq(AuthIdentity::getIdentityType, type)
@@ -1716,9 +1774,9 @@ public class AuthServiceImpl implements AuthService {
      * @param expectedUserId 期望的用户ID（null表示不应存在绑定，非null表示只能绑定到该用户）
      * @throws GloboxApplicationException 如果已绑定到其他账号
      */
-    private void assertIdentityNotBoundToOtherUser(AuthIdentity.IdentityType type, 
-                                                     String identifier, 
-                                                     Long expectedUserId) {
+    private void assertIdentityNotBoundToOtherUser(AuthIdentity.IdentityType type,
+                                                   String identifier,
+                                                   Long expectedUserId) {
         LambdaQueryWrapper<AuthIdentity> query = new LambdaQueryWrapper<>();
         query.eq(AuthIdentity::getIdentityType, type)
                 .eq(AuthIdentity::getIdentifier, identifier);
@@ -1884,7 +1942,86 @@ public class AuthServiceImpl implements AuthService {
         String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         return clientType != null && clientType.equalsIgnoreCase(ClientType.APP.getValue());
     }
-
+    // 仅用于 App 固定登录入口：缺省视为 app，确保 token 有状态
+    private String resolveClientTypeForAppLogin(String clientType) {
+        if (StringUtils.hasText(clientType)) {
+            return clientType;
+        }
+        return ClientType.APP.getValue();
+    }
+    // refreshToken 中带 clientType，header 缺失时回填端类型
+    private String resolveClientTypeFromRefreshToken(String clientType, String refreshToken) {
+        if (StringUtils.hasText(clientType) || !StringUtils.hasText(refreshToken)) {
+            return clientType;
+        }
+        String tokenClientType = JwtUtil.getClaim(refreshToken, jwtSecret, "clientType", String.class);
+        if (StringUtils.hasText(tokenClientType)) {
+            return tokenClientType;
+        }
+        return clientType;
+    }
+    private String generateAccessToken(Long userId,
+                                       Map<String, Object> claims,
+                                       String secret,
+                                       long expireSeconds,
+                                       String clientType) {
+        Map<String, Object> accessClaims = claims == null ? new HashMap<>() : new HashMap<>(claims);
+        if (StringUtils.hasText(clientType) && clientType.equalsIgnoreCase(ClientType.APP.getValue())) {
+            String jti = UUID.randomUUID().toString();
+            accessClaims.put("jti", jti);
+            redisService.saveAccessTokenJti(userId, clientType, jti, expireSeconds);
+        }
+        return JwtUtil.generateToken(String.valueOf(userId), accessClaims, secret, expireSeconds);
+    }
+    // refreshToken 写入 clientType，便于刷新时恢复端类型
+    private String generateRefreshToken(Long userId,
+                                        Map<String, Object> claims,
+                                        String secret,
+                                        long expireSeconds,
+                                        String clientType) {
+        Map<String, Object> refreshClaims = claims == null ? new HashMap<>() : new HashMap<>(claims);
+        if (StringUtils.hasText(clientType)) {
+            refreshClaims.put("clientType", clientType);
+        }
+        return JwtUtil.generateToken(String.valueOf(userId), refreshClaims, secret, expireSeconds);
+    }
+    private void saveRefreshTokenForClient(Long userId, String refreshToken, long expireSeconds, String clientType) {
+        if (!StringUtils.hasText(refreshToken)) {
+            return;
+        }
+        if (StringUtils.hasText(clientType) && clientType.equalsIgnoreCase(ClientType.APP.getValue())) {
+            redisService.deleteRefreshTokensByClientType(userId, clientType);
+        }
+        if (StringUtils.hasText(clientType)) {
+            redisService.saveRefreshTokenWithClient(userId, refreshToken, expireSeconds, clientType);
+            return;
+        }
+        redisService.saveRefreshToken(userId, refreshToken, expireSeconds);
+    }
+    private void assertAppAccessTokenActive(String token, String clientType, String secret) {
+        if (!StringUtils.hasText(clientType) || !clientType.equalsIgnoreCase(ClientType.APP.getValue())) {
+            return;
+        }
+        String jti = JwtUtil.getClaim(token, secret, "jti", String.class);
+        if (!StringUtils.hasText(jti)) {
+            return;
+        }
+        String userIdStr = JwtUtil.getSubject(token, secret);
+        if (!StringUtils.hasText(userIdStr)) {
+            throw new GloboxApplicationException(UserAuthCode.TOKEN_INVALID);
+        }
+        try {
+            Long userId = Long.parseLong(userIdStr);
+            String cachedJti = redisService.getAccessTokenJti(userId, clientType);
+            if (!StringUtils.hasText(cachedJti) || !jti.equals(cachedJti)) {
+                throw new GloboxApplicationException(UserAuthCode.TOKEN_INVALID);
+            }
+        } catch (GloboxApplicationException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new GloboxApplicationException(UserAuthCode.TOKEN_INVALID);
+        }
+    }
     private String resolveAvatarUrl(String avatarUrl) {
         if (StringUtils.hasText(avatarUrl)) {
             return avatarUrl;
@@ -1905,7 +2042,8 @@ public class AuthServiceImpl implements AuthService {
     @Transactional(rollbackFor = Exception.class)
     public R<LoginResponse> appleLogin(AppleLoginRequest request) {
         String identityToken = request.getIdentityToken();
-        
+        String clientType = resolveClientTypeForAppLogin(
+                AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
         // 1. 验证 identityToken 不为空
         Assert.isNotEmpty(identityToken, UserAuthCode.INVALID_PARAM);
         
@@ -1927,24 +2065,23 @@ public class AuthServiceImpl implements AuthService {
         // 4. 生成 JWT Token（复用 phoneLogin 的逻辑）
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", authUser.getRole());
-
-        String accessToken = JwtUtil.generateToken(
-                String.valueOf(authUser.getUserId()),
+        String accessToken = generateAccessToken(
+                authUser.getUserId(),
                 claims,
                 jwtSecret,
-                accessTokenExpire
+                accessTokenExpire,
+                clientType
         );
 
-        String refreshToken = JwtUtil.generateToken(
-                String.valueOf(authUser.getUserId()),
+        String refreshToken = generateRefreshToken(
+                authUser.getUserId(),
                 claims,
                 jwtSecret,
-                refreshTokenExpire
+                refreshTokenExpire,
+                clientType
         );
-
         // 5. 保存 Refresh Token 到 Redis
-        redisService.saveRefreshToken(authUser.getUserId(), refreshToken, refreshTokenExpire);
-
+        saveRefreshTokenForClient(authUser.getUserId(), refreshToken, refreshTokenExpire, clientType);
         // 6. 记录登录日志
         recordLoginLog(authUser.getUserId(), appleSub, AuthIdentity.IdentityType.APPLE, true, null);
 

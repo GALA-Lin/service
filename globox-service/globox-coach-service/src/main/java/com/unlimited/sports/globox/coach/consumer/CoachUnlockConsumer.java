@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.coach.service.impl.CoachSlotServiceImpl;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +33,9 @@ public class CoachUnlockConsumer {
     @Transactional(rollbackFor = Exception.class)
     @RabbitRetryable(
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_UNLOCK_COACH_SLOT_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_FINAL
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT_FINAL,
+            bizKey = "#message.orderNo",
+            bizType = MQBizTypeEnum.UNLOCK_SLOT_COACH
     )
     public void onUnlockSlotsMessage(
             UnlockSlotMessage message,

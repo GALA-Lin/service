@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox;
 
+import org.springframework.amqp.rabbit.annotation.EnableRabbit;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
@@ -7,6 +8,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 /**
  * 治理模块 启动类
  */
+@EnableRabbit
 @EnableDiscoveryClient
 @SpringBootApplication(scanBasePackages = "com.unlimited.sports.globox")
 public class GovernanceApplication {

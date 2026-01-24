@@ -68,7 +68,7 @@ public class WechatPayAppServiceImpl implements WechatPayAppService {
 
         return SubmitResultVo.builder()
                 .outTradeNo(payments.getOutTradeNo())
-                .orderStr(response.getPrepayId())
+                .orderStr(jsonUtils.objectToJson(response))
                 .build();
     }
 

@@ -150,9 +150,13 @@ public class MerchantAuthUtil {
      * @param context 认证上下文
      */
     public void requireOwner(MerchantAuthContext context) {
-        // 暂不限制，只要是该商家的员工或所有者都可以
         log.debug("所有者权限检查 - employeeId: {}, role: {}",
                 context.getEmployeeId(), context.getRole());
+        if (!context.isOwner()) {
+            log.error("权限不足 - employeeId: {}, role: {}",
+                    context.getEmployeeId(), context.getRole());
+            throw new GloboxApplicationException("权限不足");
+        }
     }
 
     /**
@@ -164,7 +168,7 @@ public class MerchantAuthUtil {
     public void validatePermission(MerchantAuthContext context, String permission) {
         // 只要通过了 validateAndGetContext 验证，说明是该商家的员工或所有者
         // 暂不做细致的权限检查
-        log.debug("权限校验通过 - employeeId: {}, role: {}, merchantId: {}",
-                context.getEmployeeId(), context.getRole(), context.getMerchantId());
+        log.debug("【{}】权限校验通过 - employeeId: {}, role: {}, merchantId: {}",
+                permission, context.getEmployeeId(), context.getRole(), context.getMerchantId());
     }
 }

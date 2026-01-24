@@ -58,7 +58,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -73,7 +72,6 @@ public class NoteServiceImpl implements NoteService {
     private static final int MAX_VIDEO_COUNT = 1;
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
-    private static final String DEFAULT_VIDEO_COVER_QUERY = "ci-process=snapshot&time=0&format=jpg";
 
     @Autowired
     private SocialNoteMapper socialNoteMapper;
@@ -691,17 +689,8 @@ public class NoteServiceImpl implements NoteService {
         NoteMediaRequest firstMedia = mediaList.get(0);
         if (SocialNote.MediaType.VIDEO.name().equals(mediaType)) {
             String coverUrl = firstMedia.getCoverUrl();
-            String baseUrl = StringUtils.hasText(firstMedia.getUrl()) ? firstMedia.getUrl() : coverUrl;
             if (StringUtils.hasText(coverUrl)) {
-                if (coverUrl.contains("ci-process=")) {
-                    note.setCoverUrl(coverUrl);
-                } else if (looksLikeVideoUrl(coverUrl)) {
-                    note.setCoverUrl(buildVideoCoverUrl(baseUrl));
-                } else {
-                    note.setCoverUrl(coverUrl);
-                }
-            } else if (StringUtils.hasText(baseUrl)) {
-                note.setCoverUrl(buildVideoCoverUrl(baseUrl));
+                note.setCoverUrl(coverUrl);
             }
         } else if (SocialNote.MediaType.IMAGE.name().equals(mediaType) && StringUtils.hasText(firstMedia.getUrl())) {
             note.setCoverUrl(firstMedia.getUrl());
@@ -716,36 +705,10 @@ public class NoteServiceImpl implements NoteService {
             if (mediaReq == null || !StringUtils.hasText(mediaReq.getUrl())) {
                 continue;
             }
-            String coverUrl = mediaReq.getCoverUrl();
-            if (!StringUtils.hasText(coverUrl)) {
-                mediaReq.setCoverUrl(buildVideoCoverUrl(mediaReq.getUrl()));
-            } else if (!coverUrl.contains("ci-process=") && looksLikeVideoUrl(coverUrl)) {
-                mediaReq.setCoverUrl(buildVideoCoverUrl(mediaReq.getUrl()));
+            if (!StringUtils.hasText(mediaReq.getCoverUrl())) {
+                mediaReq.setCoverUrl(null);
             }
         }
-    }
-
-    private boolean looksLikeVideoUrl(String url) {
-        if (!StringUtils.hasText(url)) {
-            return false;
-        }
-        String path = url.toLowerCase(Locale.ROOT).split("\\?", 2)[0];
-        return path.endsWith(".mp4")
-                || path.endsWith(".mov")
-                || path.endsWith(".m3u8")
-                || path.endsWith(".webm")
-                || path.endsWith(".avi");
-    }
-
-    private String buildVideoCoverUrl(String videoUrl) {
-        if (!StringUtils.hasText(videoUrl)) {
-            return videoUrl;
-        }
-        if (videoUrl.contains("ci-process=")) {
-            return videoUrl;
-        }
-        String separator = videoUrl.contains("?") ? "&" : "?";
-        return videoUrl + separator + DEFAULT_VIDEO_COVER_QUERY;
     }
 
     @Override

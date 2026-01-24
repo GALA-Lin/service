@@ -61,6 +61,18 @@ public class VenueStaff implements Serializable {
     private String displayName;
 
     /**
+     * 联系电话
+     */
+    @TableField("contact_phone")
+    private String contactPhone;
+
+    /**
+     * 联系邮箱
+     */
+    @TableField("email")
+    private String email;
+
+    /**
      * 职位名称：店长、前台、运营等
      */
     @TableField("job_title")

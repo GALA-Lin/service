@@ -16,6 +16,12 @@ import com.unlimited.sports.globox.model.social.vo.MessageVo;
 import com.unlimited.sports.globox.social.service.ConversationService;
 import com.unlimited.sports.globox.social.service.MessageService;
 import com.unlimited.sports.globox.social.service.TencentCloudImService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +39,8 @@ import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIR
 @Slf4j
 @RestController
 @RequestMapping("/social/chat")
+@Tag(name = "聊天模块", description = "单聊、会话、消息相关接口")
+@SecurityRequirement(name = "bearerAuth")
 public class ChatController {
 
     @Autowired
@@ -53,7 +61,13 @@ public class ChatController {
      * GET /social/chat/user/sig
      */
     @GetMapping("/user/sig")
+    @Operation(summary = "获取腾讯IM用户签名", description = "获取腾讯云IM用户签名，用于初始化IM SDK")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "获取成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Map<String, Object>> getUserSig(
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             String userSig = tencentCloudImService.getTxCloudUserSig(String.valueOf(userId));
@@ -72,9 +86,17 @@ public class ChatController {
      * GET /social/chat/conversation/list
      */
     @GetMapping("/conversation/list")
+    @Operation(summary = "获取会话列表", description = "获取当前用户的会话列表，支持分页")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<PaginationResult<ConversationVo>> getConversationList(
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "50")
             @RequestParam(defaultValue = "50") Integer pageSize) {
         try {
             PaginationResult<ConversationVo> result =
@@ -92,8 +114,15 @@ public class ChatController {
      * GET /social/chat/conversation/get-or-create
      */
     @GetMapping("/conversation/get-or-create")
+    @Operation(summary = "获取或创建会话", description = "如果会话存在则返回，不存在则创建新会话。自己之间不能发消息")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "获取或创建成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Conversation> getOrCreateConversation(
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "好友用户ID", required = true)
             @RequestParam Long friendId) {
         try {
             if (userId == null) {
@@ -120,9 +149,17 @@ public class ChatController {
      * PUT /social/chat/conversation/{conversationId}/pin
      */
     @PutMapping("/conversation/{conversationId}/pin")
+    @Operation(summary = "置顶/取消置顶会话", description = "设置会话的置顶状态")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "操作成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<String> togglePinned(
+            @Parameter(description = "会话ID", required = true)
             @PathVariable Long conversationId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "是否置顶", required = true)
             @RequestParam Boolean isPinned) {
         try {
             if (userId == null) {
@@ -145,9 +182,17 @@ public class ChatController {
      * PUT /social/chat/conversation/{conversationId}/block
      */
     @PutMapping("/conversation/{conversationId}/block")
+    @Operation(summary = "屏蔽/取消屏蔽会话", description = "设置会话的屏蔽状态")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "操作成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<String> toggleBlocked(
+            @Parameter(description = "会话ID", required = true)
             @PathVariable Long conversationId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "是否屏蔽", required = true)
             @RequestParam Boolean isBlocked) {
         try {
             if (userId == null) {
@@ -170,7 +215,14 @@ public class ChatController {
      * PUT /social/chat/conversation/clear-unread
      */
     @PutMapping("/conversation/clear-unread")
-    public R<String> clearUnreadCount(@RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+    @Operation(summary = "清除所有会话未读计数", description = "清除当前用户所有会话的未读消息计数")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "清除成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<String> clearUnreadCount(
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             if (userId == null) {
                 log.error("请求头中缺少{}", HEADER_USER_ID);
@@ -190,8 +242,15 @@ public class ChatController {
      * DELETE /social/chat/conversation/{conversationId}
      */
     @DeleteMapping("/conversation/{conversationId}")
+    @Operation(summary = "删除会话", description = "删除指定会话（软删除）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "删除成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<String> deleteConversation(
+            @Parameter(description = "会话ID", required = true)
             @PathVariable Long conversationId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             if (userId == null) {
@@ -216,8 +275,16 @@ public class ChatController {
      * POST /social/chat/message/send
      */
     @PostMapping("/message/send")
+    @Operation(summary = "发送消息", description = "发送单聊消息，支持文本、图片、视频等类型。消息内容会进行敏感词过滤。屏蔽状态下无法发送消息")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "发送成功"),
+            @ApiResponse(responseCode = "8004", description = "存在敏感词，请修改后重试"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Map<String, Object>> sendMessage(
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long currentUserId,
+            @Parameter(description = "消息内容", required = true)
             @RequestBody MessageDto messageDto) {
         RpcResult<Void> voidRpcResult = sensitiveWordsDubboService.checkSensitiveWords(messageDto.getContent());
         Assert.rpcResultOk(voidRpcResult);
@@ -349,8 +416,15 @@ public class ChatController {
      * POST /social/chat/message/{messageId}/recall
      */
     @PostMapping("/message/{messageId}/recall")
+    @Operation(summary = "撤回消息", description = "撤回已发送的消息，仅发送者可以撤回")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "撤回成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Boolean> recallMessage(
+            @Parameter(description = "消息ID", required = true)
             @PathVariable Long messageId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             if (userId == null) {
@@ -375,8 +449,15 @@ public class ChatController {
      * POST /social/chat/message/{messageId}/read
      */
     @PostMapping("/conversation/{conversationId}/read")
+    @Operation(summary = "标记会话已读", description = "标记指定会话的所有消息为已读状态")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "标记成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Boolean> markConversationRead(
+            @Parameter(description = "会话ID", required = true)
             @PathVariable String conversationId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             if (userId == null) {
@@ -400,8 +481,15 @@ public class ChatController {
      * DELETE /social/chat/message/{messageId}
      */
     @DeleteMapping("/message/{messageId}")
+    @Operation(summary = "删除消息", description = "删除指定消息（软删除，仅对当前用户隐藏）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "删除成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Boolean> deleteMessage(
+            @Parameter(description = "消息ID", required = true)
             @PathVariable Long messageId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             if (userId == null) {
@@ -428,10 +516,19 @@ public class ChatController {
      * GET /social/chat/message/list/{conversationId}
      */
     @GetMapping("/message/list/{conversationId}")
+    @Operation(summary = "获取消息列表", description = "获取指定会话的消息列表，支持分页。仅会话参与者可以查看")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<MessageListVo> getMessageList(
+            @Parameter(description = "会话ID", required = true)
             @PathVariable Long conversationId,
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(defaultValue = "1") Integer page,
+            @Parameter(description = "每页数量", example = "20")
             @RequestParam(defaultValue = "20") Integer pageSize) {
         try {
             if (userId == null) {
@@ -467,7 +564,13 @@ public class ChatController {
      * GET /social/chat/unread/count
      */
     @GetMapping("/unread/count")
+    @Operation(summary = "获取未读消息数量", description = "获取当前用户所有会话的未读消息总数和每个会话的未读数")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
     public R<Map<String, Object>> getUnreadCount(
+            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             Map<String, Object> result = new HashMap<>();

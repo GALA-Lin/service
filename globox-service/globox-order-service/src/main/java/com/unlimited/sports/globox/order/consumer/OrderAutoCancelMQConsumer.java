@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisLock;
@@ -53,7 +54,10 @@ public class OrderAutoCancelMQConsumer {
     @RedisLock(value = "#message.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @RabbitRetryable(
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_AUTO_CANCEL_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL_FINAL)
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL_FINAL,
+            bizKey = "#message.orderNo",
+            bizType = MQBizTypeEnum.ORDER_AUTO_CANCEL
+    )
     public void onMessage(
             OrderAutoCancelMessage message,
             Channel channel,
@@ -99,6 +103,7 @@ public class OrderAutoCancelMQConsumer {
         orderStatusLogsMapper.insert(logEntity);
 
         UnlockSlotMessage unlockMessage = UnlockSlotMessage.builder()
+                .orderNo(orderNo)
                 .userId(message.getUserId())
                 .operatorType(OperatorTypeEnum.SYSTEM)
                 .recordIds(message.getRecordIds())

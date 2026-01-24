@@ -5,5 +5,5 @@ import com.unlimited.sports.globox.model.governance.entity.ComplaintSnapshots;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
-public interface ReportSnapshotsMapper extends BaseMapper<ComplaintSnapshots> {
+public interface ComplaintSnapshotsMapper extends BaseMapper<ComplaintSnapshots> {
 }

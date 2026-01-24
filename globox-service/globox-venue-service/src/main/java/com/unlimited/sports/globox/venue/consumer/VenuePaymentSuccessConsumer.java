@@ -4,6 +4,7 @@ import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.message.order.OrderPaidMessage;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -53,7 +54,9 @@ public class VenuePaymentSuccessConsumer {
     @Transactional(rollbackFor = Exception.class)
     @RabbitRetryable(
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT_FINAL,
+            bizKey = "#message.orderNo",
+            bizType = MQBizTypeEnum.ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT
     )
     public void onMessage(OrderPaidMessage message, Channel channel, Message amqpMessage) {
         Long userId = message.getUserId();

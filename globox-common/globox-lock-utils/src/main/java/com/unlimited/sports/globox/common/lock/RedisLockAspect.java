@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.common.lock;
 
+import com.unlimited.sports.globox.common.utils.SpelMethodArgsUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -29,9 +30,6 @@ import java.util.concurrent.TimeUnit;
 public class RedisLockAspect {
 
     private final RedissonClient redissonClient;
-
-    private final ExpressionParser spelParser = new SpelExpressionParser();
-    private final DefaultParameterNameDiscoverer nameDiscoverer = new DefaultParameterNameDiscoverer();
 
     public RedisLockAspect(RedissonClient redissonClient) {
         this.redissonClient = redissonClient;
@@ -128,16 +126,7 @@ public class RedisLockAspect {
     private String buildLockKey(RedisLock cfg, Method method, Object[] args) {
         String spel = cfg.value();
 
-        StandardEvaluationContext ctx = new StandardEvaluationContext();
-        String[] paramNames = nameDiscoverer.getParameterNames(method);
-        if (paramNames != null) {
-            for (int i = 0; i < paramNames.length; i++) {
-                ctx.setVariable(paramNames[i], args[i]);
-            }
-        }
-
-        Expression exp = spelParser.parseExpression(spel);
-        String dynamic = exp.getValue(ctx, String.class);
+        String dynamic = SpelMethodArgsUtils.eval(spel, method, args);
 
         String prefix = cfg.prefix();
         if (prefix != null && !prefix.isBlank()) {

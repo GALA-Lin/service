@@ -41,6 +41,13 @@ public final class RedisKeyConstants {
      * Refresh Token 用户索引前缀（用于批量删除）
      */
     public static final String REFRESH_TOKEN_USER_PREFIX = "refresh_token:user:";
+    public static final String REFRESH_TOKEN_USER_CLIENT_PREFIX = "refresh_token:user_client:";
+
+    /**
+     * Access Token JTI 缓存前缀（用于单点登录控制）
+     */
+    public static final String ACCESS_TOKEN_JTI_PREFIX = "access_token:jti:";
+
 
     /**
      * 微信临时凭证前缀

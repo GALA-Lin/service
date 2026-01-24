@@ -11,6 +11,7 @@ import com.unlimited.sports.globox.common.prop.CosProperties;
 import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.utils.FilePathUtil;
 import com.unlimited.sports.globox.common.utils.FileValidationUtil;
+import com.unlimited.sports.globox.cos.CosFileUploadUtil;
 import com.unlimited.sports.globox.model.social.vo.MediaUploadVo;
 import com.unlimited.sports.globox.social.service.FileUploadService;
 import lombok.extern.slf4j.Slf4j;
@@ -55,10 +56,12 @@ public class FileUploadServiceImpl implements FileUploadService {
         // 2. 根据文件扩展名判断文件类型
         String extension = FileValidationUtil.getFileExtension(originalFileName);
         FileTypeEnum fileType;
+        boolean isVideo = false;
         if (FileTypeEnum.SOCIAL_NOTE_IMAGE.isExtensionAllowed(extension)) {
             fileType = FileTypeEnum.SOCIAL_NOTE_IMAGE;
         } else if (FileTypeEnum.SOCIAL_NOTE_VIDEO.isExtensionAllowed(extension)) {
             fileType = FileTypeEnum.SOCIAL_NOTE_VIDEO;
+            isVideo = true;
         } else {
             throw new GloboxApplicationException(SocialCode.NOTE_UPLOAD_FILE_TYPE_NOT_SUPPORTED);
         }
@@ -76,11 +79,28 @@ public class FileUploadServiceImpl implements FileUploadService {
         );
 
         // 5. 上传文件到COS
-        try {
-            uploadToCos(file.getInputStream(), filePath, file.getContentType(), file.getSize());
-        } catch (IOException e) {
-            log.error("读取文件流失败", e);
-            throw new GloboxApplicationException(SocialCode.NOTE_UPLOAD_FILE_FAILED);
+        String coverUrl = null;
+        if (isVideo) {
+            try {
+                coverUrl = CosFileUploadUtil.uploadVideoWithCover(
+                        cosClient,
+                        cosProperties,
+                        file,
+                        fileType,
+                        null,
+                        filePath
+                );
+            } catch (Exception e) {
+                log.error("视频上传失败", e);
+                throw new GloboxApplicationException(SocialCode.NOTE_UPLOAD_FILE_FAILED);
+            }
+        } else {
+            try {
+                uploadToCos(file.getInputStream(), filePath, file.getContentType(), file.getSize());
+            } catch (IOException e) {
+                log.error("读取文件流失败", e);
+                throw new GloboxApplicationException(SocialCode.NOTE_UPLOAD_FILE_FAILED);
+            }
         }
 
         // 6. 构建文件URL
@@ -98,6 +118,7 @@ public class FileUploadServiceImpl implements FileUploadService {
         result.setUrl(fileUrl);
         result.setFileName(originalFileName);
         result.setSize(fileSize);
+        result.setCoverUrl(coverUrl);
 
         return result;
     }

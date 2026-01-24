@@ -12,8 +12,14 @@ import com.unlimited.sports.globox.common.utils.FilePathUtil;
 import com.unlimited.sports.globox.common.utils.FileValidationUtil;
 import com.unlimited.sports.globox.cos.vo.BatchUploadResultVo;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -179,4 +185,141 @@ public class CosFileUploadUtil {
             throw new GloboxApplicationException("文件上传失败: " + e.getMessage());
         }
     }
+
+    public static String uploadVideoWithCover(COSClient cosClient, CosProperties cosProperties,
+                                              MultipartFile file, FileTypeEnum fileType) {
+        return uploadVideoWithCover(cosClient, cosProperties, file, fileType, null, null);
+    }
+
+    public static String uploadVideoWithCover(COSClient cosClient, CosProperties cosProperties,
+                                              MultipartFile file, FileTypeEnum fileType, Long maxSize) {
+        return uploadVideoWithCover(cosClient, cosProperties, file, fileType, maxSize, null);
+    }
+
+    public static String uploadVideoWithCover(COSClient cosClient, CosProperties cosProperties,
+                                              MultipartFile file, FileTypeEnum fileType,
+                                              Long maxSize, String filePath) {
+        if (file == null || file.isEmpty()) {
+            throw new GloboxApplicationException("文件不能为空");
+        }
+
+        FileValidationUtil.validateFile(file.getOriginalFilename(), file.getSize(), fileType, maxSize);
+
+        String resolvedFilePath = filePath;
+        if (!StringUtils.hasText(resolvedFilePath)) {
+            resolvedFilePath = FilePathUtil.generateFilePath(
+                    file.getOriginalFilename(),
+                    fileType,
+                    cosProperties.getPathPrefix()
+            );
+        }
+
+        String coverFilePath = resolvedFilePath + ".jpg";
+
+        try {
+            uploadToCos(
+                    cosClient,
+                    cosProperties,
+                    file.getInputStream(),
+                    resolvedFilePath,
+                    file.getContentType(),
+                    file.getSize()
+            );
+        } catch (IOException e) {
+            log.error("读取视频流失败", e);
+            throw new GloboxApplicationException("视频上传失败");
+        }
+
+        String fileUrl = FilePathUtil.buildFileUrl(
+                resolvedFilePath,
+                cosProperties.getDomain(),
+                cosProperties.getBucketName(),
+                cosProperties.getRegion()
+        );
+
+        String coverUrl = null;
+        try {
+            coverUrl = uploadCoverFromSnapshot(cosClient, cosProperties, fileUrl, coverFilePath);
+        } catch (Exception e) {
+            log.warn("视频封面生成失败: filePath={}", resolvedFilePath, e);
+        }
+
+        if (coverUrl == null) {
+            log.info("视频上传完成但封面缺失: fileUrl={}", fileUrl);
+        } else {
+            log.info("视频上传并生成封面成功: videoPath={}, coverUrl={}", resolvedFilePath, coverUrl);
+        }
+        return coverUrl;
+    }
+
+    private static String uploadCoverFromSnapshot(COSClient cosClient, CosProperties cosProperties,
+                                                  String fileUrl, String coverFilePath) {
+        byte[] coverBytes = downloadDynamicCover(fileUrl);
+        if (coverBytes == null || coverBytes.length == 0) {
+            log.warn("视频封面截图失败，跳过封面上传: fileUrl={}", fileUrl);
+            return null;
+        }
+
+        uploadToCos(
+                cosClient,
+                cosProperties,
+                new ByteArrayInputStream(coverBytes),
+                coverFilePath,
+                "image/jpeg",
+                coverBytes.length
+        );
+
+        String coverUrl = FilePathUtil.buildFileUrl(
+                coverFilePath,
+                cosProperties.getDomain(),
+                cosProperties.getBucketName(),
+                cosProperties.getRegion()
+        );
+        log.info("视频封面静态化成功: coverUrl={}", coverUrl);
+        return coverUrl;
+    }
+
+    private static byte[] downloadDynamicCover(String fileUrl) {
+        String snapshotUrl = buildSnapshotUrl(fileUrl);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.ACCEPT, "image/jpeg,image/*,*/*;q=0.8");
+
+        RestTemplate restTemplate = new RestTemplate();
+        try {
+            ResponseEntity<byte[]> response = restTemplate.exchange(
+                    snapshotUrl,
+                    HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    byte[].class
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                log.warn("视频封面截图失败: status={}, url={}", response.getStatusCode(), snapshotUrl);
+                return null;
+            }
+
+            String contentType = response.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE);
+            if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
+                log.warn("视频封面截图失败: contentType={}, url={}", contentType, snapshotUrl);
+                return null;
+            }
+
+            byte[] body = response.getBody();
+            if (body == null || body.length == 0) {
+                log.warn("视频封面截图失败: body empty, url={}", snapshotUrl);
+                return null;
+            }
+
+            return body;
+        } catch (Exception e) {
+            log.warn("视频封面截图失败: url={}", snapshotUrl, e);
+            return null;
+        }
+    }
+
+    private static String buildSnapshotUrl(String fileUrl) {
+        String separator = fileUrl.contains("?") ? "&" : "?";
+        return fileUrl + separator + "ci-process=snapshot&time=0&format=jpg";
+    }
+
 }

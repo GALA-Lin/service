@@ -1,10 +1,15 @@
 package com.unlimited.sports.globox.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.qcloud.cos.COSClient;
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
+import com.unlimited.sports.globox.common.prop.CosProperties;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.common.utils.FilePathUtil;
+import com.unlimited.sports.globox.common.utils.FileValidationUtil;
+import com.unlimited.sports.globox.cos.CosFileUploadUtil;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserMediaRequest;
 import com.unlimited.sports.globox.model.auth.entity.UserMedia;
@@ -44,13 +49,18 @@ public class UserMediaServiceImpl implements UserMediaService {
 
     private static final int MAX_MEDIA_COUNT = 12; // 最大媒体数量（图+视频合计）
     private static final int MAX_VIDEO_COUNT = 5;  // 最大视频数量
-    private static final String DEFAULT_VIDEO_COVER_QUERY = "ci-process=snapshot&time=0&format=jpg";
 
     @Autowired
     private UserMediaMapper userMediaMapper;
 
     @Autowired
     private FileUploadService fileUploadService;
+
+    @Autowired
+    private COSClient cosClient;
+
+    @Autowired
+    private CosProperties cosProperties;
 
     @DubboReference(group = "rpc")
     private SocialRelationDubboService socialRelationDubboService;
@@ -259,11 +269,51 @@ public class UserMediaServiceImpl implements UserMediaService {
     @Override
     public R<VideoUploadVo> uploadMediaVideo(MultipartFile file) {
         try {
-            // 调用文件上传服务上传视频
-            String fileUrl = fileUploadService.uploadFile(file, FileTypeEnum.USER_MEDIA_VIDEO);
+            if (file == null || file.isEmpty()) {
+                throw new GloboxApplicationException(UserAuthCode.MISSING_UPLOAD_FILE);
+            }
 
-            // 自动生成视频封面URL
-            String coverUrl = buildVideoCoverUrl(fileUrl);
+            String originalFileName = file.getOriginalFilename();
+            if (!StringUtils.hasText(originalFileName)) {
+                throw new GloboxApplicationException(UserAuthCode.MISSING_UPLOAD_FILE);
+            }
+
+            long fileSize = file.getSize();
+            if (fileSize <= 0) {
+                throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+            }
+
+            FileTypeEnum fileType = FileTypeEnum.USER_MEDIA_VIDEO;
+            if (fileSize > fileType.getDefaultMaxSize()) {
+                throw new GloboxApplicationException(UserAuthCode.UPLOAD_FILE_TOO_LARGE);
+            }
+
+            String extension = FileValidationUtil.getFileExtension(originalFileName);
+            if (!fileType.isExtensionAllowed(extension)) {
+                throw new GloboxApplicationException(UserAuthCode.UPLOAD_FILE_TYPE_NOT_SUPPORTED);
+            }
+
+            String filePath = FilePathUtil.generateFilePath(
+                    originalFileName,
+                    fileType,
+                    cosProperties.getPathPrefix()
+            );
+
+            String coverUrl = CosFileUploadUtil.uploadVideoWithCover(
+                    cosClient,
+                    cosProperties,
+                    file,
+                    fileType,
+                    null,
+                    filePath
+            );
+
+            String fileUrl = FilePathUtil.buildFileUrl(
+                    filePath,
+                    cosProperties.getDomain(),
+                    cosProperties.getBucketName(),
+                    cosProperties.getRegion()
+            );
 
             // 构建返回结果
             VideoUploadVo vo = new VideoUploadVo(
@@ -282,25 +332,6 @@ public class UserMediaServiceImpl implements UserMediaService {
             log.error("媒体视频上传异常", e);
             return R.<VideoUploadVo>error(UserAuthCode.UPLOAD_FILE_FAILED).message("视频上传失败");
         }
-    }
-
-    /**
-     * 构建视频封面URL（使用腾讯云COS的截图功能）
-     *
-     * @param videoUrl 视频URL
-     * @return 封面URL
-     */
-    private String buildVideoCoverUrl(String videoUrl) {
-        if (!StringUtils.hasText(videoUrl)) {
-            return null;
-        }
-        // 如果URL已经包含ci-process参数，直接返回
-        if (videoUrl.contains("ci-process=")) {
-            return videoUrl;
-        }
-        // 在视频URL后追加腾讯云COS的截图参数
-        String separator = videoUrl.contains("?") ? "&" : "?";
-        return videoUrl + separator + DEFAULT_VIDEO_COVER_QUERY;
     }
 }
 

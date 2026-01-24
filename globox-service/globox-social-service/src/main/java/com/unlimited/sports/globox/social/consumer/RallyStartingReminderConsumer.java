@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,11 +55,7 @@ public class RallyStartingReminderConsumer {
      */
     @RabbitHandler
     @Transactional(rollbackFor = Exception.class)
-    @RabbitRetryable(
-            finalExchange = RallyMQConstants.EXCHANGE_RALLY_STARTING_REMINDER_FINAL_DLX,
-            finalRoutingKey = RallyMQConstants.ROUTING_RALLY_STARTING_REMINDER_FINAL
-    )
-    public void onMessage(RallyStartingReminderMessage message, Channel channel, Message amqpMessage) {
+    public void onMessage(RallyStartingReminderMessage message, Channel channel, Message amqpMessage) throws IOException {
         Long rallyId = message.getRallyId();
 
         log.info("[约球提醒] 接收到延迟消息 - rallyId={}", rallyId);
@@ -95,6 +92,9 @@ public class RallyStartingReminderConsumer {
         } catch (Exception e) {
             log.error("[约球提醒] 处理失败 - rallyId={}", rallyId, e);
             throw e;
+        } finally {
+            long deliveryTag = amqpMessage.getMessageProperties().getDeliveryTag();
+            channel.basicAck(deliveryTag, false);
         }
     }
 

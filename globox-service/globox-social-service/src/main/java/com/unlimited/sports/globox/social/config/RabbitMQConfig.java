@@ -37,12 +37,6 @@ public class RabbitMQConfig {
     public static final String CONVERSATION_ROUTING_KEY = "social.conversation.update";
     public static final String BATCH_MESSAGE_ROUTING_KEY = "social.batch.message.save";
 
-
-    // 死信路由键
-    public static final String MESSAGE_DLX_ROUTING_KEY = "social.message.dlx";
-    public static final String CONVERSATION_DLX_ROUTING_KEY = "social.conversation.dlx";
-    public static final String BATCH_MESSAGE_DLX_ROUTING_KEY = "social.batch.message.dlx";
-
     /**
      * 声明交换机
      */
@@ -178,22 +172,6 @@ public class RabbitMQConfig {
     }
 
     /**
-     * 约球开始提醒重试队列
-     */
-    @Bean
-    public Queue rallyStartingReminderRetryQueue() {
-        return new Queue(RallyMQConstants.QUEUE_RALLY_STARTING_REMINDER_RETRY, true, false, false);
-    }
-
-    /**
-     * 约球开始提醒死信队列
-     */
-    @Bean
-    public Queue rallyStartingReminderDlq() {
-        return new Queue(RallyMQConstants.QUEUE_RALLY_STARTING_REMINDER_DLQ, true, false, false);
-    }
-
-    /**
      * 约球提醒交换机
      */
     @Bean
@@ -210,8 +188,4 @@ public class RabbitMQConfig {
                 .to(rallyStartingReminderExchange)
                 .with(RallyMQConstants.ROUTING_RALLY_STARTING_REMINDER);
     }
-
-
-
-
 }

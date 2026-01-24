@@ -1,5 +1,7 @@
 package com.unlimited.sports.globox.common.aop;
 
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
+
 import java.lang.annotation.*;
 
 /**
@@ -28,4 +30,20 @@ public @interface RabbitRetryable {
      * 超限后投递到 Final-DLX 的 routingKey
      */
     String finalRoutingKey();
+
+    /**
+     * 业务类型
+     */
+    MQBizTypeEnum bizType();
+
+    /**
+     * 业务 key
+     */
+    String bizKey() default "";
+
+    /**
+     * 业务 key 生成器
+     * 优先加载 com.unlimited.sports.globox.common.aop.RabbitRetryable#bizKey()
+     */
+    Class<? extends BizKeyGenerator> bizKeyGenerator() default DefaultBizKeyGenerator.class;
 }

@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.ObjectUtils;
 
 import javax.annotation.PostConstruct;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -34,7 +35,6 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
     private RabbitTemplate rabbitTemplate;
 
     @Autowired
-//    private StringRedisTemplate redisTemplate;
     private RedisService redisService;
 
     @Autowired
@@ -123,45 +123,53 @@ public class MQProducerAckConfig implements RabbitTemplate.ConfirmCallback, Rabb
      * @param correlationData 自己封装的实体类，记录了交换机、路由key等，用于消息重试发送
      */
     private void retryMessage(CorrelationData correlationData) {
-        MQRetryCorrelationData MQRetryCorrelationData = (MQRetryCorrelationData) correlationData;
+        MQRetryCorrelationData mqRetryCorrelationData = (MQRetryCorrelationData) correlationData;
 
         // 判断是否到达重试次数
-        int retryCount = MQRetryCorrelationData.getRetryCount();
+        int retryCount = mqRetryCorrelationData.getRetryCount();
         if (retryCount >= MAX_RETRY) {
             log.error("消息已重试达到最大次数，msgId:{}", correlationData.getId());
-            // TODO ETA 2026/01/03 入库，短信、邮箱通知（待定）
+            // TODO 入库，短信、邮箱通知（待定）
             return;
         }
 
         // 重试次数 + 1
-        MQRetryCorrelationData.increaseRetryCount();
+        mqRetryCorrelationData.increaseRetryCount();
 
         // 更新redis中的缓存
         redisService.setCacheObject(
-                MQRetryCorrelationData.getId(),
-                MQRetryCorrelationData,
+                mqRetryCorrelationData.getId(),
+                mqRetryCorrelationData,
                 10L,
                 TimeUnit.MINUTES);
 
         // 重试发送消息
-        if (MQRetryCorrelationData.isDelay()) {
+        if (mqRetryCorrelationData.isDelay()) {
             // 如果是延迟队列
-            rabbitTemplate.convertAndSend(MQRetryCorrelationData.getExchange(),
-                    MQRetryCorrelationData.getRoutingKey(),
-                    MQRetryCorrelationData.getMessage(),
-                    message -> {
-                        message.getMessageProperties().setDelay(MQRetryCorrelationData.getDelayTime() * 1000);
-                        return message;
+            rabbitTemplate.convertAndSend(mqRetryCorrelationData.getExchange(),
+                    mqRetryCorrelationData.getRoutingKey(),
+                    mqRetryCorrelationData.getMessage(),
+                    msg -> {
+                        String id = Objects.requireNonNull(mqRetryCorrelationData.getId());
+                        msg.getMessageProperties().setDelay(mqRetryCorrelationData.getDelayTime() * 1000);
+                        msg.getMessageProperties().setMessageId(id);
+                        msg.getMessageProperties().setHeader("x-msg-id", id);
+                        return msg;
                     },
-                    MQRetryCorrelationData);
+                    mqRetryCorrelationData);
         } else {
             // 如果不是延迟队列
-            rabbitTemplate.convertAndSend(MQRetryCorrelationData.getExchange(),
-                    MQRetryCorrelationData.getRoutingKey(),
-                    MQRetryCorrelationData.getMessage(),
-                    MQRetryCorrelationData);
+            rabbitTemplate.convertAndSend(mqRetryCorrelationData.getExchange(),
+                    mqRetryCorrelationData.getRoutingKey(),
+                    mqRetryCorrelationData.getMessage(),
+                    msg -> {
+                        String id = Objects.requireNonNull(mqRetryCorrelationData.getId());
+                        msg.getMessageProperties().setMessageId(id);
+                        msg.getMessageProperties().setHeader("x-msg-id", id);
+                        return msg;
+                    },mqRetryCorrelationData);
         }
 
-        log.warn("msgId:{} 正在第【{}】次重试", correlationData.getId(), MQRetryCorrelationData.getRetryCount());
+        log.warn("msgId:{} 正在第【{}】次重试", correlationData.getId(), mqRetryCorrelationData.getRetryCount());
     }
 }

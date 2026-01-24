@@ -153,6 +153,9 @@ public class OrderMQInitConfig {
     }
 
 
+    /**
+     * 订单自动完成
+     */
     // 主交换机（Delayed Exchange）
     @Bean
     public CustomExchange orderAutoCompleteExchange() {

@@ -18,6 +18,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UnlockSlotMessage implements Serializable {
+    private Long orderNo;
     private Long userId;
     private List<Long> recordIds;
     private LocalDate bookingDate;

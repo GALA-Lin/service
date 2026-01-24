@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.notification.consumer;
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.NotificationMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.message.notification.NotificationMessage;
 import com.unlimited.sports.globox.notification.service.INotificationService;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,9 @@ public class NotificationSystemConsumer {
     @RabbitRetryable(
             maxRetryCount = 3,
             finalExchange = NotificationMQConstants.EXCHANGE_NOTIFICATION_SYSTEM_FINAL_DLX,
-            finalRoutingKey = NotificationMQConstants.ROUTING_NOTIFICATION_SYSTEM_FINAL
+            finalRoutingKey = NotificationMQConstants.ROUTING_NOTIFICATION_SYSTEM_FINAL,
+            bizKey = "#message.messageId",
+            bizType = MQBizTypeEnum.NOTIFICATION_SYSTEM
     )
     public void onMessage(NotificationMessage message, Channel channel, Message amqpMessage) throws Exception {
 

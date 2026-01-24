@@ -4,6 +4,7 @@ import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.UserRefundMessage;
 import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
@@ -41,7 +42,10 @@ public class UserRefundConsumer {
     @RabbitListener(queues = OrderMQConstants.QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT)
     @RabbitRetryable(
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL)
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL,
+            bizKey = "#message.outRequestNo",
+            bizType = MQBizTypeEnum.USER_REFUND
+    )
     public void onMessage(
             UserRefundMessage message,
             Channel channel,

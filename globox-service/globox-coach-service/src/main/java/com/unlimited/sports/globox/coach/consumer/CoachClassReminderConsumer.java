@@ -20,6 +20,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
+import java.io.IOException;
+
 /**
  * 教练课程提醒消息消费者
  * 消费延迟的课程提醒消息，验证订单有效性后发送通知给教练和学员
@@ -37,14 +39,10 @@ public class CoachClassReminderConsumer {
 
     @RabbitListener(queues = CoachMQConstants.QUEUE_COACH_CLASS_REMINDER_COACH)
     @Transactional(rollbackFor = Exception.class)
-    @RabbitRetryable(
-            finalExchange = CoachMQConstants.EXCHANGE_COACH_CLASS_REMINDER_FINAL_DLX,
-            finalRoutingKey = CoachMQConstants.ROUTING_COACH_CLASS_REMINDER_FINAL
-    )
     public void onClassReminder(
             CoachClassReminderMessage message,
             Channel channel,
-            Message amqpMessage) {
+            Message amqpMessage) throws IOException {
 
         Long orderNo = message.getOrderNo();
         Long coachId = message.getCoachId();
@@ -94,6 +92,9 @@ public class CoachClassReminderConsumer {
         } catch (Exception e) {
             log.error("[课程提醒] 处理失败 - orderNo: {}", orderNo, e);
             throw e;
+        } finally {
+            long deliveryTag = amqpMessage.getMessageProperties().getDeliveryTag();
+            channel.basicAck(deliveryTag, false);
         }
     }
 }

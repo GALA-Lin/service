@@ -17,30 +17,6 @@ public class VenueMQConstants {
             "queue.activity.booking-reminder";
 
     /**
-     * 重试队列（TTL）
-     */
-    public static final String QUEUE_ACTIVITY_BOOKING_REMINDER_RETRY =
-            "queue.activity.booking-reminder.retry";
-
-    /**
-     * Retry-DLX：主队列失败后进入重试队列
-     */
-    public static final String EXCHANGE_ACTIVITY_BOOKING_REMINDER_RETRY_DLX =
-            "exchange.topic.activity.booking-reminder.retry.dlx";
-    public static final String ROUTING_ACTIVITY_BOOKING_REMINDER_RETRY =
-            "routing.activity.booking-reminder.retry";
-
-    /**
-     * Final-DLX：超过最大次数进入最终 DLQ
-     */
-    public static final String EXCHANGE_ACTIVITY_BOOKING_REMINDER_FINAL_DLX =
-            "exchange.topic.activity.booking-reminder.final.dlx";
-    public static final String ROUTING_ACTIVITY_BOOKING_REMINDER_FINAL =
-            "routing.activity.booking-reminder.final";
-    public static final String QUEUE_ACTIVITY_BOOKING_REMINDER_DLQ =
-            "queue.activity.booking-reminder.dlq";
-
-    /**
      *  订场即将开始提醒
      * 主交换机 & 主路由 & 主队列
      */
@@ -51,27 +27,4 @@ public class VenueMQConstants {
     public static final String QUEUE_VENUE_BOOKING_REMINDER =
             "queue.venue.booking-reminder";
 
-    /**
-     * 重试队列（TTL）
-     */
-    public static final String QUEUE_VENUE_BOOKING_REMINDER_RETRY =
-            "queue.venue.booking-reminder.retry";
-
-    /**
-     * Retry-DLX：主队列失败后进入重试队列
-     */
-    public static final String EXCHANGE_VENUE_BOOKING_REMINDER_RETRY_DLX =
-            "exchange.topic.venue.booking-reminder.retry.dlx";
-    public static final String ROUTING_VENUE_BOOKING_REMINDER_RETRY =
-            "routing.venue.booking-reminder.retry";
-
-    /**
-     * Final-DLX：超过最大次数进入最终 DLQ
-     */
-    public static final String EXCHANGE_VENUE_BOOKING_REMINDER_FINAL_DLX =
-            "exchange.topic.venue.booking-reminder.final.dlx";
-    public static final String ROUTING_VENUE_BOOKING_REMINDER_FINAL =
-            "routing.venue.booking-reminder.final";
-    public static final String QUEUE_VENUE_BOOKING_REMINDER_DLQ =
-            "queue.venue.booking-reminder.dlq";
 }

@@ -58,13 +58,14 @@ public class NoteCommentController {
     }
 
     @PostMapping
-    @Operation(summary = "发布评论", description = "在指定笔记下发布评论，支持一级评论和回复评论（仅支持一级回复）")
+    @Operation(summary = "发布评论", description = "在指定笔记下发布评论，支持一级评论和回复评论（仅支持一级回复）。评论内容会进行敏感词过滤")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "发布成功"),
             @ApiResponse(responseCode = "3006", description = "笔记不存在或已删除"),
             @ApiResponse(responseCode = "3021", description = "评论内容不能为空"),
             @ApiResponse(responseCode = "3022", description = "评论已关闭"),
             @ApiResponse(responseCode = "3025", description = "父评论不存在或不属于该笔记"),
+            @ApiResponse(responseCode = "8004", description = "存在敏感词，请修改后重试"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<Long> createComment(

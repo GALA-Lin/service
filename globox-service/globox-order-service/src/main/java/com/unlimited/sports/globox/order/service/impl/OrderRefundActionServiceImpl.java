@@ -443,6 +443,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
             public void afterCommit() {
 
                 UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
+                        .orderNo(orderNo)
                         .userId(order.getBuyerId())
                         .operatorType(operatorType)
                         .recordIds(recordIds)

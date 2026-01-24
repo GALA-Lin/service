@@ -109,6 +109,7 @@ public interface RedisService {
      * @param expireSeconds 过期时间（秒）
      */
     void saveRefreshToken(Long userId, String refreshToken, long expireSeconds);
+    void saveRefreshTokenWithClient(Long userId, String refreshToken, long expireSeconds, String clientType);
 
     /**
      * 验证Refresh Token是否有效
@@ -132,6 +133,35 @@ public interface RedisService {
      * @param userId 用户ID
      */
     void deleteAllRefreshTokens(Long userId);
+    void deleteRefreshTokensByClientType(Long userId, String clientType);
+
+    /**
+     * 保存 Access Token 的 jti（用于单点登录控制）
+     *
+     * @param userId 用户ID
+     * @param clientType 客户端类型
+     * @param jti token 唯一标识
+     * @param expireSeconds 过期时间（秒）
+     */
+    void saveAccessTokenJti(Long userId, String clientType, String jti, long expireSeconds);
+
+    /**
+     * 获取 Access Token 的 jti
+     *
+     * @param userId 用户ID
+     * @param clientType 客户端类型
+     * @return jti，不存在返回 null
+     */
+    String getAccessTokenJti(Long userId, String clientType);
+
+    /**
+     * 删除 Access Token 的 jti
+     *
+     * @param userId 用户ID
+     * @param clientType 客户端类型
+     */
+    void deleteAccessTokenJti(Long userId, String clientType);
+
 
     /**
      * 通用：设置键值（带过期时间）

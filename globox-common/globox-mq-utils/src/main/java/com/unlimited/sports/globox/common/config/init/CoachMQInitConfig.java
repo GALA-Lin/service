@@ -16,13 +16,6 @@ import java.util.Map;
 public class CoachMQInitConfig {
 
     /**
-     * 教练课程提醒 重试间隔
-     * 默认 1000 ms
-     */
-    @Value("${mq.consumer.retry.coach-class-reminder.retry-interval:1000}")
-    private Integer coachClassReminderRetryInterval;
-
-    /**
      * 教练课程提醒延迟消息（Coach Class Reminder）
      * 说明：
      * - 延迟到课程开始前1小时投递
@@ -42,45 +35,11 @@ public class CoachMQInitConfig {
                 args);
     }
 
-    @Bean
-    public TopicExchange coachClassReminderRetryDlxExchange() {
-        return new TopicExchange(
-                CoachMQConstants.EXCHANGE_COACH_CLASS_REMINDER_RETRY_DLX,
-                true,
-                false);
-    }
-
-    @Bean
-    public TopicExchange coachClassReminderFinalDlxExchange() {
-        return new TopicExchange(
-                CoachMQConstants.EXCHANGE_COACH_CLASS_REMINDER_FINAL_DLX,
-                true,
-                false);
-    }
 
     @Bean
     public Queue coachClassReminderQueue() {
         return QueueBuilder
                 .durable(CoachMQConstants.QUEUE_COACH_CLASS_REMINDER_COACH)
-                .withArgument("x-dead-letter-exchange", CoachMQConstants.EXCHANGE_COACH_CLASS_REMINDER_RETRY_DLX)
-                .withArgument("x-dead-letter-routing-key", CoachMQConstants.ROUTING_COACH_CLASS_REMINDER_RETRY)
-                .build();
-    }
-
-    @Bean
-    public Queue coachClassReminderRetryQueue() {
-        return QueueBuilder
-                .durable(CoachMQConstants.QUEUE_COACH_CLASS_REMINDER_COACH_RETRY)
-                .withArgument("x-message-ttl", coachClassReminderRetryInterval)
-                .withArgument("x-dead-letter-exchange", CoachMQConstants.EXCHANGE_TOPIC_COACH_CLASS_REMINDER)
-                .withArgument("x-dead-letter-routing-key", CoachMQConstants.ROUTING_COACH_CLASS_REMINDER)
-                .build();
-    }
-
-    @Bean
-    public Queue coachClassReminderDlq() {
-        return QueueBuilder
-                .durable(CoachMQConstants.QUEUE_COACH_CLASS_REMINDER_COACH_DLQ)
                 .build();
     }
 
@@ -93,19 +52,4 @@ public class CoachMQInitConfig {
                 .noargs();
     }
 
-    @Bean
-    public Binding bindCoachClassReminderRetryQueue() {
-        return BindingBuilder
-                .bind(coachClassReminderRetryQueue())
-                .to(coachClassReminderRetryDlxExchange())
-                .with(CoachMQConstants.ROUTING_COACH_CLASS_REMINDER_RETRY);
-    }
-
-    @Bean
-    public Binding bindCoachClassReminderDlq() {
-        return BindingBuilder
-                .bind(coachClassReminderDlq())
-                .to(coachClassReminderFinalDlxExchange())
-                .with(CoachMQConstants.ROUTING_COACH_CLASS_REMINDER_FINAL);
-    }
 }

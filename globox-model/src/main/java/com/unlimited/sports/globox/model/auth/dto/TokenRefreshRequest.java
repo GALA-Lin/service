@@ -13,7 +13,7 @@ import javax.validation.constraints.NotBlank;
 public class TokenRefreshRequest {
 
     @NotBlank(message = "Refresh Token不能为空")
-    @Schema(description = "Refresh Token", example = "eyJhbGciOiJIUzI1NiJ9...", required = true)
+    @Schema(description = "Refresh Token，用于刷新 access token。refreshToken 携带 clientType claim，用于单端校验与下线逻辑。App 端必须保留并按约刷新。", example = "eyJhbGciOiJIUzI1NiJ9...", required = true)
     private String refreshToken;
 }
 

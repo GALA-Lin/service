@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -124,6 +125,18 @@ public class RedisServiceImpl implements RedisService {
     }
 
     @Override
+    public void saveRefreshTokenWithClient(Long userId, String refreshToken, long expireSeconds, String clientType) {
+        saveRefreshToken(userId, refreshToken, expireSeconds);
+        if (!StringUtils.hasText(clientType)) {
+            return;
+        }
+        String hash = sha256(refreshToken);
+        String key = RedisKeyConstants.REFRESH_TOKEN_USER_CLIENT_PREFIX
+                + userId + ":" + clientType + ":" + hash;
+        stringRedisTemplate.opsForValue().set(key, "1", expireSeconds, TimeUnit.SECONDS);
+    }
+
+    @Override
     public boolean isRefreshTokenValid(String refreshToken) {
         String hash = sha256(refreshToken);
         String key = RedisKeyConstants.REFRESH_TOKEN_PREFIX + hash;
@@ -145,6 +158,24 @@ public class RedisServiceImpl implements RedisService {
         } catch (Exception e) {
             log.warn("删除Refresh Token失败，token可能已过期或无效：{}", e.getMessage());
         }
+    }
+
+    @Override
+    public void saveAccessTokenJti(Long userId, String clientType, String jti, long expireSeconds) {
+        String key = RedisKeyConstants.ACCESS_TOKEN_JTI_PREFIX + clientType + ":" + userId;
+        stringRedisTemplate.opsForValue().set(key, jti, expireSeconds, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public String getAccessTokenJti(Long userId, String clientType) {
+        String key = RedisKeyConstants.ACCESS_TOKEN_JTI_PREFIX + clientType + ":" + userId;
+        return stringRedisTemplate.opsForValue().get(key);
+    }
+
+    @Override
+    public void deleteAccessTokenJti(Long userId, String clientType) {
+        String key = RedisKeyConstants.ACCESS_TOKEN_JTI_PREFIX + clientType + ":" + userId;
+        stringRedisTemplate.delete(key);
     }
 
     @Override
@@ -197,6 +228,30 @@ public class RedisServiceImpl implements RedisService {
             stringRedisTemplate.delete(userIndexKeys);
             log.info("清除用户所有Refresh Token：userId={}, count={}", userId, userIndexKeys.size());
         }
+    }
+
+
+    @Override
+    public void deleteRefreshTokensByClientType(Long userId, String clientType) {
+        if (!StringUtils.hasText(clientType)) {
+            return;
+        }
+        String pattern = RedisKeyConstants.REFRESH_TOKEN_USER_CLIENT_PREFIX
+                + userId + ":" + clientType + ":*";
+        Set<String> clientIndexKeys = stringRedisTemplate.keys(pattern);
+        if (clientIndexKeys == null || clientIndexKeys.isEmpty()) {
+            return;
+        }
+        for (String clientIndexKey : clientIndexKeys) {
+            String hash = clientIndexKey.substring(clientIndexKey.lastIndexOf(":") + 1);
+            String checkKey = RedisKeyConstants.REFRESH_TOKEN_PREFIX + hash;
+            String userIndexKey = RedisKeyConstants.REFRESH_TOKEN_USER_PREFIX + userId + ":" + hash;
+            stringRedisTemplate.delete(checkKey);
+            stringRedisTemplate.delete(userIndexKey);
+        }
+        stringRedisTemplate.delete(clientIndexKeys);
+        log.info("Cleared refresh tokens by clientType: userId={}, clientType={}, count={}",
+                userId, clientType, clientIndexKeys.size());
     }
 
     /**

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.enums.order.OperatorTypeEnum;
 import com.unlimited.sports.globox.common.enums.order.OrderActionEnum;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
@@ -24,7 +25,6 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.ObjectUtils;
 
 /**
  * 订单定时完成 消费者
@@ -50,7 +50,10 @@ public class OrderAutoCompleteConsumer {
     @RedisLock(value = "#message.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @RabbitRetryable(
             finalExchange = OrderMQConstants.EXCHANGE_ORDER_AUTO_COMPLETE_FINAL_DLX,
-            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE_FINAL)
+            finalRoutingKey = OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE_FINAL,
+            bizKey = "#message.orderNo",
+            bizType = MQBizTypeEnum.ORDER_AUTO_COMPLETE
+    )
     public void onMessage(
             OrderAutoCancelMessage message,
             Channel channel,

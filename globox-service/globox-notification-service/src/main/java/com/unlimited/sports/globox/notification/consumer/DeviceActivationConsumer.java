@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.notification.consumer;
 import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.NotificationMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.message.notification.DeviceActivationMessage;
 import com.unlimited.sports.globox.notification.service.IDeviceTokenService;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +39,9 @@ public class DeviceActivationConsumer {
     @RabbitRetryable(
             maxRetryCount = 3,
             finalExchange = NotificationMQConstants.EXCHANGE_DEVICE_ACTIVATION_FINAL_DLX,
-            finalRoutingKey = NotificationMQConstants.ROUTING_DEVICE_ACTIVATION_FINAL
+            finalRoutingKey = NotificationMQConstants.ROUTING_DEVICE_ACTIVATION_FINAL,
+            bizKey = "#message.deviceId",
+            bizType = MQBizTypeEnum.DEVICE_ACTIVATION
     )
     public void onMessage(DeviceActivationMessage message, Channel channel, Message amqpMessage) throws Exception {
         String messageId = message.getMessageId();

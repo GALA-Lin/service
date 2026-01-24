@@ -14,6 +14,7 @@ import com.unlimited.sports.globox.model.auth.dto.WechatBindPhoneRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatLoginResponse;
 import com.unlimited.sports.globox.model.auth.dto.WechatPhoneLoginRequest;
+import com.unlimited.sports.globox.model.auth.dto.AppleLoginRequest;
 import com.unlimited.sports.globox.user.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -35,7 +36,12 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/auth")
-@Tag(name = "认证模块", description = "用户登录、注册、验证码相关接口")
+@Tag(name = "认证模块", description = "用户登录、注册、验证码相关接口。\n" +
+        "重要说明：\n" +
+        "1. X-Client-Type 请求头：必填，有效值包括 app、third-party-jsapi 等，用于区分客户端类型。\n" +
+        "2. Access Token 状态：仅 app 端启用单端登录校验（有状态），其他端不受影响（无状态）。\n" +
+        "3. Token 失效触发：app 端再次登录会挤掉旧 token；调用登出接口会立刻失效当前端 token。\n" +
+        "4. Refresh Token：返回的 refreshToken 将携带 clientType claim，用于后续刷新时恢复端类型。")
 public class AuthController {
 
     @Autowired
@@ -54,7 +60,9 @@ public class AuthController {
     }
 
     @PostMapping("/phone/login")
-    @Operation(summary = "手机号+验证码登录", description = "验证码登录，不存在则自动注册（登录即注册）")
+    @Operation(summary = "手机号+验证码登录", description = "验证码登录，不存在则自动注册（登录即注册）。\n" +
+            "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
+            "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
@@ -67,7 +75,9 @@ public class AuthController {
     }
 
     @PostMapping("/wechat/login")
-    @Operation(summary = "微信授权登录", description = "微信授权登录，已绑定账号直接登录，未绑定返回临时凭证。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。")
+    @Operation(summary = "微信授权登录", description = "微信授权登录，已绑定账号直接登录，未绑定返回临时凭证。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。\n" +
+            "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
+            "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "2033", description = "微信授权失败"),
@@ -91,7 +101,9 @@ public class AuthController {
     }
 
     @PostMapping("/wechat/phoneLogin")
-    @Operation(summary = "第三方小程序/App端微信手机号登录", description = "第三方小程序/App端微信手机号登录，通过wxCode和phoneCode一次性完成登录和手机号绑定，无需验证码。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。")
+    @Operation(summary = "第三方小程序/App端微信手机号登录", description = "第三方小程序/App端微信手机号登录，通过wxCode和phoneCode一次性完成登录和手机号绑定，无需验证码。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。\n" +
+            "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
+            "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
@@ -118,7 +130,9 @@ public class AuthController {
     }
 
     @PostMapping("/password/login")
-    @Operation(summary = "手机号密码登录", description = "使用手机号+密码登录，用户必须已设置密码")
+    @Operation(summary = "手机号密码登录", description = "使用手机号+密码登录，用户必须已设置密码。\n" +
+            "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
+            "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "2010", description = "用户不存在，请使用验证码登录"),
@@ -128,6 +142,18 @@ public class AuthController {
     })
     public R<LoginResponse> passwordLogin(@Validated @RequestBody PasswordLoginRequest request) {
         return authService.passwordLogin(request);
+    }
+
+    @PostMapping("/apple/login")
+    @Operation(summary = "Apple ID登录", description = "使用 Apple ID 登录，不存在则自动注册（登录即注册）。\n" +
+            "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
+            "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "登录成功"),
+            @ApiResponse(responseCode = "2040", description = "参数无效（identityToken 无效或已过期）")
+    })
+    public R<LoginResponse> appleLogin(@Validated @RequestBody AppleLoginRequest request) {
+        return authService.appleLogin(request);
     }
 
     @PostMapping("/password/reset")
@@ -143,7 +169,8 @@ public class AuthController {
     }
 
     @PostMapping("/password/change")
-    @Operation(summary = "修改密码", description = "已登录用户修改密码，需要验证旧密码，修改后清除所有Refresh Token")
+    @Operation(summary = "修改密码", description = "已登录用户修改密码，需要验证旧密码，修改后清除所有Refresh Token。\n" +
+            "注意：如果该接口非 App 也会调用，必须携带 X-Client-Type 请求头，否则会按 App 校验 jti（可能导致失败）。")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "修改成功"),
@@ -157,7 +184,8 @@ public class AuthController {
     }
 
     @PostMapping("/token/refresh")
-    @Operation(summary = "刷新 Token", description = "使用 Refresh Token 刷新 Access Token 和 Refresh Token。refreshToken 旋转机制：旧 refreshToken 立即失效，返回新的 token 对。")
+    @Operation(summary = "刷新 Token", description = "使用 Refresh Token 刷新 Access Token 和 Refresh Token。refreshToken 旋转机制：旧 refreshToken 立即失效，返回新的 token 对。\n" +
+            "注意：优先读取 X-Client-Type 请求头，缺失时使用 refreshToken 内的 clientType claim；若两者都缺失，可能退化为无状态刷新（对 App 单端登录不生效）。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "刷新成功"),
             @ApiResponse(responseCode = "2022", description = "Refresh Token无效或已过期")

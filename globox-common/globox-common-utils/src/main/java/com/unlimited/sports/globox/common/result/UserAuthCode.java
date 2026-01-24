@@ -29,7 +29,7 @@ public enum UserAuthCode implements ResultCode {
     
     // Token相关 2020-2029
     TOKEN_EXPIRED(2020, "登录已过期，请重新登录"),
-    TOKEN_INVALID(2021, "无效的Token"),
+    TOKEN_INVALID(2021, "登录已失效，请重新登录"),
     REFRESH_TOKEN_INVALID(2022, "Refresh Token无效或已过期"),
     
     // RPC查询相关 2030-2039

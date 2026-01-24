@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper">
+
+    <!-- 员工信息结果映射 -->
+    <resultMap id="StaffVoMap" type="com.unlimited.sports.globox.model.merchant.vo.StaffVo">
+        <id property="venueStaffId" column="venue_staff_id"/>
+        <result property="userId" column="user_id"/>
+        <result property="venueId" column="venue_id"/>
+        <result property="venueName" column="venue_name"/>
+        <result property="merchantId" column="merchant_id"/>
+        <result property="roleType" column="role_type"/>
+        <result property="roleTypeName" column="role_type_name"/>
+        <result property="displayName" column="display_name"/>
+        <result property="contactPhone" column="contact_phone"/>
+        <result property="email" column="email"/>
+        <result property="jobTitle" column="job_title"/>
+        <result property="employeeNo" column="employee_no"/>
+        <result property="status" column="status"/>
+        <result property="statusName" column="status_name"/>
+        <result property="permissions" column="permissions"/>
+        <result property="hiredAt" column="hired_at"/>
+        <result property="resignedAt" column="resigned_at"/>
+        <result property="remark" column="remark"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="createdBy" column="created_by"/>
+        <result property="createdByName" column="created_by_name"/>
+    </resultMap>
+
+    <!-- 分页查询员工列表 -->
+    <select id="selectStaffPage" resultMap="StaffVoMap">
+        SELECT
+        vs.venue_staff_id,
+        vs.user_id,
+        vs.venue_id,
+        v.name AS venue_name,
+        vs.merchant_id,
+        vs.role_type,
+        CASE vs.role_type
+        WHEN 1 THEN '场馆负责人'
+        WHEN 2 THEN '普通员工'
+        ELSE '未知'
+        END AS role_type_name,
+        vs.display_name,
+        vs.contact_phone,
+        vs.email,
+        vs.job_title,
+        vs.employee_no,
+        vs.status,
+        CASE vs.status
+        WHEN 0 THEN '已离职'
+        WHEN 1 THEN '在职'
+        WHEN 2 THEN '停用'
+        ELSE '未知'
+        END AS status_name,
+        vs.permissions,
+        vs.hired_at,
+        vs.resigned_at,
+        vs.remark,
+        vs.created_at,
+        vs.created_by,
+        creator.display_name AS created_by_name
+        FROM venue_staff vs
+        LEFT JOIN venues v ON vs.venue_id = v.venue_id
+        LEFT JOIN venue_staff creator ON vs.created_by = creator.venue_staff_id
+        WHERE vs.merchant_id = #{merchantId}
+        <if test="venueId != null">
+            AND vs.venue_id = #{venueId}
+        </if>
+        <if test="status != null">
+            AND vs.status = #{status}
+        </if>
+        <if test="roleType != null">
+            AND vs.role_type = #{roleType}
+        </if>
+        <if test="displayName != null and displayName != ''">
+            AND vs.display_name LIKE CONCAT('%', #{displayName}, '%')
+        </if>
+        <if test="jobTitle != null and jobTitle != ''">
+            AND vs.job_title LIKE CONCAT('%', #{jobTitle}, '%')
+        </if>
+        <if test="employeeNo != null and employeeNo != ''">
+            AND vs.employee_no = #{employeeNo}
+        </if>
+        ORDER BY vs.created_at DESC
+    </select>
+
+    <!-- 查询员工详细信息 -->
+    <select id="selectStaffDetail" resultMap="StaffVoMap">
+        SELECT
+            vs.venue_staff_id,
+            vs.user_id,
+            vs.venue_id,
+            v.name AS venue_name,
+            vs.merchant_id,
+            vs.role_type,
+            CASE vs.role_type
+                WHEN 1 THEN '场馆负责人'
+                WHEN 2 THEN '普通员工'
+                ELSE '未知'
+                END AS role_type_name,
+            vs.display_name,
+            vs.contact_phone,
+            vs.email,
+            vs.job_title,
+            vs.employee_no,
+            vs.status,
+            CASE vs.status
+                WHEN 0 THEN '已离职'
+                WHEN 1 THEN '在职'
+                WHEN 2 THEN '停用'
+                ELSE '未知'
+                END AS status_name,
+            vs.permissions,
+            vs.hired_at,
+            vs.resigned_at,
+            vs.remark,
+            vs.created_at,
+            vs.created_by,
+            creator.display_name AS created_by_name
+        FROM venue_staff vs
+                 LEFT JOIN venues v ON vs.venue_id = v.venue_id
+                 LEFT JOIN venue_staff creator ON vs.created_by = creator.venue_staff_id
+        WHERE vs.venue_staff_id = #{venueStaffId}
+    </select>
+
+</mapper>

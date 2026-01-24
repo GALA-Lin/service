@@ -5,6 +5,7 @@ import com.rabbitmq.client.Channel;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
+import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisLock;
@@ -74,7 +75,10 @@ public class PaymentSuccessConsumer {
     @RedisLock(value = "#message.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @RabbitRetryable(
             finalExchange = PaymentMQConstants.EXCHANGE_PAYMENT_SUCCESS_FINAL_DLX,
-            finalRoutingKey = PaymentMQConstants.ROUTING_PAYMENT_SUCCESS_FINAL)
+            finalRoutingKey = PaymentMQConstants.ROUTING_PAYMENT_SUCCESS_FINAL,
+            bizKey = "#message.orderNo",
+            bizType = MQBizTypeEnum.PAYMENT_SUCCESS
+    )
     public void onMessage(
             PaymentSuccessMessage message,
             Channel channel,

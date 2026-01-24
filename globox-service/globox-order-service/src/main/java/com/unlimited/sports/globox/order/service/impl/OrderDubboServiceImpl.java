@@ -158,6 +158,7 @@ public class OrderDubboServiceImpl implements OrderDubboService {
             public void afterCommit() {
                 if (SellerTypeEnum.VENUE.equals(sellerType)) {
                     UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
+                            .orderNo(orderNo)
                             .userId(order.getBuyerId())
                             .operatorType(OperatorTypeEnum.MERCHANT)
                             .recordIds(recordIds)

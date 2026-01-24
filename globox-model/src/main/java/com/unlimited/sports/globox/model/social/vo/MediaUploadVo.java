@@ -18,5 +18,8 @@ public class MediaUploadVo {
 
     @Schema(description = "文件大小（字节）", example = "1024000")
     private Long size;
+
+    @Schema(description = "Cover URL (video only)", example = "https://cdn.example.com/note/video.jpg")
+    private String coverUrl;
 }
 

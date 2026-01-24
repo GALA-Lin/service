@@ -217,7 +217,9 @@ public class UserProfileServiceImpl implements UserProfileService {
                         vo.setRacketModelId(ur.getRacketModelId());
                         RacketDict model = modelMap.get(ur.getRacketModelId());
                         if (model != null) {
-                            vo.setRacketModelName(model.getName());
+                            // 短称：品牌 + 型号（不含系列）
+                            vo.setRacketModelName(buildShortRacketName(model, finalSeriesMap, finalBrandMap));
+                            // 全称：品牌 + 系列 + 型号
                             vo.setRacketModelFullName(buildFullRacketName(model, finalSeriesMap, finalBrandMap));
                         }
                         vo.setIsPrimary(ur.getIsPrimary());
@@ -846,7 +848,22 @@ public class UserProfileServiceImpl implements UserProfileService {
         if (primaryRacket != null) {
             RacketDict racketDict = racketDictMapper.selectById(primaryRacket.getRacketModelId());
             if (racketDict != null && racketDict.getLevel() == RacketDict.Level.MODEL) {
-                mainRacketModelName = racketDict.getName();
+                // 查询系列和品牌信息，构建短称（品牌 + 型号，不含系列）
+                Map<Long, RacketDict> seriesMap = Collections.emptyMap();
+                Map<Long, RacketDict> brandMap = Collections.emptyMap();
+                if (racketDict.getParentId() != null) {
+                    RacketDict series = racketDictMapper.selectById(racketDict.getParentId());
+                    if (series != null) {
+                        seriesMap = Collections.singletonMap(series.getRacketId(), series);
+                        if (series.getParentId() != null) {
+                            RacketDict brand = racketDictMapper.selectById(series.getParentId());
+                            if (brand != null) {
+                                brandMap = Collections.singletonMap(brand.getRacketId(), brand);
+                            }
+                        }
+                    }
+                }
+                mainRacketModelName = buildShortRacketName(racketDict, seriesMap, brandMap);
             }
         }
 
@@ -1009,6 +1026,25 @@ public class UserProfileServiceImpl implements UserProfileService {
         }
         if (series != null) {
             sb.append(series.getName()).append(" ");
+        }
+        if (modelName != null) {
+            sb.append(modelName);
+        }
+        return sb.toString().trim();
+    }
+
+    /**
+     * 构建球拍短称（品牌 + 型号，不含系列）
+     */
+    private String buildShortRacketName(RacketDict model,
+                                        Map<Long, RacketDict> seriesMap,
+                                        Map<Long, RacketDict> brandMap) {
+        String modelName = model.getName();
+        RacketDict series = model.getParentId() == null ? null : seriesMap.get(model.getParentId());
+        RacketDict brand = (series != null && series.getParentId() != null) ? brandMap.get(series.getParentId()) : null;
+        StringBuilder sb = new StringBuilder();
+        if (brand != null) {
+            sb.append(brand.getName()).append(" ");
         }
         if (modelName != null) {
             sb.append(modelName);

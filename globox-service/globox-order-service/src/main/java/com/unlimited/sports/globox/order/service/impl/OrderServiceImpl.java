@@ -349,7 +349,7 @@ public class OrderServiceImpl implements OrderService {
         OrderAutoCancelMessage orderAutoCancelMessage = OrderAutoCancelMessage.builder()
                 .bookingDate(resultDto.getBookingDate())
                 .orderNo(order.getOrderNo())
-                .recordIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getCoachId).collect(Collectors.toList()))
+                .recordIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getRecordId).collect(Collectors.toList()))
                 .sellerType(SellerTypeEnum.COACH)
                 .userId(userId)
                 .build();
@@ -373,6 +373,7 @@ public class OrderServiceImpl implements OrderService {
                         // 事务回滚，发取消锁场事件
                         if (status == STATUS_ROLLED_BACK) {
                             UnlockSlotMessage message = UnlockSlotMessage.builder()
+                                    .orderNo(orderNo)
                                     .userId(userId)
                                     .operatorType(OperatorTypeEnum.SYSTEM)
                                     .isActivity(order.getActivity())
@@ -598,8 +599,8 @@ public class OrderServiceImpl implements OrderService {
                     public void afterCompletion(int status) {
                         // 事务回滚，发取消锁场事件
                         if (status == STATUS_ROLLED_BACK) {
-                            UnlockSlotMessage message = new UnlockSlotMessage();
-                            UnlockSlotMessage.builder()
+                            UnlockSlotMessage message = UnlockSlotMessage.builder()
+                                    .orderNo(orderNo)
                                     .userId(userId)
                                     .isActivity(isActivity)
                                     .operatorType(OperatorTypeEnum.SYSTEM)
@@ -1062,6 +1063,7 @@ public class OrderServiceImpl implements OrderService {
 
         // 6. 事务提交后发送解锁消息
         UnlockSlotMessage unlockMessage = UnlockSlotMessage.builder()
+                .orderNo(orderNo)
                 .userId(userId)
                 .operatorType(OperatorTypeEnum.USER)
                 .recordIds(recordIds)

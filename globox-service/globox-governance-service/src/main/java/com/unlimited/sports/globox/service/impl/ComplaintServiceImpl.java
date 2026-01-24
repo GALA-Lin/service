@@ -7,7 +7,7 @@ import com.unlimited.sports.globox.common.enums.governance.ComplaintTargetTypeEn
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.GovernanceCode;
 import com.unlimited.sports.globox.mapper.ComplaintEvidencesMapper;
-import com.unlimited.sports.globox.mapper.ReportSnapshotsMapper;
+import com.unlimited.sports.globox.mapper.ComplaintSnapshotsMapper;
 import com.unlimited.sports.globox.mapper.ComplaintMapper;
 import com.unlimited.sports.globox.model.governance.dto.CreateComplaintRequestDto;
 import com.unlimited.sports.globox.model.governance.entity.ComplaintEvidences;
@@ -34,7 +34,7 @@ public class ComplaintServiceImpl implements ComplaintService {
     private ComplaintMapper complaintMapper;
 
     @Autowired
-    private ReportSnapshotsMapper reportSnapshotsMapper;
+    private ComplaintSnapshotsMapper complaintSnapshotsMapper;
 
     @Autowired
     private ComplaintEvidencesMapper complaintEvidencesMapper;
@@ -76,7 +76,7 @@ public class ComplaintServiceImpl implements ComplaintService {
         // 4) 保存快照 report_snapshots（一单一快照）
         ComplaintSnapshots snapshot = buildSnapshot(dto, report.getId(), now);
 
-        cnt = reportSnapshotsMapper.insert(snapshot);
+        cnt = complaintSnapshotsMapper.insert(snapshot);
         if (cnt <= 0) {
             throw new GloboxApplicationException(GovernanceCode.REPORT_SNAPSHOT_CREATE_FAILED);
         }

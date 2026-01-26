@@ -7,7 +7,7 @@ import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
-import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipantStatusEnum;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
@@ -72,9 +72,9 @@ public class UnlockSlotConsumer {
             return;
         }
 
-        // 处理活动解锁
+        // 处理活动解锁（recordIds 是 participantIds）
         if (message.isActivity()) {
-            handleActivityUnlock(recordIds.get(0), userId);
+            handleActivityUnlock(userId, recordIds);
             return;
         }
 
@@ -124,65 +124,80 @@ public class UnlockSlotConsumer {
     }
 
     /**
-     * 处理活动参与者解绑 -
+     * 处理活动参与者解绑
      * 核心逻辑：
-     * 1. 软删除参与记录（基于activityId+userId+is_deleted=1，幂等操作）
-     * 2. 检查软删除是否成功（影响行数==1时才进行步骤3）
-     * 3. 原子性递减活动人数（数据库级别保证原子性）
+     * 1. 根据参与记录ID（participantId）批量查询有效的参与记录
+     * 2. 校验所有参与记录是否属于同一个活动
+     * 3. 将这些记录标记为已取消（status=CANCELLED）
+     * 4. 原子性递减活动人数（支持部分删除）
      *
-     * @param activityId 活动ID（从recordIds.get(0)传入）
      * @param userId 用户ID
+     * @param participantIds 要删除的参与记录ID列表（从recordIds传入）
      */
-    private void handleActivityUnlock(Long activityId, Long userId) {
-        log.info("[活动解绑] 开始处理活动参与者解绑 - activityId={}, userId={}", activityId, userId);
+    private void handleActivityUnlock(Long userId, List<Long> participantIds) {
+        log.info("[活动解绑] 开始处理活动参与者解绑 - userId={}, participantIds={}",
+                userId, participantIds);
 
-        if (activityId == null || activityId <= 0) {
-            log.warn("[活动解绑] 活动ID无效 - activityId={}, userId={}", activityId, userId);
+        if (participantIds == null || participantIds.isEmpty()) {
+            log.warn("[活动解绑] 参与记录ID列表为空 - userId={}", userId);
             return;
         }
 
-        // 查询未取消的参与记录
-        VenueActivityParticipant participant = activityParticipantMapper.selectOne(
+        // 查询这些参与记录中有效的（status=ACTIVE）
+        List<VenueActivityParticipant> participants = activityParticipantMapper.selectList(
                 new LambdaQueryWrapper<VenueActivityParticipant>()
-                        .eq(VenueActivityParticipant::getActivityId, activityId)
-                        .eq(VenueActivityParticipant::getUserId, userId)
-                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                        .in(VenueActivityParticipant::getParticipantId, participantIds)
+                        .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
         );
 
-        if (participant == null) {
-            log.warn("[活动解绑] 未找到未取消的参与记录 - activityId={}, userId={}", activityId, userId);
+        if (participants.isEmpty()) {
+            log.warn("[活动解绑] 未找到有效的参与记录 - userId={}, participantIds={}", userId, participantIds);
             return;
         }
 
-        // 更新为已取消，deleteVersion设为参与记录ID
-        int deleteCount = activityParticipantMapper.update(null,
+        // 校验所有参与记录是否属于同一个活动
+        Long activityId = participants.get(0).getActivityId();
+        boolean allSameActivity = participants.stream()
+                .allMatch(p -> p.getActivityId().equals(activityId));
+
+        if (!allSameActivity) {
+            log.warn("[活动解绑] 参与记录属于不同活动，禁止跨活动删除 - userId={}, participantIds={}", userId, participantIds);
+            return;
+        }
+
+        log.info("[活动解绑] 找到 {} 条有效参与记录 - activityId={}, userId={}", participants.size(), activityId, userId);
+
+        // 批量更新为已取消状态
+        int cancelCount = activityParticipantMapper.update(null,
                 new LambdaUpdateWrapper<VenueActivityParticipant>()
-                        .set(VenueActivityParticipant::getDeleteVersion, participant.getParticipantId())
-                        .eq(VenueActivityParticipant::getParticipantId, participant.getParticipantId())
-                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                        .set(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.CANCELLED.getValue())
+                        .in(VenueActivityParticipant::getParticipantId, participantIds)
+                        .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
         );
 
-        if (deleteCount == 0) {
-            log.warn("[活动解绑] 更新失败 - 记录已被修改 - activityId={}, userId={}", activityId, userId);
+        if (cancelCount == 0) {
+            log.warn("[活动解绑] 取消失败 - 记录已被修改 - userId={}, participantIds={}", userId, participantIds);
             return;
         }
 
-        // 步骤2：原子性递减活动人数（数据库级别保证原子性）
-        // UPDATE venue_activity SET current_participants = current_participants - 1 WHERE activity_id = ? AND current_participants > 0
+        log.info("[活动解绑] 成功取消参与记录 - activityId={}, userId={}, participantIds={}, 取消数量={}",
+                activityId, userId, participantIds, cancelCount);
+
+        // 原子性递减活动人数（数据库级别保证原子性）
         int decrementCount = venueActivityMapper.update(null,
                 new LambdaUpdateWrapper<VenueActivity>()
-                        .setSql("current_participants = current_participants - 1")
+                        .setSql("current_participants = current_participants - " + cancelCount)
                         .eq(VenueActivity::getActivityId, activityId)
-                        .gt(VenueActivity::getCurrentParticipants, 0)
+                        .apply("current_participants >= {0}", cancelCount)
         );
 
         if (decrementCount == 0) {
-            log.warn("[活动解绑] 递减失败 - 活动不存在或人数已为0 - activityId={}, userId={}",
-                    activityId, userId);
+            log.warn("[活动解绑] 递减失败 - 活动不存在或人数不足 - activityId={}, 需要递减={}",
+                    activityId, cancelCount);
             return;
         }
 
-        log.info("[活动解绑] 解绑成功 - activityId={}, userId={}, 人数已递减",
-                activityId, userId);
+        log.info("[活动解绑] 解绑成功 - activityId={}, userId={}, participantIds={}, 递减人数={}",
+                activityId, userId, participantIds, cancelCount);
     }
 }

@@ -52,10 +52,7 @@
                      filePattern="${LOG_PATH}/%d{yyyy-MM-dd}/info.%d{yyyy-MM-dd-HH}.log.gz"
                      append="true">
             <PatternLayout pattern="${FILE_LOG_PATTERN}" charset="UTF-8"/>
-            <Filters>
-                <LevelRangeFilter minLevel="INFO" maxLevel="WARN"
-                                  onMatch="ACCEPT" onMismatch="DENY"/>
-            </Filters>
+            <ThresholdFilter level="INFO" onMatch="ACCEPT" onMismatch="DENY"/>
             <Policies>
                 <SizeBasedTriggeringPolicy size="10 MB"/>
                 <TimeBasedTriggeringPolicy interval="1" modulate="true"/>

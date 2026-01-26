@@ -22,7 +22,9 @@ public enum PaymentsCode implements ResultCode {
     PAYMENT_STATUS_UNKNOW(5010, "未知的支付状态"),
     PAYMENT_REQUEST_PLATFORM_ERROR(5011, "请求支付平台错误，请稍后再试"),
     PAYMENT_WECHAT_PAY_FAILED(5012, "请求微信支付失败，青稍后再试"),
-    THIRD_PARTY_TYPE_NOT_EXIST(5013, "第三方小程序不存在");
+    THIRD_PARTY_TYPE_NOT_EXIST(5013, "第三方小程序不存在"),
+    REGISTER_PROFIT_SHARING_RECEIVER_FAILED(5014, "注册分账接收方失败，请联系管理员"),
+    ;
 
     private final Integer code;
     private final String message;

@@ -69,13 +69,11 @@ public class RecordDto implements Serializable {
     /**
      * 退款状态
      */
-    @Null
     private RefundStatusEnum status;
 
     /**
      * 状态名称
      */
-    @Null
     private String statusName;
 
     /**

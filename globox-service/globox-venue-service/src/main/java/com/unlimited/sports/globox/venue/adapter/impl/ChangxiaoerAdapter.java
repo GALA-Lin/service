@@ -261,13 +261,13 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
                     .build();
 
             ChangxiaoerLockSlotRequest.PhoneNumber phoneNumber = ChangxiaoerLockSlotRequest.PhoneNumber.builder()
-                    .phoneNumber("13300000000")  // 默认手机号
+                    .phoneNumber(config.getUsername())
                     .countryCode("+86")
                     .build();
 
             ChangxiaoerLockSlotRequest.Booker booker = ChangxiaoerLockSlotRequest.Booker.builder()
                     .phoneNumber(phoneNumber)
-                    .bookerName("球盒")  // 默认预订人名称
+                    .bookerName(config.getPassword())
                     .build();
 
             ChangxiaoerLockSlotRequest.TimeRange timeRange = ChangxiaoerLockSlotRequest.TimeRange.builder()
@@ -352,9 +352,9 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
 
     // todo 待测试
     @Override
-    public boolean unlockSlot(VenueThirdPartyConfig config, String thirdPartyBookingId) {
-        log.info("[changxiaoer] 解锁槽位: venueId={}, bookingId={}",
-                config.getVenueId(), thirdPartyBookingId);
+    public boolean unlockSlot(VenueThirdPartyConfig config, String thirdPartyBookingId, LocalDate bookingDate) {
+        log.info("[changxiaoer] 解锁槽位: venueId={}, bookingId={}, bookingDate={}",
+                config.getVenueId(), thirdPartyBookingId, bookingDate);
 
         try {
             // 1. 获取认证信息
@@ -397,11 +397,11 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             }
 
             // 解锁成功，清除槽位缓存
-            String cacheKey = buildSlotsCacheKey(config.getVenueId(), LocalDate.now());
+            String cacheKey = buildSlotsCacheKey(config.getVenueId(), bookingDate);
             redisService.deleteObject(cacheKey);
-            log.info("[changxiaoer] 槽位缓存已清除: venueId={}, bookingId={}", config.getVenueId(), thirdPartyBookingId);
+            log.info("[changxiaoer] 槽位缓存已清除: venueId={}, bookingId={}, bookingDate={}", config.getVenueId(), thirdPartyBookingId, bookingDate);
 
-            log.info("[changxiaoer] 解锁成功: venueId={}, bookingId={}", config.getVenueId(), thirdPartyBookingId);
+            log.info("[changxiaoer] 解锁成功: venueId={}, bookingId={}, bookingDate={}", config.getVenueId(), thirdPartyBookingId, bookingDate);
             return true;
 
         } catch (Exception e) {

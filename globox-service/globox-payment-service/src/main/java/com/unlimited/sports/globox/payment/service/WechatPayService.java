@@ -2,13 +2,12 @@ package com.unlimited.sports.globox.payment.service;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.ResultCode;
+import com.unlimited.sports.globox.model.payment.entity.PaymentProfitSharing;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.unlimited.sports.globox.model.payment.vo.WechatPayNotifyVo;
 import com.wechat.pay.java.core.notification.NotificationConfig;
-import com.wechat.pay.java.core.notification.RequestParam;
-import com.wechat.pay.java.service.payments.model.Transaction;
 
 import javax.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
@@ -56,5 +55,12 @@ public interface WechatPayService {
      */
     void cancel(Payments payments);
 
-
+    /**
+     * 微信支付分账
+     *
+     * @param payments            payment info
+     * @param outProfitSharingNo
+     * @param profitSharingAmount
+     */
+    PaymentProfitSharing profitSharing(Payments payments, String outProfitSharingNo, BigDecimal profitSharingAmount);
 }

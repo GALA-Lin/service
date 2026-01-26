@@ -3,24 +3,29 @@ package com.unlimited.sports.globox.merchant.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisDistributedLock;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.VenueCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.IdGenerator;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
+import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.merchant.mapper.*;
 import com.unlimited.sports.globox.merchant.service.VenueActivityManagementService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Merchant;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
 import com.unlimited.sports.globox.model.merchant.vo.ActivityCreationResultVo;
+import com.unlimited.sports.globox.model.merchant.vo.ActivityParticipantInfoVo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
 import com.unlimited.sports.globox.model.venue.dto.UpdateActivityDto;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
-import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivitySlotLock;
+import com.unlimited.sports.globox.model.venue.entity.venues.*;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.model.venue.enums.OrganizerTypeEnum;
 import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
@@ -33,6 +38,7 @@ import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.service.IVenueActivitySlotLockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.redisson.api.RLock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -42,9 +48,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -70,6 +74,9 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
     private final IdGenerator idGenerator;  // 注入雪花算法ID生成器
 
     private final ParticipantMapper participantMapper;
+
+    @DubboReference(group = "rpc")
+    private UserDubboService userDubboService;
 
     /**
      * 自注入，用于解决@Transactional自调用问题
@@ -357,12 +364,12 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
             throw new GloboxApplicationException("无权操作此活动");
         }
 
-        // 3. 校验报名情况：查询是否有有效报名者 (delete_version = 0)
+        // 3. 校验报名情况：查询是否有有效报名者
         // 根据 VenueActivityParticipant 结构定义
         Long participantCount = participantMapper.selectCount(
                 new LambdaQueryWrapper<VenueActivityParticipant>()
                         .eq(VenueActivityParticipant::getActivityId, activityId)
-                        .eq(VenueActivityParticipant::getDeleteVersion, 0L)
+                        .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE)
         );
 
         if (participantCount > 0) {
@@ -698,5 +705,95 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                 slotTemplateId +
                 BookingCacheConstants.BOOKING_LOCK_KEY_SEPARATOR +
                 activityDate;
+    }
+
+    @Override
+    public MerchantActivityDetailVo getActivityDetail(Long activityId, MerchantAuthContext context) {
+        log.info("商家查询活动详情 - activityId: {}, employeeId: {}, merchantId: {}",
+                activityId, context.getEmployeeId(), context.getMerchantId());
+
+        // 查询活动信息
+        VenueActivity activity = venueActivityMapper.selectById(activityId);
+        if (activity == null) {
+            log.warn("活动不存在 - activityId: {}", activityId);
+            throw new GloboxApplicationException(VenueCode.ACTIVITY_NOT_EXIST);
+        }
+
+        // 验证商家权限：查询场馆是否属于该商家
+        Venue venue = venueMapper.selectById(activity.getVenueId());
+        if (venue == null) {
+            log.warn("场馆不存在 - venueId: {}", activity.getVenueId());
+            throw new GloboxApplicationException(VenueCode.VENUE_NOT_EXIST);
+        }
+
+        if (!venue.getMerchantId().equals(context.getMerchantId())) {
+            log.warn("无权查看该活动 - activityId: {}, merchantId: {}, venueMerchantId: {}",
+                    activityId, context.getMerchantId(), venue.getMerchantId());
+            throw new GloboxApplicationException("无权查看该活动");
+        }
+
+        // 查询参与者列表（只查询未取消的）
+        List<VenueActivityParticipant> participants = participantMapper.selectList(
+                new LambdaQueryWrapper<VenueActivityParticipant>()
+                        .eq(VenueActivityParticipant::getActivityId, activityId)
+                        .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
+        );
+
+        // 批量查询用户信息
+        List<ActivityParticipantInfoVo> participantInfoList;
+        if (participants.isEmpty()) {
+            participantInfoList = Collections.emptyList();
+        } else {
+            List<Long> userIds = participants.stream()
+                    .map(VenueActivityParticipant::getUserId)
+                    .distinct()
+                    .toList();
+
+            BatchUserInfoRequest request = new BatchUserInfoRequest();
+            request.setUserIds(userIds);
+
+            RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
+            Assert.rpcResultOk(rpcResult);
+
+            BatchUserInfoResponse response = rpcResult.getData();
+            Map<Long, UserInfoVo> userInfoMap = response.getUsers().stream()
+                    .collect(Collectors.toMap(UserInfoVo::getUserId, u -> u));
+
+            // 构建参与者信息列表
+            participantInfoList = participants.stream()
+                    .map(participant -> {
+                        UserInfoVo userInfo = userInfoMap.get(participant.getUserId());
+                        return ActivityParticipantInfoVo.builder()
+                                .userId(participant.getUserId())
+                                .phone(participant.getPhone())
+                                .avatarUrl(userInfo != null ? userInfo.getAvatarUrl() : null)
+                                .nickName(userInfo != null ? userInfo.getNickName() : "未知用户")
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+        }
+
+        // 构建返回结果
+        return MerchantActivityDetailVo.builder()
+                .activityId(activity.getActivityId())
+                .venueId(activity.getVenueId())
+                .courtId(activity.getCourtId())
+                .activityTypeId(activity.getActivityTypeId())
+                .activityTypeDesc(activity.getActivityTypeDesc())
+                .activityName(activity.getActivityName())
+                .imageUrls(activity.getImageUrls())
+                .activityDate(activity.getActivityDate())
+                .startTime(activity.getStartTime())
+                .endTime(activity.getEndTime())
+                .maxParticipants(activity.getMaxParticipants())
+                .maxQuotaPerUser(activity.getMaxQuotaPerUser())
+                .currentParticipants(activity.getCurrentParticipants())
+                .unitPrice(activity.getUnitPrice())
+                .description(activity.getDescription())
+                .registrationDeadline(activity.getRegistrationDeadline())
+                .minNtrpLevel(activity.getMinNtrpLevel())
+                .status(activity.getStatus())
+                .participants(participantInfoList)
+                .build();
     }
 }

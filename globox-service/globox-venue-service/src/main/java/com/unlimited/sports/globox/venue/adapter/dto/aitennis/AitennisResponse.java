@@ -3,7 +3,7 @@ package com.unlimited.sports.globox.venue.adapter.dto.aitennis;
 import lombok.Data;
 
 /**
- * 爱网球统一响应
+ * aitennis统一响应
  */
 @Data
 public class AitennisResponse<T> {

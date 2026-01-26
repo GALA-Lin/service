@@ -11,6 +11,8 @@ import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
+import com.unlimited.sports.globox.common.message.order.OrderAutoCompleteMessage;
+import com.unlimited.sports.globox.common.message.order.ProfitSharingMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
@@ -22,6 +24,7 @@ import com.unlimited.sports.globox.order.mapper.OrdersMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,9 +58,11 @@ public class OrderAutoCompleteConsumer {
             bizType = MQBizTypeEnum.ORDER_AUTO_COMPLETE
     )
     public void onMessage(
-            OrderAutoCancelMessage message,
+            OrderAutoCompleteMessage message,
             Channel channel,
             Message amqpMessage) {
+
+        message.incrementRetryCount();
 
         Orders orders = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()
@@ -87,8 +92,19 @@ public class OrderAutoCompleteConsumer {
                     .remark("订单已自动完成")
                     .build();
             orderStatusLogsMapper.insert(orderLog);
+
+            // 如果属于教练订单，发送分账消息
+            ProfitSharingMessage profitSharingMessage = new ProfitSharingMessage();
+            BeanUtils.copyProperties(orders, profitSharingMessage);
+
+
         } else if (orderStatus.equals(OrderStatusEnum.REFUND_APPLYING)
                 || orderStatus.equals(OrderStatusEnum.REFUNDING)) {
+            if (message.getRetryCount() > 15) {
+                log.error("[订单自动确认] orderNo：{} 第 {} 次尝试更新状态为完成但失败", orders.getOrderNo(), message.getRetryCount());
+            } else if (message.getRetryCount() > 5) {
+                log.warn("[订单自动确认] orderNo：{} 第 {} 次尝试更新状态为完成但失败", orders.getOrderNo(), message.getRetryCount());
+            }
             // 正在退款申请、正在退款 发送一条半小时后的消息，等待订单状态变化
             int delay = 30 * 60;
             mqService.sendDelay(

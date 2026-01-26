@@ -23,7 +23,8 @@ public enum MQBizTypeEnum {
     NOTIFICATION_SYSTEM(9, BusinessServiceEnum.UNKNOW, BusinessServiceEnum.NOTIFICATION),
     NOTIFICATION_CORE(10, BusinessServiceEnum.UNKNOW, BusinessServiceEnum.NOTIFICATION),
     NOTIFICATION_URGENT(11, BusinessServiceEnum.UNKNOW, BusinessServiceEnum.NOTIFICATION),
-    UNLOCK_SLOT_COACH(1, BusinessServiceEnum.ORDER, BusinessServiceEnum.COACH),
+    UNLOCK_SLOT_COACH(12, BusinessServiceEnum.ORDER, BusinessServiceEnum.COACH),
+    PROFIT_SHARING(13, BusinessServiceEnum.ORDER, BusinessServiceEnum.PAYMENT)
     ;
 
     @EnumValue

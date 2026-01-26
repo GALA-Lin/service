@@ -40,7 +40,6 @@ public class AlipayController {
     @RequestMapping("/callback/notify")
     @ResponseBody
     public String notifyCallback(@RequestParam Map<String, String> paramsMap) {
-        // TODO ETA 2026/01/10 测试使用
         log.info("异步回调触发：{}", jsonUtils.objectToJson(paramsMap));
         return alipayService.checkCallback(paramsMap);
     }

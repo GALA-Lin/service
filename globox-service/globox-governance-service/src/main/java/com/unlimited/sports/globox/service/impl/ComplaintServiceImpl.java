@@ -108,6 +108,7 @@ public class ComplaintServiceImpl implements ComplaintService {
 
     private ComplaintSnapshots buildSnapshot(CreateComplaintRequestDto dto, Long id, LocalDateTime now) {
         ComplaintTargetTypeEnum targetType = ComplaintTargetTypeEnum.of(dto.getTargetType());
+        // TODO 不能举报自己的内容
         switch (targetType) {
             // 帖子
             case NOTE -> {

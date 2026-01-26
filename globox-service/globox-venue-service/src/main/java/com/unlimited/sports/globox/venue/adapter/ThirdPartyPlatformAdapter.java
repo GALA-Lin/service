@@ -40,9 +40,10 @@ public interface ThirdPartyPlatformAdapter {
      *
      * @param config 第三方平台配置
      * @param thirdPartyBookingId 第三方平台的订单ID
+     * @param bookingDate 预订日期（用于清除缓存）
      * @return 是否解锁成功
      */
-    boolean unlockSlot(VenueThirdPartyConfig config, String thirdPartyBookingId);
+    boolean unlockSlot(VenueThirdPartyConfig config, String thirdPartyBookingId, LocalDate bookingDate);
 
     /**
      * 登录获取认证信息

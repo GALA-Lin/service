@@ -45,7 +45,7 @@ public class VenueThirdPartyConfig implements Serializable {
     /**
      * 该场馆在第三方平台的ID
      * 场小二：spaceId
-     * 爱网球：stadiumId
+     * aitennis：stadiumId
      */
     @TableField("third_party_venue_id")
     private String thirdPartyVenueId;
@@ -59,7 +59,7 @@ public class VenueThirdPartyConfig implements Serializable {
     /**
      * 登录账号或Token字段1
      * 场小二：存储Token
-     * 爱网球：可为空
+     * aitennis：可为空
      */
     @TableField("username")
     private String username;
@@ -67,7 +67,7 @@ public class VenueThirdPartyConfig implements Serializable {
     /**
      * 登录密码或Token字段2（加密存储）
      * 场小二：可为空
-     * 爱网球：存储JWT Token
+     * aitennis：存储JWT Token
      */
     @TableField("password")
     private String password;
@@ -75,7 +75,7 @@ public class VenueThirdPartyConfig implements Serializable {
     /**
      * 其他额外配置信息（JSON格式）
      * 场小二：{"adminId": "3133", "channel": "Web", "version": "29"}
-     * 爱网球：{"client": "Web"}
+     * aitennis：{"client": "Web"}
      */
     @TableField("extra_config")
     private String extraConfig;

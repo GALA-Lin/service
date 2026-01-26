@@ -75,7 +75,6 @@ public class CoachGetOrderResultDto implements Serializable {
      * 折扣金额
      *
      */
-    @Null
     private BigDecimal discountAmount;
 
     /**
@@ -117,7 +116,6 @@ public class CoachGetOrderResultDto implements Serializable {
     /**
      * 支付时间
      */
-    @Null
     private LocalDateTime paidAt;
 
     /**

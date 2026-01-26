@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.merchant.service.VenueActivityManagementServi
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
 import com.unlimited.sports.globox.model.merchant.vo.ActivityCreationResultVo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
 import com.unlimited.sports.globox.model.venue.dto.UpdateActivityDto;
 import lombok.Data;
@@ -144,6 +145,23 @@ public class VenueActivityManagementController {
         merchantAuthUtil.validateVenueAccess(context, venueId);
 
         List<ActivityCreationResultVo> result = activityManagementService.getActivitiesByVenueId(venueId,activityDate);
+        return R.ok(result);
+    }
+
+    /**
+     * 获取活动详情（商家端）
+     * 包含活动基本信息和参与者列表
+     */
+    @GetMapping("/{activityId}/detail")
+    public R<MerchantActivityDetailVo> getActivityDetail(
+            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @PathVariable Long activityId) {
+
+        log.info("商家查询活动详情 - employeeId: {}, activityId: {}", employeeId, activityId);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+
+        MerchantActivityDetailVo result = activityManagementService.getActivityDetail(activityId, context);
         return R.ok(result);
     }
 }

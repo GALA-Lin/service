@@ -188,6 +188,7 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
                             .orderTime(order.getCreatedAt())
                             .refundApplyTime(refundApplyTime)
                             .userId(order.getBuyerId())
+                            .isActivity(order.getActivity())
                             .eventStartTime(LocalDateTime.of(it.getBookingDate(), it.getStartTime()))
                             .build();
 

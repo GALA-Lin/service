@@ -32,6 +32,8 @@ public class MerchantRefundRuleJudgeRequestDto implements Serializable {
     @NotNull(message = "下单时间不能为空")
     private LocalDateTime orderTime;
 
+    private boolean isActivity;
+
     @NotNull(message = "用户ID不能为空")
     private Long userId;
 

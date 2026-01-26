@@ -6,7 +6,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 爱网球场地时间槽事件
+ * aitennis场地时间槽事件
  */
 @Data
 public class AitennisCourtEvent {

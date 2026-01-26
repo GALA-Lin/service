@@ -7,6 +7,7 @@ import com.unlimited.sports.globox.dubbo.merchant.dto.*;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueRefundRuleDetailMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueRefundRuleMapper;
+import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.entity.VenueRefundRule;
 import com.unlimited.sports.globox.model.merchant.entity.VenueRefundRuleDetail;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.stereotype.Component;
 
+import javax.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -101,16 +103,11 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
         return convertToDto(rule);
     }
 
-    /**
-     * 判断是否适用退款规则
-     *
-     * @param request
-     * @return
-     */
     @Override
     public RpcResult<MerchantRefundRuleJudgeResultVo> judgeApplicableRefundRule(MerchantRefundRuleJudgeRequestDto request) {
-        log.info("判断是否适用退款规则 - merchantId: {}, venueId: {}, 活动开始时间: {}, 退款申请时间: {}",
-                getMerchantId(request.getVenueId()), request.getVenueId(), request.getEventStartTime(), request.getRefundApplyTime());
+        log.info("判断是否适用退款规则 - merchantId: {}, venueId: {}, 订单类型: {}, 活动开始时间: {}, 退款申请时间: {}",
+                getMerchantId(request.getVenueId()), request.getVenueId(), request.isActivity(),
+                request.getEventStartTime(), request.getRefundApplyTime());
 
         // 1. 核心时间合法性校验
         LocalDateTime eventStartTime = request.getEventStartTime();
@@ -126,16 +123,14 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
         // 计算：退款申请时间 距离 活动开始时间 的提前小时数
         Duration duration = Duration.between(refundApplyTime, eventStartTime);
         long hoursBeforeEvent = duration.toHours(); // 提前的小时数（比如提前48小时、24小时）
-        log.debug("退款申请时间距离活动开始时间提前 {} 小时", hoursBeforeEvent);
+        log.info("退款申请时间距离活动开始时间提前 {} 小时", hoursBeforeEvent);
 
-        // 2. 查询有效的退款规则
-        MerchantRefundRuleQueryRequestDto queryRequest = MerchantRefundRuleQueryRequestDto.builder()
-                .venueId(request.getVenueId())
-                .build();
-        MerchantRefundRuleResultDto refundRule = getRefundRule(queryRequest);
+        // 2. 根据订单类型获取对应的退款规则
+        MerchantRefundRuleResultDto refundRule = getRefundRuleByOrderType(request.getVenueId(), request.isActivity());
 
         if (refundRule == null || !refundRule.getIsEnabled()) {
-            String reason = "未找到可用的退款规则，不支持退款";
+            String reason = String.format("未找到可用的%s退款规则，不支持退款",
+                    request.isActivity() ? "活动订单" : "普通订单");
             log.warn(reason);
             return RpcResult.error(NO_VALID_REFUND_RULE);
         }
@@ -145,7 +140,7 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
         if (ruleDetails == null || ruleDetails.isEmpty()) {
             String reason = "退款规则未配置明细，不支持退款";
             log.warn(reason);
-            return  RpcResult.error(REFUND_RULE_NO_DETAILS);
+            return RpcResult.error(REFUND_RULE_NO_DETAILS);
         }
 
         // 按优先级排序
@@ -159,18 +154,21 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
             // 判断：退款申请的提前小时数 是否匹配规则的时间范围（核心逻辑）
             boolean isInTimeRange;
             if (maxHours == null) {
-                // 无上限（比如规则10：min=48，max=null → 提前≥48小时）
+                // 无上限（比如规则：min=6，max=null → 提前≥6小时）
                 isInTimeRange = hoursBeforeEvent >= minHours;
             } else {
-                // 有上下限（比如规则11：min=0，max=48 → 提前0~48小时）
+                // 有上下限（比如规则：min=0，max=6 → 提前0~6小时）
                 isInTimeRange = hoursBeforeEvent >= minHours && hoursBeforeEvent <= maxHours;
             }
+
             if (isInTimeRange) {
                 boolean canRefund = refundPercentage.compareTo(BigDecimal.ZERO) > 0;
+                log.warn("退款申请时，是否可退: {}", canRefund);
                 if (!canRefund) {
                     return RpcResult.error(REFUND_RATIO_ZERO);
                 }
-                log.info("匹配到退款规则明细 [{}]，提前小时数: {}, 是否可退: {}, 退款比例: {}%",
+                log.info("匹配到{}退款规则明细 [{}]，提前小时数: {}, 是否可退: {}, 退款比例: {}%",
+                        request.isActivity() ? "活动订单" : "普通订单",
                         detail.getVenueRefundRuleDetailId(), hoursBeforeEvent, true, refundPercentage);
 
                 return RpcResult.ok(
@@ -181,13 +179,89 @@ public class MerchantRefundRuleDubboServiceImpl implements MerchantRefundRuleDub
                                 .build()
                 );
             }
-
         }
 
         // 4. 未匹配任何规则明细
         String reason = "未匹配到适用的退款规则，不支持退款";
         log.warn(reason);
         return RpcResult.error(NO_MATCHED_REFUND_RULE_DETAIL);
+    }
+
+    /**
+     * 根据订单类型获取对应的退款规则
+     *
+     * @param venueId 场馆ID
+     * @param isActivity 是否为活动订单
+     * @return 退款规则
+     */
+    private MerchantRefundRuleResultDto getRefundRuleByOrderType(Long venueId, boolean isActivity) {
+        log.debug("根据订单类型获取退款规则 - venueId: {}, orderType: {}", venueId, isActivity);
+
+        // 查询场馆信息，获取对应的退款规则ID
+        Venue venue = venueMapper.selectById(venueId);
+        if (venue == null) {
+            log.warn("场馆不存在 - venueId: {}", venueId);
+            return null;
+        }
+
+        Long ruleId;
+        if (isActivity) {
+            // 活动订单：使用活动退款规则
+            ruleId = venue.getActivityRefundRuleId();
+            log.debug("使用活动订单退款规则ID: {}", ruleId);
+
+            // 如果活动退款规则ID为空，尝试使用默认规则
+            if (ruleId == null) {
+                log.warn("活动退款规则ID为空，尝试查询场馆默认活动退款规则");
+                return getDefaultActivityRefundRule(venue.getMerchantId(), venueId);
+            }
+        } else {
+            // 普通订单：使用普通退款规则
+            ruleId = venue.getVenueRefundRuleId();
+            log.debug("使用普通订单退款规则ID: {}", ruleId);
+
+            // 如果普通退款规则ID为空，尝试使用默认规则
+            if (ruleId == null) {
+                log.warn("普通退款规则ID为空，使用原有逻辑查询默认规则");
+                MerchantRefundRuleQueryRequestDto queryRequest = MerchantRefundRuleQueryRequestDto.builder()
+                        .venueId(venueId)
+                        .build();
+                return getRefundRule(queryRequest);
+            }
+        }
+
+        // 直接通过规则ID查询
+        return getRefundRuleById(ruleId);
+    }
+
+    /**
+     * 获取默认的活动退款规则
+     * 查询优先级：
+     * 1. 场馆专属活动退款规则
+     * 2. 商家默认活动退款规则
+     *
+     * @param merchantId 商家ID
+     * @param venueId 场馆ID
+     * @return 活动退款规则
+     */
+    private MerchantRefundRuleResultDto getDefaultActivityRefundRule(Long merchantId, Long venueId) {
+        log.debug("查询默认活动退款规则 - merchantId: {}, venueId: {}", merchantId, venueId);
+
+        // 1. 优先查询场馆专属活动退款规则
+        VenueRefundRule rule = refundRuleMapper.selectDefaultRule(merchantId, venueId);
+
+        // 2. 如果没有场馆专属规则，查询商家默认规则
+        if (rule == null) {
+            log.debug("未找到场馆专属活动退款规则，查询商家默认活动退款规则");
+            rule = refundRuleMapper.selectDefaultRule(merchantId, null);
+        }
+
+        if (rule == null) {
+            log.warn("未找到活动退款规则 - merchantId: {}, venueId: {}", merchantId, venueId);
+            return null;
+        }
+
+        return convertToDto(rule);
     }
 
     /**

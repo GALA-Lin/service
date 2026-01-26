@@ -148,6 +148,10 @@ public class OrderServiceImpl implements OrderService {
         PricingActivityRequestDto requestDto = new PricingActivityRequestDto();
         BeanUtils.copyProperties(dto, requestDto);
         requestDto.setUserId(userId);
+        // 默认为 1
+        if (ObjectUtils.isEmpty(dto.getQuantity())) {
+            requestDto.setQuantity(1);
+        }
         RpcResult<PricingActivityResultDto> rpcResult = merchantDubboService.quoteVenueActivity(requestDto);
         Assert.rpcResultOk(rpcResult);
         PricingActivityResultDto result = rpcResult.getData();
@@ -349,7 +353,8 @@ public class OrderServiceImpl implements OrderService {
         OrderAutoCancelMessage orderAutoCancelMessage = OrderAutoCancelMessage.builder()
                 .bookingDate(resultDto.getBookingDate())
                 .orderNo(order.getOrderNo())
-                .recordIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getRecordId).collect(Collectors.toList()))
+                .recordIds(resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getRecordId)
+                        .collect(Collectors.toList()))
                 .sellerType(SellerTypeEnum.COACH)
                 .userId(userId)
                 .build();
@@ -378,7 +383,8 @@ public class OrderServiceImpl implements OrderService {
                                     .operatorType(OperatorTypeEnum.SYSTEM)
                                     .isActivity(order.getActivity())
                                     .bookingDate(resultDto.getBookingDate())
-                                    .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
+                                    .recordIds(itemCtxList.stream().map(item -> item.itemId)
+                                            .collect(Collectors.toList()))
                                     .build();
                             message.setUserId(userId);
                             mqService.send(
@@ -530,7 +536,6 @@ public class OrderServiceImpl implements OrderService {
                 .build();
 
 
-
         order.setCreatedAt(createdAt);
 
         int insOrder = ordersMapper.insert(order);
@@ -605,7 +610,8 @@ public class OrderServiceImpl implements OrderService {
                                     .isActivity(isActivity)
                                     .operatorType(OperatorTypeEnum.SYSTEM)
                                     .bookingDate(result.getBookingDate())
-                                    .recordIds(itemCtxList.stream().map(item -> item.itemId).collect(Collectors.toList()))
+                                    .recordIds(itemCtxList.stream().map(item -> item.itemId)
+                                            .collect(Collectors.toList()))
                                     .build();
                             message.setUserId(userId);
                             mqService.send(
@@ -651,7 +657,9 @@ public class OrderServiceImpl implements OrderService {
                         .eq(Orders::getBuyerId, userId)
                         .eq(!ObjectUtils.isEmpty(openId), Orders::getSellerType, SellerTypeEnum.VENUE)
                         .in(!ObjectUtils.isEmpty(openId), Orders::getSellerId, mooncourtIdList)
-                        .in(!ObjectUtils.isEmpty(pageDto.getOrderStatus()), Orders::getOrderStatus, pageDto.getOrderStatus())
+                        .in(!ObjectUtils.isEmpty(pageDto.getOrderStatus()),
+                                Orders::getOrderStatus,
+                                pageDto.getOrderStatus())
                         .orderByDesc(Orders::getId));
 
         // 没有数据
@@ -680,7 +688,7 @@ public class OrderServiceImpl implements OrderService {
                 .filter(item -> {
                     if (openId != null && openId.isBlank()) {
                         // 过滤教练订单
-                        log.info("条件判断：{}",item.getSellerType().equals(SellerTypeEnum.VENUE));
+                        log.info("条件判断：{}", item.getSellerType().equals(SellerTypeEnum.VENUE));
                         return item.getSellerType().equals(SellerTypeEnum.VENUE);
                     }
                     return true;
@@ -745,7 +753,7 @@ public class OrderServiceImpl implements OrderService {
 
         // 7. 返回分頁 VO
         return PaginationResult.build(voList, orderPage.getTotal(), (int) orderPage.getCurrent(),
-                                      (int) orderPage.getSize());
+                (int) orderPage.getSize());
     }
 
 
@@ -804,7 +812,7 @@ public class OrderServiceImpl implements OrderService {
                 .map(ch -> {
                     ExtraChargeVo extraChargeVo = new ExtraChargeVo();
                     BeanUtils.copyProperties(ch, extraChargeVo);
-                    return  extraChargeVo;
+                    return extraChargeVo;
                 })
                 .toList();
 
@@ -813,7 +821,7 @@ public class OrderServiceImpl implements OrderService {
                 .filter(ch -> ch.getOrderItemId() != null)
                 .collect(Collectors.groupingBy(
                         OrderExtraCharges::getOrderItemId,
-                        Collectors.mapping(ch ->{
+                        Collectors.mapping(ch -> {
                                     ExtraChargeVo extraChargeVo = new ExtraChargeVo();
                                     BeanUtils.copyProperties(ch, extraChargeVo);
                                     return extraChargeVo;
@@ -847,7 +855,7 @@ public class OrderServiceImpl implements OrderService {
             RpcResult<VenueSnapshotResultDto> rpcResult = merchantDubboService.getVenueSnapshot(req);
             Assert.rpcResultOk(rpcResult);
             VenueSnapshotResultDto snap = rpcResult.getData();
-                    Assert.isNotEmpty(snap, OrderCode.ORDER_NOT_EXIST);
+            Assert.isNotEmpty(snap, OrderCode.ORDER_NOT_EXIST);
 
             venueSnapshotVo = new GetOrderDetailsVo.VenueSnapshotVo();
             BeanUtils.copyProperties(snap, venueSnapshotVo);
@@ -861,11 +869,11 @@ public class OrderServiceImpl implements OrderService {
                     courtSnapshotMap.put(c.getId(), snapshotVo);
                 }
             }
-        }else if (orders.getSellerType() == SellerTypeEnum.COACH) {
+        } else if (orders.getSellerType() == SellerTypeEnum.COACH) {
             Long coachId = orders.getSellerId();
             CoachSnapshotRequestDto req = CoachSnapshotRequestDto.builder()
                     .coachUserId(coachId)
-                            .build();
+                    .build();
             RpcResult<CoachSnapshotResultDto> coachSnapshotRpcResult = coachDubboService.getCoachSnapshot(req);
             Assert.rpcResultOk(coachSnapshotRpcResult);
             CoachSnapshotResultDto resultDto = coachSnapshotRpcResult.getData();
@@ -879,6 +887,23 @@ public class OrderServiceImpl implements OrderService {
 
         // 7) 组装 item VO
         AtomicBoolean orderRefundable = new AtomicBoolean(false);
+//        AtomicBoolean orderItemRefundGlag = SellerTypeEnum.COACH.equals(orders.getSellerType()) ? new AtomicBoolean(true) : new AtomicBoolean(false);
+        AtomicBoolean orderItemRefundGlag = new AtomicBoolean(SellerTypeEnum.COACH.equals(orders.getSellerType()));
+
+        switch (orders.getOrderStatus()) {
+            case PAID,
+                 CONFIRMED,
+                 PARTIALLY_REFUNDED,
+                 REFUND_CANCELLED -> orderRefundable.set(true);
+            case COMPLETED,
+                 PENDING,
+                 CANCELLED,
+                 REFUND_APPLYING,
+                 REFUNDING,
+                 REFUNDED,
+                 REFUND_REJECTED -> orderRefundable.set(false);
+        }
+
         List<GetOrderDetailsVo.OrderItemDetailVo> itemVos = items.stream().map(item -> {
 
             // courtSnapshot：仅 COURT item & venue单
@@ -913,17 +938,14 @@ public class OrderServiceImpl implements OrderService {
                     .refund(refundVo)
                     .build();
 
-            // 只有这四种状态的订单可以申请退款，需要查询退款规则
-            if (OrderStatusEnum.PAID.equals(orders.getOrderStatus())
-                    || OrderStatusEnum.CONFIRMED.equals(orders.getOrderStatus())
-                    || OrderStatusEnum.REFUND_CANCELLED.equals(orders.getOrderStatus())
-                    || OrderStatusEnum.PARTIALLY_REFUNDED.equals(orders.getOrderStatus())) {
+            if (orderRefundable.get()) {
                 switch (orders.getSellerType()) {
                     case VENUE -> {
                         MerchantRefundRuleJudgeRequestDto requestDto = MerchantRefundRuleJudgeRequestDto.builder()
                                 .eventStartTime(LocalDateTime.of(item.getBookingDate(), item.getStartTime()))
                                 .refundApplyTime(now)
                                 .venueId(orders.getSellerId())
+                                .isActivity(orders.getActivity())
                                 .userId(userId)
                                 .orderTime(orders.getCreatedAt())
                                 .build();
@@ -935,17 +957,19 @@ public class OrderServiceImpl implements OrderService {
 
                             MerchantRefundRuleJudgeResultVo resultVo = rpcResult.getData();
                             if (rpcResult.isSuccess() && resultVo.isCanRefund()) {
+                                orderItemRefundGlag.set(true);
                                 itemDetailVo.setIsItemRefundable(true);
                                 itemDetailVo.setRefundPercentage(resultVo.getRefundPercentage());
-                                orderRefundable.set(true);
                             } else {
                                 itemDetailVo.setIsItemRefundable(false);
                             }
                         }
                     }
                     case COACH -> {
-                        itemDetailVo.setIsItemRefundable(true);
-                        itemDetailVo.setRefundPercentage(new BigDecimal("100"));
+                        if (orderRefundable.get()) {
+                            itemDetailVo.setIsItemRefundable(true);
+                            itemDetailVo.setRefundPercentage(new BigDecimal("100"));
+                        }
                     }
                 }
             }
@@ -955,7 +979,7 @@ public class OrderServiceImpl implements OrderService {
 
         boolean isCancelable = orders.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID
                 && orders.getOrderStatus() == OrderStatusEnum.PENDING;
-        boolean isRefundable = !isCancelable && orderRefundable.get();
+        boolean isRefundable = orderItemRefundGlag.get() && orderRefundable.get() && !isCancelable;
 
 
         // 8) 返回
@@ -1099,5 +1123,6 @@ public class OrderServiceImpl implements OrderService {
             Long itemId,
             BigDecimal unitPrice,
             BigDecimal itemSubtotal,
-            List<ExtraQuote> recordExtras) { }
+            List<ExtraQuote> recordExtras) {
+    }
 }

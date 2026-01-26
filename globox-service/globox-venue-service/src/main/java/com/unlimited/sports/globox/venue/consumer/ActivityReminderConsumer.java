@@ -14,8 +14,8 @@ import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipantStatusEnum;
 import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
-import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -90,7 +90,7 @@ public class ActivityReminderConsumer {
                             .eq(VenueActivityParticipant::getParticipantId, participantId)
                             .eq(VenueActivityParticipant::getUserId, userId)
                             .eq(VenueActivityParticipant::getCreatedAt, registrationTime)
-                            .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                            .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
             );
 
             // 验证参与者记录仍然存在且未被取消

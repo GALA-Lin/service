@@ -146,7 +146,8 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
     @Override
     public RpcResult<PricingActivityResultDto> quoteVenueActivity(PricingActivityRequestDto dto) {
         // 参数验证
-        if (dto == null || dto.getActivityId() == null || dto.getUserId() == null) {
+        if (dto == null || dto.getActivityId() == null || dto.getUserId() == null ||
+            dto.getQuantity() == null || dto.getQuantity() <= 0) {
             log.warn("活动报名请求参数不合法");
             return RpcResult.error(VenueCode.ACTIVITY_PARAM_INVALID);
         }
@@ -159,52 +160,66 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             Court court = context.getCourt();
             ActivityType activityType = context.getActivityType();
 
-            // 执行用户报名（原子操作，防止超卖）
-            try {
-                VenueActivityParticipant participant = participantService.registerUserToActivity(
-                        dto.getActivityId(),
-                        dto.getUserId());
-
-                log.info("用户活动报名成功 - activityId: {}, userId: {}, participantId: {}",
-                        dto.getActivityId(), dto.getUserId(), participant.getParticipantId());
-            } catch (GloboxApplicationException e) {
-                log.error("用户报名活动失败:{}",e.getMessage(),e);
-                return RpcResult.error(VenueCode.fromCode(e.getCode()));
+            // 校验活动类型
+            if (activityType == null) {
+                log.warn("不支持的活动类型 - activityId: {}, activityTypeId: {}",
+                        dto.getActivityId(), activity.getActivityTypeId());
+                throw new GloboxApplicationException(VenueCode.ACTIVITY_TYPE_NOT_SUPPORTED);
             }
 
-            // 构建活动价格信息
-            RecordQuote activityQuote = RecordQuote.builder()
-                    .recordId(activity.getActivityId())
-                    .courtId(activity.getCourtId())
-                    .courtName(court.getName())
-                    .bookingDate(activity.getActivityDate())
-                    .startTime(activity.getStartTime())
-                    .endTime(activity.getEndTime())
-                    .unitPrice(activity.getUnitPrice() != null ? activity.getUnitPrice() : BigDecimal.ZERO)
-                    .recordExtras(Collections.emptyList())
-                    .build();
+            // 校验用户报名数量是否超过限制（activity.maxQuotaPerUser为null表示不限制）
+            Integer maxQuota = activity.getMaxQuotaPerUser();
+            if (maxQuota != null && dto.getQuantity() > maxQuota) {
+                log.warn("活动报名数量超过限制 - activityId: {}, userId: {}, 请求数量: {}, 最大允许: {}",
+                        dto.getActivityId(), dto.getUserId(), dto.getQuantity(), maxQuota);
+                throw new GloboxApplicationException(VenueCode.ACTIVITY_QUOTA_EXCEEDED);
+            }
+
+            // 执行批量用户报名（原子操作，全部成功或全部失败）
+            List<VenueActivityParticipant> participants = participantService.registerMultipleParticipants(
+                    dto.getActivityId(),
+                    dto.getUserId(),
+                    dto.getQuantity(),
+                    dto.getUserPhone());
+
+            log.info("用户活动批量报名成功 - activityId: {}, userId: {}, quantity: {}, phone: {}",
+                    dto.getActivityId(), dto.getUserId(), participants.size(), dto.getUserPhone());
+
+            // 为每个参与记录构建一个 RecordQuote（recordId 使用 participantId）
+            List<RecordQuote> activityQuotes = participants.stream()
+                    .map(participant -> RecordQuote.builder()
+                            .recordId(participant.getParticipantId())
+                            .courtId(activity.getCourtId())
+                            .courtName(court.getName())
+                            .bookingDate(activity.getActivityDate())
+                            .startTime(activity.getStartTime())
+                            .endTime(activity.getEndTime())
+                            .unitPrice(activity.getUnitPrice() != null ? activity.getUnitPrice() : BigDecimal.ZERO)
+                            .recordExtras(Collections.emptyList())
+                            .build())
+                    .collect(Collectors.toList());
 
             // 构建返回结果
             PricingActivityResultDto result = PricingActivityResultDto.builder()
-                    .recordQuote(Collections.singletonList(activityQuote))
+                    .recordQuote(activityQuotes)
                     .orderLevelExtras(Collections.emptyList())
                     .sourcePlatform(venue.getVenueType())
                     .sellerName(venue.getName())
                     .sellerId(activity.getVenueId())
                     .bookingDate(activity.getActivityDate())
                     .activityId(activity.getActivityId())
-                    .activityTypeCode(activityType != null ? activityType.getTypeCode() : null)
+                    .activityTypeCode(activityType.getTypeCode())
                     .activityTypeName(activity.getActivityTypeDesc())
                     .build();
 
             return RpcResult.ok(result);
         } catch (GloboxApplicationException e) {
-            log.error("活动报名失败 - activityId: {}, userId: {}, code: {}, error: {}",
-                    dto.getActivityId(), dto.getUserId(), e.getCode(), e.getMessage(), e);
+            log.error("活动报名失败 - activityId: {}, userId: {}, quantity: {}, code: {}, error: {}",
+                    dto.getActivityId(), dto.getUserId(), dto.getQuantity(), e.getCode(), e.getMessage(), e);
             return RpcResult.error(VenueCode.fromCode(e.getCode()));
         } catch (Exception e) {
-            log.error("活动报名发生未知错误 - activityId: {}, userId: {}",
-                    dto.getActivityId(), dto.getUserId(), e);
+            log.error("活动报名发生未知错误 - activityId: {}, userId: {}, quantity: {}",
+                    dto.getActivityId(), dto.getUserId(), dto.getQuantity(), e);
             return RpcResult.error(VenueCode.VENUE_BOOKING_FAIL);
         }
     }

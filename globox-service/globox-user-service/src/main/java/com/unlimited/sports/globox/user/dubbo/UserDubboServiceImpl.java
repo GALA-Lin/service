@@ -3,10 +3,7 @@ package com.unlimited.sports.globox.user.dubbo;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
-import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
-import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
-import com.unlimited.sports.globox.dubbo.user.dto.UserInfoDto;
-import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
+import com.unlimited.sports.globox.dubbo.user.dto.*;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.auth.entity.AuthIdentity;
@@ -159,5 +156,16 @@ public class UserDubboServiceImpl implements UserDubboService {
                         .build())
                 .collect(Collectors.toList());
         return RpcResult.ok(result);
+    }
+
+
+    /**
+     * 待实现
+     * @param coachId
+     * @return
+     */
+    @Override
+    public RpcResult<CoachInfoForProfitSharing> getCoachInfoForProfitSharing(Long coachId) {
+        return RpcResult.ok();
     }
 }

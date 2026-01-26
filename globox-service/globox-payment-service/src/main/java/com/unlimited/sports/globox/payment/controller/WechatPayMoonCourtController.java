@@ -16,7 +16,6 @@ import javax.servlet.http.HttpServletRequest;
  * 微信支付接入 controller
  */
 @Slf4j
-@Profile("!dev")
 @RestController
 @RequestMapping("payments/wechat-pay/mooncourt")
 public class WechatPayMoonCourtController {

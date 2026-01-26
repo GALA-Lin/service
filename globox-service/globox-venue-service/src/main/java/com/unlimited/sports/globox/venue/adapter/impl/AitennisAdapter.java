@@ -196,7 +196,7 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
     }
 
     /**
-     * 将爱网球的CourtEvent数据转换为统一的DTO格式
+     * 将aitennis的CourtEvent数据转换为统一的DTO格式
      */
     private List<ThirdPartyCourtSlotDto> convertEventsToDto(List<AitennisCourtEvent> events) {
         // 按照场地ID分组
@@ -481,9 +481,9 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
 
     // todo 待测试
     @Override
-    public boolean unlockSlot(VenueThirdPartyConfig config, String thirdPartyBookingId) {
-        log.info("[aitennis] 解锁槽位: venueId={}, bookingId={}",
-                config.getVenueId(), thirdPartyBookingId);
+    public boolean unlockSlot(VenueThirdPartyConfig config, String thirdPartyBookingId, LocalDate bookingDate) {
+        log.info("[aitennis] 解锁槽位: venueId={}, bookingId={}, bookingDate={}",
+                config.getVenueId(), thirdPartyBookingId, bookingDate);
 
         try {
             // 1. 获取认证信息
@@ -530,10 +530,11 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
                 return false;
             }
 
-            // 解锁成功，清除槽位缓存
-            String cacheKey = buildSlotsCacheKey(config.getVenueId(), LocalDate.now());
+            // 解锁成功，清除指定日期的槽位缓存
+            String cacheKey = buildSlotsCacheKey(config.getVenueId(), bookingDate);
             redisService.deleteObject(cacheKey);
-            log.info("[aitennis] 槽位缓存已清除: venueId={}, bookingId={}", config.getVenueId(), thirdPartyBookingId);
+            log.info("[aitennis] 槽位缓存已清除: venueId={}, bookingDate={}, bookingId={}",
+                    config.getVenueId(), bookingDate, thirdPartyBookingId);
 
             log.info("[aitennis] 解锁成功: venueId={}, bookingId={}", config.getVenueId(), thirdPartyBookingId);
             return true;

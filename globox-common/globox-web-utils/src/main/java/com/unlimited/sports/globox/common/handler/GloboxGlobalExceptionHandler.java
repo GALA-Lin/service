@@ -92,7 +92,7 @@ public class GloboxGlobalExceptionHandler {
             // 只有 500：系统错误，打堆栈
             logError(req, code, ex.getMessage(), ex);
         } else {
-            logInfo(req, code, ex.getMessage());
+            logWarn(req, code, ex.getMessage());
         }
 
         return R.error(ex);

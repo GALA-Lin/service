@@ -190,6 +190,57 @@ public class RedisService {
 
 
     /**
+     * 批量获取数据
+     */
+    public <T> Map<String, T> getCacheObjects(final Collection<String> keys, Class<T> clazz) {
+        List<T> values = redisTemplate.opsForValue().multiGet(keys);
+        if (values == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, T> resultMap = new HashMap<>(keys.size());
+        Iterator<String> keysIterator = keys.iterator();
+        Iterator<T> valuesIterator = values.iterator();
+        while (keysIterator.hasNext() && valuesIterator.hasNext()) {
+            String key = keysIterator.next();
+            T value = valuesIterator.next();
+            if (value != null) {
+                resultMap.put(key, RedisJsonUtil.string2Obj(RedisJsonUtil.obj2String(value), clazz));
+            } else {
+                resultMap.put(key, null);
+            }
+        }
+        return resultMap;
+    }
+
+    /**
+     * 批量获取数据（支持复杂的泛型嵌套）
+     *
+     * @param keys          键集合
+     * @param typeReference 类型模板
+     * @return Map<键，对象>
+     * @param <T> 对象类型
+     */
+    public <T> Map<String, T> getCacheObjects(final Collection<String> keys, TypeReference<T> typeReference) {
+        List<T> values = redisTemplate.opsForValue().multiGet(keys);
+        if (values == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, T> resultMap = new HashMap<>(keys.size());
+        Iterator<String> keysIterator = keys.iterator();
+        Iterator<T> valuesIterator = values.iterator();
+        while (keysIterator.hasNext() && valuesIterator.hasNext()) {
+            String key = keysIterator.next();
+            T value = valuesIterator.next();
+            if (value != null) {
+                resultMap.put(key, RedisJsonUtil.string2Obj(RedisJsonUtil.obj2String(value), typeReference));
+            } else {
+                resultMap.put(key, null);
+            }
+        }
+        return resultMap;
+    }
+
+    /**
      * 对缓存中的数值进行自增操作
      *
      * @param key   键

@@ -230,6 +230,30 @@ public class LocalDateUtils {
     }
 
     /**
+     * 时间字符串转换为时间(java.time.LocalTime)
+     * 支持HH:mm和HH:mm:ss两种格式，HH:mm会自动补充:00秒
+     *
+     * @param timeStr 时间字符串（格式：HH:mm 或 HH:mm:ss）
+     * @return LocalTime 时间对象，解析失败返回null
+     */
+    public static LocalTime parseLocalTime(String timeStr) {
+        if (timeStr == null || timeStr.trim().isEmpty()) {
+            return null;
+        }
+
+        try {
+            String normalizedTime = timeStr.trim();
+            // 处理 HH:mm 格式（补充:00秒）
+            if (normalizedTime.split(":").length == 2) {
+                normalizedTime = normalizedTime + ":00";
+            }
+            return LocalTime.parse(normalizedTime);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
      * 获取指定日期时间加上指定数量日期时间单位之后的日期时间.
      *
      * @param localDateTime 日期时间

@@ -33,14 +33,12 @@ public class GeneralBookingPreviewRequestDto {
     private List<Long> slotIds;
 
     /**
-     * 用户纬度（用于计算距离）
+     * 用户纬度（用于计算距离，可选）
      */
-    @NotNull(message = "纬度不能为空")
     private Double latitude;
 
     /**
-     * 用户经度（用于计算距离）
+     * 用户经度（用于计算距离，可选）
      */
-    @NotNull(message = "经度不能为空")
     private Double longitude;
 }

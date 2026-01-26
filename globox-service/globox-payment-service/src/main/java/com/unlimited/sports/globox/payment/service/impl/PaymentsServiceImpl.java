@@ -16,9 +16,11 @@ import com.unlimited.sports.globox.dubbo.order.OrderForPaymentDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.PaymentGetOrderResultDto;
 import com.unlimited.sports.globox.dubbo.payment.dto.UserRefundRequestDto;
 import com.unlimited.sports.globox.model.payment.dto.SubmitRequestDto;
+import com.unlimited.sports.globox.model.payment.entity.PaymentProfitSharing;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
+import com.unlimited.sports.globox.payment.mapper.PaymentProfitSharingMapper;
 import com.unlimited.sports.globox.payment.prop.TimeoutProperties;
 import com.unlimited.sports.globox.payment.service.AlipayService;
 import com.unlimited.sports.globox.payment.service.PaymentsService;
@@ -35,12 +37,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 针对表【payments(支付信息表)】的数据库操作Service实现
@@ -54,6 +58,9 @@ public class PaymentsServiceImpl implements PaymentsService {
 
     @Autowired
     private PaymentsMapper paymentsMapper;
+
+    @Autowired
+    private PaymentProfitSharingMapper profitSharingMapper;
 
     @Autowired
     private JsonUtils jsonUtils;
@@ -97,7 +104,7 @@ public class PaymentsServiceImpl implements PaymentsService {
      * 提交下单
      *
      * @param dto 下单信息
-     * @return orderStr / prepayId
+     * @return orderStr / prepayInfo
      */
     @Override
     public SubmitResultVo submit(SubmitRequestDto dto) {
@@ -145,7 +152,12 @@ public class PaymentsServiceImpl implements PaymentsService {
         payments.setClientType(dto.getClientType());
         payments.setOpenId(dto.getOpenId());
         payments.setActivity(resultDto.isActivity());
+        payments.setReceiverId(resultDto.getSellerId());
+        payments.setProfitSharing(resultDto.isProfitSharing());
         payments.setPaymentStatus(PaymentStatusEnum.UNPAID);
+        payments.setSellerType(resultDto.getSellerType());
+        payments.setReceiverId(resultDto.getSellerId());
+
         // 设置三方小程序
         if (dto.getClientType().equals(ClientType.THIRD_PARTY_JSAPI)) {
             // 揽月
@@ -195,9 +207,15 @@ public class PaymentsServiceImpl implements PaymentsService {
     }
 
 
+    /**
+     * 获取超时时间
+     *
+     * @param payments 支付信息
+     * @return 支付超时时间
+     */
     @Override
     public String getPaymentTimeout(Payments payments) {
-        int minutes = payments.isActivity() ? timeoutProperties.getActivity() : timeoutProperties.getNormal();
+        int minutes = payments.getActivity() ? timeoutProperties.getActivity() : timeoutProperties.getNormal();
 
         if (PaymentTypeEnum.WECHAT_PAY.equals(payments.getPaymentType())) {
             return OffsetDateTime.now(ZoneOffset.ofHours(8))
@@ -232,6 +250,9 @@ public class PaymentsServiceImpl implements PaymentsService {
         }
     }
 
+    /**
+     * 用户退款
+     */
     @Override
     @GlobalTransactional
     @Transactional(rollbackFor = Exception.class)
@@ -294,4 +315,34 @@ public class PaymentsServiceImpl implements PaymentsService {
         thisService.updatePayment(payments);
         return resultCode;
     }
+
+
+    @Override
+    public void profitSharing(Payments payments) {
+        String outProfitSharingNo = UUID.randomUUID().toString().replaceAll("-", "");
+
+        // 计算出分账金额
+        BigDecimal totalAmount = payments.getTotalAmount();
+        BigDecimal profitSharingAmount = totalAmount
+                .multiply(new BigDecimal("0.30"))
+                .setScale(2, RoundingMode.DOWN);
+
+        log.info("分账金额：{} , 分账支付信息:{}", profitSharingAmount, payments);
+
+        PaymentProfitSharing profitSharing = switch (payments.getPaymentType()) {
+            case ALIPAY -> null;
+            case WECHAT_PAY -> wechatPayService.profitSharing(payments, outProfitSharingNo, profitSharingAmount);
+            case NONE -> null;
+        };
+
+        // 如果分账信息为空，说明当前支付方式不支持分账
+        if (profitSharing == null) {
+            return;
+        }
+        profitSharing.setAmount(profitSharingAmount);
+
+        profitSharingMapper.insert(profitSharing);
+    }
+
+
 }

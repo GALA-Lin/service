@@ -9,6 +9,7 @@ import com.unlimited.sports.globox.model.venue.enums.ReviewDeleteOperatorType;
 import com.unlimited.sports.globox.model.venue.vo.*;
 import com.unlimited.sports.globox.venue.service.IVenueSearchService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
+import com.unlimited.sports.globox.venue.service.impl.AwayVenueSearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,10 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.math.BigDecimal;
-import java.util.Collections;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.*;
 
 @Slf4j
 @RestController
@@ -40,9 +38,11 @@ public class VenueController {
     @Autowired
     private IVenueSearchService venueSearchService;
 
-
     @Autowired
     private IVenueService venueService;
+
+    @Autowired
+    private AwayVenueSearchService awayVenueSearchService;
 
     /**
      * 获取场馆列表（支持搜索、过滤、排序）
@@ -239,5 +239,30 @@ public class VenueController {
                 .minPrice(minPrice)
                 .maxPrice(maxPrice)
                 .build();
+    }
+
+    /**
+     * 查询指定时间段内不可预订的Away球场ID
+     * 用于测试 AwayVenueSearchService.getUnavailableAwayVenueIds 方法
+     * todo 测试接口,后续删除,作为away球场不预定槽位的测试接口
+     * @param dto 查询条件（date, startTime, endTime）
+     * @return 不可预订的场馆ID集合
+     */
+    @PostMapping("/away/unavailable")
+    public R<Map<String, Object>> queryUnavailableAwayVenues(@Valid @RequestBody QueryUnavailableAwayVenuesDto dto) {
+        Set<Long> unavailableVenueIds = awayVenueSearchService.getUnavailableAwayVenueIds(
+                dto.getDate(),
+                dto.getStartTime(),
+                dto.getEndTime()
+        );
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("date", dto.getDate());
+        response.put("startTime", dto.getStartTime());
+        response.put("endTime", dto.getEndTime());
+        response.put("unavailableVenueIds", unavailableVenueIds);
+        response.put("count", unavailableVenueIds.size());
+
+        return R.ok(response);
     }
 }

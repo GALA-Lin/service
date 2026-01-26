@@ -3,7 +3,7 @@ package com.unlimited.sports.globox.venue.adapter.dto.aitennis;
 import lombok.Data;
 
 /**
- * 爱网球事件项目
+ * aitennis事件项目
  */
 @Data
 public class AitennisEventItem {

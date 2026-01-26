@@ -28,7 +28,10 @@ public enum VenueCode implements ResultCode {
     ACTIVITY_REGISTRATION_CLOSED(7023, "活动报名已截止，您可以关注后续相关活动"),
     ACTIVITY_ALREADY_REGISTERED(7024, "您已经报名过该活动，无法重复报名"),
     ACTIVITY_FULL(7025, "该活动名额已满，建议您关注其他场次或类似活动"),
-    ACTIVITY_ALREADY_STARTED(7026, "活动已开始，无法报名，请关注其他活动"),
+    ACTIVITY_NO_SLOTS(7026, "该活动名额不足，建议您减少报名人数或选择其他活动"),
+    ACTIVITY_ALREADY_STARTED(7027, "活动已开始，无法报名，请关注其他活动"),
+    ACTIVITY_TYPE_NOT_SUPPORTED(7028, "不支持的活动类型，请联系客服"),
+    ACTIVITY_QUOTA_EXCEEDED(7029, "活动报名数量超过限制，建议您减少报名人数或选择其他活动"),
 
     // 场馆场地相关 7041-7060
     VENUE_NOT_EXIST(7041, "未找到该场馆信息，请返回列表重新进入"),

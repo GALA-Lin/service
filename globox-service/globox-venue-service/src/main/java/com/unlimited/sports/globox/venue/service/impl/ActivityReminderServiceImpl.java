@@ -6,8 +6,8 @@ import com.unlimited.sports.globox.common.message.venue.ActivityReminderMessage;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipantStatusEnum;
 import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
-import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.venue.service.IActivityReminderService;
@@ -55,7 +55,7 @@ public class ActivityReminderServiceImpl implements IActivityReminderService {
                     Wrappers.lambdaQuery(VenueActivityParticipant.class)
                             .eq(VenueActivityParticipant::getActivityId, activityId)
                             .eq(VenueActivityParticipant::getUserId, userId)
-                            .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                            .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
             );
 
             if (participant == null) {

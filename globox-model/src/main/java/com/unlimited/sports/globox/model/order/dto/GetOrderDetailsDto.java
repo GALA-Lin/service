@@ -37,7 +37,7 @@ public class GetOrderDetailsDto {
     @DecimalMax(value = "90.0", message = "纬度范围必须在-90到90之间")
     @Schema(description = "用户当前位置纬度",
             example = "31.230416",
-            requiredMode = Schema.RequiredMode.REQUIRED)
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private Double latitude;
 
     /**
@@ -47,6 +47,6 @@ public class GetOrderDetailsDto {
     @DecimalMax(value = "180.0", message = "经度范围必须在-180到180之间")
     @Schema(description = "用户当前位置经度",
             example = "121.473701",
-            requiredMode = Schema.RequiredMode.REQUIRED)
+            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private Double longitude;
 }

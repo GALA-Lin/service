@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 
@@ -33,4 +34,7 @@ public class CreateVenueActivityOrderDto {
 //    @NotNull(message = "手机号不能为空")
     @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
     private String userPhone;
+
+    @Min(value = 1, message = "报名名额数最少为1")
+    private Integer quantity;
 }

@@ -3,6 +3,9 @@ package com.unlimited.sports.globox.payment.service;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.wechat.pay.java.service.payments.model.Transaction;
+import com.wechat.pay.java.service.profitsharing.model.OrdersEntity;
+
+import java.math.BigDecimal;
 
 /**
  * App 微信支付
@@ -31,4 +34,6 @@ public interface WechatPayAppService {
      * @param payments 包含支付信息的对象，如订单编号、对外业务编号等
      */
     void cancel(Payments payments);
+
+    OrdersEntity profitSharing(Payments payments, String outProfitSharingNo, String receiverOpenId, String receiverRealName, BigDecimal profitSharingAmount);
 }

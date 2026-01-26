@@ -3,15 +3,22 @@ package com.unlimited.sports.globox.payment.service.impl;
 import com.unlimited.sports.globox.common.constants.PaymentMQConstants;
 import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
+import com.unlimited.sports.globox.common.enums.payment.ProfitSharingStatusEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.payment.PaymentSuccessMessage;
 import com.unlimited.sports.globox.common.result.ApplicationCode;
 import com.unlimited.sports.globox.common.result.PaymentsCode;
 import com.unlimited.sports.globox.common.result.ResultCode;
+import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.service.MQService;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.common.utils.LocalDateUtils;
+import com.unlimited.sports.globox.dubbo.user.UserDubboService;
+import com.unlimited.sports.globox.dubbo.user.dto.CoachInfoForProfitSharing;
+import com.unlimited.sports.globox.model.payment.entity.PaymentProfitSharing;
 import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
@@ -24,14 +31,18 @@ import com.wechat.pay.java.core.notification.NotificationParser;
 import com.wechat.pay.java.core.notification.RequestParam;
 import com.wechat.pay.java.service.payments.model.Transaction;
 import com.wechat.pay.java.service.payments.model.Transaction.*;
+import com.wechat.pay.java.service.profitsharing.model.OrderStatus;
+import com.wechat.pay.java.service.profitsharing.model.OrdersEntity;
 import com.wechat.pay.java.service.refund.RefundService;
 import com.wechat.pay.java.service.refund.model.*;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.ObjectUtils;
 
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
@@ -50,10 +61,9 @@ import static com.wechat.pay.java.core.http.Constant.*;
  */
 @Slf4j
 @Service
-@Profile("!dev")
 public class WechatPayServiceImpl implements WechatPayService {
 
-    @Autowired(required = false)
+    @Autowired
     private WechatPayMoonCourtJsapiService wechatPayMoonCourtJsapiService;
 
     @Autowired
@@ -80,6 +90,9 @@ public class WechatPayServiceImpl implements WechatPayService {
 
     @Autowired
     private JsonUtils jsonUtils;
+
+    @DubboReference(group = "rpc")
+    private UserDubboService userDubboService;
 
 
     /**
@@ -120,13 +133,12 @@ public class WechatPayServiceImpl implements WechatPayService {
             return WechatPayNotifyVo.fail();
         }
         Map<String, Object> bodyMap = jsonUtils.jsonToMap(notify);
-        log.info("微信支付通知: {}", notify);
+        log.info("微信支付通知: {}", bodyMap);
         RequestParam requestParam = buildByHeaderRequestParam(request, notify);
         // 验证签名并解析请求体
         NotificationParser notificationParser = new NotificationParser(notificationConfig);
         // 调用 NotificationParser.parse() 验签、解密并将 JSON 转换成具体的通知回调对象。如果验签失败，SDK 会抛出 ValidationException。
-        log.info("支付通知回调:验签、解密并转换成 Transaction对象:-------");
-        Transaction transaction = null;
+        Transaction transaction;
         try {
             /*
              * 常用的通知回调调对象类型有：
@@ -172,6 +184,7 @@ public class WechatPayServiceImpl implements WechatPayService {
             payments.setCallbackContent(callbackContent);
             int cnt = paymentsService.updatePayment(payments);
             if (cnt > 0) {
+                // 发送消息到订单服务
                 PaymentSuccessMessage message = PaymentSuccessMessage.builder()
                         .orderNo(payments.getOrderNo())
                         .tradeNo(tradeNo)
@@ -317,6 +330,56 @@ public class WechatPayServiceImpl implements WechatPayService {
         } else if (ClientType.THIRD_PARTY_JSAPI.equals(payments.getClientType())) {
             wechatPayMoonCourtJsapiService.cancel(payments);
         }
+    }
 
+    @Override
+    public PaymentProfitSharing profitSharing(Payments payments, String outProfitSharingNo, BigDecimal profitSharingAmount) {
+        log.info("进入微信分账:{}", payments);
+        String receiverOpenId;
+        String receiverRealName;
+        if (payments.getSellerType().equals(SellerTypeEnum.COACH)) {
+            RpcResult<CoachInfoForProfitSharing> rpc = userDubboService.getCoachInfoForProfitSharing(payments.getReceiverId());
+            Assert.rpcResultOk(rpc);
+            CoachInfoForProfitSharing coachInfo = rpc.getData();
+            receiverOpenId = coachInfo.getAccount();
+            receiverRealName = coachInfo.getRealName();
+        } else if (SellerTypeEnum.VENUE.equals(payments.getSellerType())) {
+            return null;
+        } else {
+            return null;
+        }
+
+        OrdersEntity ordersEntity = switch (payments.getClientType()) {
+            case APP -> wechatPayAppService.profitSharing(payments, outProfitSharingNo, receiverOpenId, receiverRealName , profitSharingAmount);
+            case JSAPI,THIRD_PARTY_JSAPI,MERCHANT -> {
+                log.warn("小程序，三方小程序，商家 暂不支持分账:{}", payments);
+                yield null;
+            }
+        };
+
+        if (ObjectUtils.isEmpty(ordersEntity)) {
+            return null;
+        }
+
+        //分账状态处理
+        ProfitSharingStatusEnum currentStatus;
+        if (OrderStatus.FINISHED.equals(ordersEntity.getState())) {
+            currentStatus = ProfitSharingStatusEnum.FINISHED;
+        } else if (OrderStatus.PROCESSING.equals(ordersEntity.getState())) {
+            currentStatus = ProfitSharingStatusEnum.PROCESSING;
+        } else {
+            currentStatus = ProfitSharingStatusEnum.PENDING;
+        }
+
+        return PaymentProfitSharing.builder()
+                .paymentId(payments.getId())
+                .outProfitSharingNo(outProfitSharingNo)
+                .outTradeNo(payments.getOutTradeNo())
+                .tradeNo(payments.getTradeNo())
+                .receiverId(payments.getReceiverId())
+                .profitSharingNo(ordersEntity.getOrderId())
+                .status(currentStatus)
+                .amount(profitSharingAmount)
+                .build();
     }
 }

@@ -7,9 +7,6 @@ import org.springframework.web.multipart.MultipartFile;
  *
  * 使用腾讯云数据万象 CI - AIPortraitMatting 接口
  * 在上传时自动执行人像抠图
- *
- * @author Claude
- * @since 2025-01-09
  */
 public interface PortraitMattingService {
 

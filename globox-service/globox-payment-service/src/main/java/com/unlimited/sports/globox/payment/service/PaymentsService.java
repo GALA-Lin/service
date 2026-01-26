@@ -60,6 +60,12 @@ public interface PaymentsService {
     int insertPayments(Payments payments);
 
 
+    /**
+     * 获取支付超时时间
+     *
+     * @param payments 支付信息
+     * @return 超时时间
+     */
     String getPaymentTimeout(Payments payments);
 
 
@@ -77,4 +83,9 @@ public interface PaymentsService {
     ResultCode refundAction(UserRefundRequestDto dto);
 
     ResultCode refund(UserRefundRequestDto dto);
+
+    /**
+     * 执行分账
+     */
+    void profitSharing(Payments payments);
 }

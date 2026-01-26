@@ -24,6 +24,7 @@ import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConfig;
 import com.unlimited.sports.globox.model.venue.entity.venues.ThirdPartyPlatform;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipantStatusEnum;
 import com.unlimited.sports.globox.venue.adapter.dto.ThirdPartyCourtSlotDto;
 import com.unlimited.sports.globox.venue.adapter.dto.ThirdPartySlotDto;
 import com.unlimited.sports.globox.common.constants.SourcePlatformConsts;
@@ -39,7 +40,6 @@ import com.unlimited.sports.globox.model.venue.entity.venues.ActivityType;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
 import com.unlimited.sports.globox.venue.service.*;
-import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.util.TimeSlotSplitUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -232,7 +232,7 @@ public class BookingServiceImpl implements IBookingService {
                     new LambdaQueryWrapper<VenueActivityParticipant>()
                             .eq(VenueActivityParticipant::getUserId, dto.getUserId())
                             .in(VenueActivityParticipant::getActivityId, allActivityIds)
-                            .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                            .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
             );
             userRegisteredActivityIds = participants.stream()
                     .map(VenueActivityParticipant::getActivityId)

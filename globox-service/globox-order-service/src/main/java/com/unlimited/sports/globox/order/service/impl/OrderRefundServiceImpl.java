@@ -167,6 +167,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                     .venueId(order.getSellerId())
                     .orderTime(order.getCreatedAt())
                     .refundApplyTime(appliedAt)
+                    .isActivity(order.getActivity())
                     .userId(userId)
                     .build();
             OrderItems orderItems = items.stream().min(Comparator.comparing(OrderItems::getStartTime)).get();
@@ -195,16 +196,8 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             }
 
         } else if (SellerTypeEnum.COACH.equals(order.getSellerType())) {
-            // TODO 功能待启动 如果教练订单没有确认，那么直接退款
-//            if (order.getOrderStatus().equals(OrderStatusEnum.PAID)) {
-//                autoRefund = true;
-//                refundPercentage = new BigDecimal("100");
-//            } else {
-//                refundPercentage = BigDecimal.ZERO;
-//                autoRefund = false;
-//            }
-            // 关闭自动退款，走审批流程
-            autoRefund = false;
+            // 如果教练订单没有确认，那么直接退款
+            autoRefund = order.getOrderStatus().equals(OrderStatusEnum.PAID);
         } else {
             throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
         }

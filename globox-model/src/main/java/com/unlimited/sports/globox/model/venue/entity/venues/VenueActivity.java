@@ -86,6 +86,11 @@ public class VenueActivity {
     private Integer maxParticipants;
 
     /**
+     * 单个用户最多允许报名几个名额（默认1个，null表示不限制）
+     */
+    private Integer maxQuotaPerUser;
+
+    /**
      * 当前参与人数
      */
     @Builder.Default

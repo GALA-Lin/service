@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.merchant.service;
 
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.model.merchant.vo.ActivityCreationResultVo;
+import com.unlimited.sports.globox.model.merchant.vo.MerchantActivityDetailVo;
 import com.unlimited.sports.globox.model.venue.dto.CreateActivityDto;
 import com.unlimited.sports.globox.model.venue.dto.UpdateActivityDto;
 
@@ -51,4 +52,14 @@ public interface VenueActivityManagementService {
      * @return 更新后的活动详情
      */
     ActivityCreationResultVo updateActivity(Long activityId, UpdateActivityDto dto, MerchantAuthContext context);
+
+    /**
+     * 获取活动详情（商家端）
+     * 包含活动基本信息和参与者列表（用户ID、手机号、头像、昵称）
+     *
+     * @param activityId 活动ID
+     * @param context    商家认证上下文
+     * @return 活动详情
+     */
+    MerchantActivityDetailVo getActivityDetail(Long activityId, MerchantAuthContext context);
 }

@@ -73,6 +73,14 @@ public class OrderMQInitConfig {
     private Integer coachConfirmRetryInterval;
 
     /**
+     * 请求分账 重试间隔
+     * 默认 20s
+     */
+    @Value("${mq.consumer.retry.profit-sharing.retry-interval:20000}")
+    private Integer profitSharingRequestRetryInterval;
+
+
+    /**
      * 订单未支付自动关闭（Auto Cancel）
      */
     // 主交换机
@@ -701,5 +709,91 @@ public class OrderMQInitConfig {
                 .bind(orderRefundApplyToPaymentDlq())
                 .to(orderRefundApplyToPaymentFinalDlxExchange())
                 .with(OrderMQConstants.ROUTING_ORDER_REFUND_APPLY_TO_PAYMENT_FINAL);
+    }
+
+
+
+    /**
+     * 订单模块 -> 支付模块：请求分账事件（Profit Sharing Request To Payment）MQ 绑定配置
+     *
+     * 规则：
+     * - 主队列消费失败：reject(false) -> 进入 Retry-DLX -> Retry Queue(TTL) -> TTL 到期后回主 Exchange -> 主队列
+     * - 超过最大次数：由业务主动投递到 Final-DLX -> DLQ
+     */
+    @Bean
+    public TopicExchange orderProfitSharingRequestToPaymentExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_TOPIC_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public TopicExchange orderProfitSharingRequestToPaymentRetryDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_RETRY_DLX,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public TopicExchange orderProfitSharingRequestToPaymentFinalDlxExchange() {
+        return new TopicExchange(
+                OrderMQConstants.EXCHANGE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_FINAL_DLX,
+                true,
+                false
+        );
+    }
+
+    @Bean
+    public Queue orderProfitSharingRequestToPaymentQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_PAYMENT)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_RETRY_DLX)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_RETRY)
+                .build();
+    }
+
+    @Bean
+    public Queue orderProfitSharingRequestToPaymentRetryQueue() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_PAYMENT_RETRY)
+                .withArgument("x-message-ttl", profitSharingRequestRetryInterval)
+                .withArgument("x-dead-letter-exchange", OrderMQConstants.EXCHANGE_TOPIC_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT)
+                .withArgument("x-dead-letter-routing-key", OrderMQConstants.ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT)
+                .build();
+    }
+
+    @Bean
+    public Queue orderProfitSharingRequestToPaymentDlq() {
+        return QueueBuilder
+                .durable(OrderMQConstants.QUEUE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_PAYMENT_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Binding bindOrderProfitSharingRequestToPaymentQueue() {
+        return BindingBuilder
+                .bind(orderProfitSharingRequestToPaymentQueue())
+                .to(orderProfitSharingRequestToPaymentExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT);
+    }
+
+    @Bean
+    public Binding bindOrderProfitSharingRequestToPaymentRetryQueue() {
+        return BindingBuilder
+                .bind(orderProfitSharingRequestToPaymentRetryQueue())
+                .to(orderProfitSharingRequestToPaymentRetryDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_RETRY);
+    }
+
+    @Bean
+    public Binding bindOrderProfitSharingRequestToPaymentDlq() {
+        return BindingBuilder
+                .bind(orderProfitSharingRequestToPaymentDlq())
+                .to(orderProfitSharingRequestToPaymentFinalDlxExchange())
+                .with(OrderMQConstants.ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_FINAL);
     }
 }

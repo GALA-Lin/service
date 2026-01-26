@@ -16,4 +16,14 @@ import java.io.Serializable;
 @AllArgsConstructor
 public class OrderAutoCompleteMessage implements Serializable {
     private Long orderNo;
+
+    private Integer retryCount;
+
+
+    public void incrementRetryCount(){
+        if (this.retryCount == null) {
+            this.retryCount = 0;
+        }
+        this.retryCount++;
+    }
 }

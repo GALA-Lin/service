@@ -125,7 +125,7 @@ public class RedisJsonUtil {
         try {
             return OBJECT_MAPPER.readValue(str, valueTypeRef);
         } catch (Exception e) {
-            log.warn("Parse String to Object error : {}", e.getMessage());
+            log.error("Parse String to Object error : {}", e.getMessage());
             return null;
         }
     }
@@ -146,7 +146,7 @@ public class RedisJsonUtil {
         try {
             return OBJECT_MAPPER.readValue(str, javaType);
         } catch (IOException e) {
-            log.warn("Parse String to List error : {}", e.getMessage());
+            log.error("Parse String to List error : {}", e.getMessage());
             return null;
         }
     }
@@ -168,7 +168,7 @@ public class RedisJsonUtil {
         try {
             return OBJECT_MAPPER.readValue(str, javaType);
         } catch (JsonProcessingException e) {
-            log.warn("Parse String to Map error : {}", e.getMessage());
+            log.error("Parse String to Map error : {}", e.getMessage());
             return null;
         }
     }

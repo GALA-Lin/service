@@ -1,6 +1,5 @@
 package com.unlimited.sports.globox.venue.service.impl;
 
-import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -29,6 +28,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelati
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueReview;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipantStatusEnum;
 import com.unlimited.sports.globox.model.venue.enums.*;
 import com.unlimited.sports.globox.model.venue.enums.ReviewDeleteOperatorType;
 import com.unlimited.sports.globox.venue.constants.ReviewConstants;
@@ -37,7 +37,6 @@ import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodM
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
-import com.unlimited.sports.globox.venue.constants.ActivityParticipantConstants;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenueService;
 import com.unlimited.sports.globox.model.venue.vo.ActivityListVo;
@@ -437,7 +436,7 @@ public class VenueServiceImpl implements IVenueService {
         List<VenueActivityParticipant> participants = venueActivityParticipantMapper.selectList(
                 new LambdaQueryWrapper<VenueActivityParticipant>()
                         .eq(VenueActivityParticipant::getActivityId, activityId)
-                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                        .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
         );
 
         // 获取所有参与者的用户ID
@@ -508,7 +507,7 @@ public class VenueServiceImpl implements IVenueService {
         List<VenueActivityParticipant> participants = venueActivityParticipantMapper.selectList(
                 new LambdaQueryWrapper<VenueActivityParticipant>()
                         .in(VenueActivityParticipant::getUserId, userIds)
-                        .eq(VenueActivityParticipant::getDeleteVersion, ActivityParticipantConstants.DELETE_VERSION_ACTIVE)
+                        .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
         );
 
         // 按userId分组统计count

@@ -7,7 +7,6 @@ import org.springframework.stereotype.Component;
 
 @Data
 @Component
-@Profile("!dev")
 @ConfigurationProperties(prefix = "wechat-pay")
 public class WechatPayProperties {
 
@@ -47,18 +46,4 @@ public class WechatPayProperties {
      * 支付结果回调地址
      */
     private String notifyPaymentUrl;
-
-    @Data
-    public static class Path {
-
-        /**
-         * JSAPI 支付接口
-         */
-        private String jsapi;
-
-        /**
-         * APP 支付接口
-         */
-        private String app;
-    }
 }

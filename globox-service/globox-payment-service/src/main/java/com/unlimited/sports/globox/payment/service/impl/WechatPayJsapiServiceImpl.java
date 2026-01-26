@@ -25,7 +25,6 @@ import java.math.RoundingMode;
  * JSAPI 微信支付
  */
 @Slf4j
-@Profile("!dev")
 @Service
 public class WechatPayJsapiServiceImpl implements WechatPayJsapiService {
 

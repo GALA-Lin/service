@@ -294,6 +294,7 @@ public class PaymentSuccessConsumer {
         // 10) 发送延迟消息订单完成
         OrderAutoCompleteMessage autoCompleteMessage = OrderAutoCompleteMessage.builder()
                 .orderNo(orderNo)
+                .retryCount(0)
                 .build();
         mqService.sendDelay(
                 OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE,

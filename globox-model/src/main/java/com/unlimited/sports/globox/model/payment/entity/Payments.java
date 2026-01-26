@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.enums.ThirdPartyJsapiEnum;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import com.unlimited.sports.globox.common.enums.payment.PaymentStatusEnum;
 import com.unlimited.sports.globox.model.base.BaseEntity;
 
@@ -40,6 +41,16 @@ public class Payments extends BaseEntity {
      * 用户ID
      */
     private Long userId;
+
+    /**
+     * 服务提供方类型
+     */
+    private SellerTypeEnum sellerType;
+
+    /**
+     * 分账时收款人 id
+     */
+    private Long receiverId;
 
     /**
      * 支付类型（1=WECHAT / 2=ALIPAY）
@@ -94,7 +105,12 @@ public class Payments extends BaseEntity {
     /**
      * 是否是活动订单
      */
-    private boolean activity;
+    private Boolean activity;
+
+    /**
+     * 是否需要分账
+     */
+    private Boolean profitSharing;
 
     /**
      * 用户支付时间

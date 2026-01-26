@@ -268,4 +268,38 @@ public class OrderMQConstants {
     public static final String QUEUE_ORDER_REFUND_APPLY_TO_PAYMENT_PAYMENT_DLQ =
             "queue.order.refund-apply.to-payment.payment.dlq";
 
+
+    /**
+     * 订单 -> 支付：请求分账事件（Profit Sharing Request）
+     * 说明：
+     * - 主队列：支付模块消费，执行分账请求/发起分账逻辑
+     * - Retry：短延迟重试（并发冲突、锁冲突、依赖服务暂不可用）
+     * - Final DLQ：超过最大次数进入最终死信，人工/补偿处理
+     */
+    // 主交换机 & 主路由 & 主队列
+    public static final String EXCHANGE_TOPIC_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT =
+            "exchange.topic.order.profit-sharing.request.to-payment";
+    public static final String ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT =
+            "routing.order.profit-sharing.request.to-payment";
+    public static final String QUEUE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_PAYMENT =
+            "queue.order.profit-sharing.request.to-payment.payment";
+
+    // Retry Queue（TTL）
+    public static final String QUEUE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_PAYMENT_RETRY =
+            "queue.order.profit-sharing.request.to-payment.payment.retry";
+
+    // Retry-DLX：主队列失败后进入重试队列
+    public static final String EXCHANGE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_RETRY_DLX =
+            "exchange.topic.order.profit-sharing.request.to-payment.retry.dlx";
+    public static final String ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_RETRY =
+            "routing.order.profit-sharing.request.to-payment.retry";
+
+    // Final-DLX：超过最大次数进入最终 DLQ
+    public static final String EXCHANGE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_FINAL_DLX =
+            "exchange.topic.order.profit-sharing.request.to-payment.final.dlx";
+    public static final String ROUTING_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_FINAL =
+            "routing.order.profit-sharing.request.to-payment.final";
+    public static final String QUEUE_ORDER_PROFIT_SHARING_REQUEST_TO_PAYMENT_PAYMENT_DLQ =
+            "queue.order.profit-sharing.request.to-payment.payment.dlq";
+
 }

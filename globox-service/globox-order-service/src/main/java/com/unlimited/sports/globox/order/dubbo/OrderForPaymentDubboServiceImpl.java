@@ -63,12 +63,17 @@ public class OrderForPaymentDubboServiceImpl implements OrderForPaymentDubboServ
         }
         subjectBuilder.append(orders.getSellerName());
 
+        boolean isSharing = SellerTypeEnum.COACH.equals(orders.getSellerType());
+
         PaymentGetOrderResultDto resultDto = PaymentGetOrderResultDto.builder()
                 .orderNo(orderNo)
                 .totalAmount(orders.getPayAmount())
                 .subject(subjectBuilder.toString())
                 .userId(orders.getBuyerId())
                 .isActivity(isActivity)
+                .isProfitSharing(isSharing)
+                .sellerType(orders.getSellerType())
+                .sellerId(orders.getSellerId())
                 .build();
         return RpcResult.ok(resultDto);
     }

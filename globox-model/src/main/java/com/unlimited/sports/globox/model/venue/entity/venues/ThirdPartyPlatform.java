@@ -37,7 +37,7 @@ public class ThirdPartyPlatform implements Serializable {
     private String platformCode;
 
     /**
-     * 平台名称（场小二/爱网球等）
+     * 平台名称（场小二/aitennis等）
      */
     @TableField("platform_name")
     private String platformName;

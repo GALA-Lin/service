@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 /**
- * 爱网球事件数据
+ * aitennis事件数据
  */
 @Data
 public class AitennisEventData {

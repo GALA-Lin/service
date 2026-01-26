@@ -2,12 +2,12 @@ package com.unlimited.sports.globox.payment.config;
 
 import com.unlimited.sports.globox.payment.prop.WechatPayProperties;
 import com.wechat.pay.java.core.Config;
-import com.wechat.pay.java.core.RSAAutoCertificateConfig;
 import com.wechat.pay.java.core.RSAPublicKeyConfig;
 import com.wechat.pay.java.core.notification.NotificationConfig;
 import com.wechat.pay.java.core.notification.RSAPublicKeyNotificationConfig;
 import com.wechat.pay.java.service.payments.app.AppServiceExtension;
 import com.wechat.pay.java.service.payments.jsapi.JsapiServiceExtension;
+import com.wechat.pay.java.service.profitsharing.ProfitsharingService;
 import com.wechat.pay.java.service.refund.RefundService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +24,6 @@ import java.nio.file.Path;
  * 微信支付注入
  */
 @Slf4j
-@Profile("!dev")
 @Configuration
 public class WechatPayConfig {
 
@@ -67,6 +66,13 @@ public class WechatPayConfig {
 
     }
 
+    /**
+     * 注入分账服务类
+     */
+    @Bean
+    public ProfitsharingService brandProfitSharingService(Config wechatPayClientConfig) {
+        return new ProfitsharingService.Builder().config(wechatPayClientConfig).build();
+    }
 
     /**
      * app 支付客户端

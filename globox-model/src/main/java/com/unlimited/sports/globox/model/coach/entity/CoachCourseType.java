@@ -49,7 +49,7 @@ public class CoachCourseType implements Serializable {
     private String coachCourseTypeName;
 
     /**
-     * 1-一对一，2-一对二，3-小班(3-6人)
+     * '1-一对一教学，2-一对一陪练，3-一对二，4-小班(3-6人)
      */
     @TableField(value = "coach_service_type_enum")
     private Integer coachServiceTypeEnum;

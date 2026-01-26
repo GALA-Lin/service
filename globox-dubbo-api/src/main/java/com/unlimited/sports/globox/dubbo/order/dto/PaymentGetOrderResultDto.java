@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.dubbo.order.dto;
 
+import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -23,6 +24,13 @@ public class PaymentGetOrderResultDto implements Serializable {
      */
     private Long userId;
 
+    private SellerTypeEnum sellerType;
+
+    /**
+     * 服务提供方 id
+     */
+    private Long sellerId;
+
     /**
      * 交易内容
      */
@@ -37,4 +45,9 @@ public class PaymentGetOrderResultDto implements Serializable {
      * 是否是活动订单
      */
     private boolean isActivity;
+
+    /**
+     * 是否需要分账
+     */
+    private boolean isProfitSharing;
 }

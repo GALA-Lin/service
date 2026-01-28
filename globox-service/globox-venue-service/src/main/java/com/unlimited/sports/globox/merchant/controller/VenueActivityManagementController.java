@@ -19,7 +19,8 @@ import javax.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.util.List;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
@@ -45,15 +46,16 @@ public class VenueActivityManagementController {
      */
     @PostMapping
     public R<ActivityCreationResultVo> createActivity(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid @RequestBody CreateActivityDto dto) {
 
         log.info("商家创建活动 - employeeId: {}, role: {}, activityName: {}",
                 employeeId, roleStr, dto.getActivityName());
 
         // 验证权限并获取上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
         ActivityCreationResultVo result = activityManagementService.createActivity(dto, context);
 
         log.info("活动创建成功 - activityId: {}, batchId: {}, 占用槽位数: {}",
@@ -75,15 +77,16 @@ public class VenueActivityManagementController {
      */
     @PutMapping("/{activityId}")
     public R<ActivityCreationResultVo> updateActivity(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long activityId,
             @Valid @RequestBody UpdateActivityDto dto) {
 
         log.info("商家更新活动 - employeeId: {}, role: {}, activityId: {}",
                 employeeId, roleStr, activityId);
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
         ActivityCreationResultVo result = activityManagementService.updateActivity(activityId, dto, context);
 
         log.info("活动更新成功 - activityId: {}", activityId);
@@ -94,13 +97,14 @@ public class VenueActivityManagementController {
 
     @PostMapping("/cancel")
     public R<Void> cancelActivity(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid @RequestBody CancelActivityRequest request) {
 
         log.info("商家发起取消活动 - employeeId: {}, activityId: {}", employeeId, request.getActivityId());
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         activityManagementService.cancelActivity(request.getActivityId(), context, request.getCancelReason());
 
@@ -120,11 +124,12 @@ public class VenueActivityManagementController {
      */
     @GetMapping("/list")
     public R<List<ActivityCreationResultVo>> listMerchantActivities(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr){
 
         log.info("商家查询活动列表 - employeeId: {}", employeeId);
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         List<ActivityCreationResultVo> result = activityManagementService.getMerchantActivities(context);
         return R.ok(result);
@@ -135,12 +140,13 @@ public class VenueActivityManagementController {
      */
     @GetMapping("/{venueId}/list")
     public R<List<ActivityCreationResultVo>> getActivitiesByVenue(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long venueId,
             @RequestParam(required = false)LocalDate activityDate) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
         // 验证场馆访问权限
         merchantAuthUtil.validateVenueAccess(context, venueId);
 
@@ -154,12 +160,13 @@ public class VenueActivityManagementController {
      */
     @GetMapping("/{activityId}/detail")
     public R<MerchantActivityDetailVo> getActivityDetail(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long activityId) {
 
         log.info("商家查询活动详情 - employeeId: {}, activityId: {}", employeeId, activityId);
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         MerchantActivityDetailVo result = activityManagementService.getActivityDetail(activityId, context);
         return R.ok(result);

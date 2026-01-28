@@ -356,19 +356,21 @@ public class CommentServiceImpl implements CommentService {
             comment.setLikeCount(comment.getLikeCount() + 1);
             commentMapper.updateById(comment);
 
-            // 7. 发送评论被点赞通知给评论作者
-            Map<String, Object> customData = new HashMap<>();
-            customData.put("noteId", noteId);
-            customData.put("commentId", commentId);
+            // 7. 发送评论被点赞通知给评论作者（点赞者不是评论作者时才发送）
+            if (!comment.getUserId().equals(userId)) {
+                Map<String, Object> customData = new HashMap<>();
+                customData.put("noteId", noteId);
+                customData.put("commentId", commentId);
 
-            notificationSender.sendNotification(
-                    comment.getUserId(),
-                    NotificationEventEnum.SOCIAL_COMMENT_LIKED,
-                    noteId,
-                    customData,
-                    NotificationEntityTypeEnum.USER,
-                    userId
-            );
+                notificationSender.sendNotification(
+                        comment.getUserId(),
+                        NotificationEventEnum.SOCIAL_COMMENT_LIKED,
+                        noteId,
+                        customData,
+                        NotificationEntityTypeEnum.USER,
+                        userId
+                );
+            }
         }
 
         return R.ok("点赞成功");

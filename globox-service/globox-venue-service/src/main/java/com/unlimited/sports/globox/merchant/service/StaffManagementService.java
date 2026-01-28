@@ -2,10 +2,13 @@ package com.unlimited.sports.globox.merchant.service;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.unlimited.sports.globox.model.merchant.dto.QueryStaffDto;
+import com.unlimited.sports.globox.model.merchant.dto.StaffSelfUpdateDto;
 import com.unlimited.sports.globox.model.merchant.dto.StaffUpdateDto;
 import com.unlimited.sports.globox.model.merchant.vo.StaffOperationResultVo;
 import com.unlimited.sports.globox.model.merchant.vo.StaffSimpleVo;
 import com.unlimited.sports.globox.model.merchant.vo.StaffVo;
+
+import java.util.List;
 
 /**
  * 员工管理服务接口
@@ -14,57 +17,39 @@ import com.unlimited.sports.globox.model.merchant.vo.StaffVo;
 public interface StaffManagementService {
 
     /**
-     * 分页查询商家的员工列表
-     *
-     * @param merchantId 商家ID
-     * @param dto        查询条件
-     * @return 员工信息分页列表
+     * 分页查询商家员工列表
      */
     IPage<StaffSimpleVo> queryStaffPage(Long merchantId, QueryStaffDto dto);
 
     /**
      * 查询员工详细信息
-     *
-     * @param merchantId   商家ID
-     * @param venueStaffId 员工ID
-     * @return 员工详细信息
      */
     StaffVo getStaffDetail(Long merchantId, Long venueStaffId);
 
     /**
-     * 统计商家的员工数量
-     *
-     * @param merchantId 商家ID
-     * @param status     员工状态（可选）
-     * @return 员工数量
+     * 统计商家员工数量
      */
     Integer countStaff(Long merchantId, Integer status);
 
     /**
-     * 更新员工信息
-     *
-     * @param merchantId 商家ID
-     * @param dto        更新信息
-     * @return 操作结果
+     * 更新员工信息（OWNER权限）
+     * 场馆OWNER可以修改场馆内所有员工信息
      */
-    StaffOperationResultVo updateStaff(Long merchantId, StaffUpdateDto dto);
+    StaffOperationResultVo updateStaff(Long merchantId, Long operatorUserId, StaffUpdateDto dto);
 
     /**
-     * 删除员工（软删除，设置为离职状态）
-     *
-     * @param merchantId   商家ID
-     * @param venueStaffId 员工ID
-     * @return 操作结果
+     * 员工自助修改信息
+     * 员工只能修改自己的部分信息
+     */
+    StaffOperationResultVo updateSelfInfo(Long userId, StaffSelfUpdateDto dto);
+
+    /**
+     * 删除员工（软删除）
      */
     StaffOperationResultVo deleteStaff(Long merchantId, Long venueStaffId);
 
     /**
      * 批量删除员工
-     *
-     * @param merchantId    商家ID
-     * @param venueStaffIds 员工ID列表
-     * @return 操作结果
      */
-    StaffOperationResultVo batchDeleteStaff(Long merchantId, java.util.List<Long> venueStaffIds);
-
+    StaffOperationResultVo batchDeleteStaff(Long merchantId, List<Long> venueStaffIds);
 }

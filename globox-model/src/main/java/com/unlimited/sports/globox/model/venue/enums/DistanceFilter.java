@@ -1,9 +1,12 @@
 package com.unlimited.sports.globox.model.venue.enums;
 
+import com.unlimited.sports.globox.model.venue.vo.VenueDictItem;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 距离筛选枚举
@@ -25,5 +28,19 @@ public enum DistanceFilter {
                 .filter(filter -> filter.value == value)
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * 获取所有距离筛选的字典项列表
+     *
+     * @return VenueDictItem列表
+     */
+    public static List<VenueDictItem> getDictItems() {
+        return Arrays.stream(values())
+                .map(filter -> VenueDictItem.builder()
+                        .value(filter.getValue())
+                        .description(filter.getDescription())
+                        .build())
+                .collect(Collectors.toList());
     }
 }

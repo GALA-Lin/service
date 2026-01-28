@@ -36,6 +36,11 @@ public class ActivityParticipantVo {
      */
     private Double userNtrpLevel;
 
+
+    /**
+     * 性别
+     */
+    private Integer gender;
     /**
      * 用户参与活动的次数
      */

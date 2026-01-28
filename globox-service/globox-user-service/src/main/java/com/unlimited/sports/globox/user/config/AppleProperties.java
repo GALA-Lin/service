@@ -23,7 +23,7 @@ public class AppleProperties {
     private Boolean mockEnabled = false;
 
     /**
-     * Apple客户端ID（Team ID）
+     * Apple客户端ID（App Bundle ID）
      */
     private String clientId;
 

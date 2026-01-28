@@ -32,6 +32,11 @@ public final class RequestHeaderConstants {
     public static final String HEADER_MERCHANT_ACCOUNT_ID = "X-Merchant-Account-Id";
 
     /**
+     * 商家ID请求头（业务侧商家标识）
+     */
+    public static final String HEADER_MERCHANT_ID = "X-Merchant-Id";
+
+    /**
      * 商家用户ID请求头（用于兼容第三方服务的user_id字段）
      */
     public static final String HEADER_MERCHANT_USER_ID = "X-Merchant-User-Id";

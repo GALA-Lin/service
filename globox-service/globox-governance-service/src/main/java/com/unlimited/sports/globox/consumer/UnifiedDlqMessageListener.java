@@ -126,7 +126,7 @@ public class UnifiedDlqMessageListener implements ChannelAwareMessageListener {
             return byHeader;
         }
 
-        throw new GloboxApplicationException(GovernanceCode.DEAD_LETTER_BIZ_TYPE_NOT_EXIST);
+        return MQBizTypeEnum.UNKNOW;
     }
 
     private String resolveBizKey(Map<String, Object> headers,

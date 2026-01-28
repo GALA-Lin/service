@@ -17,6 +17,8 @@ import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.mapper.OrderStatusLogsMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
+import com.unlimited.sports.globox.order.util.CoachNotificationHelper;
+import com.unlimited.sports.globox.order.util.VenueNotificationHelper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -45,6 +47,12 @@ public class OrderAutoCancelMQConsumer {
 
     @Autowired
     private MQService mqService;
+
+    @Autowired
+    private CoachNotificationHelper coachNotificationHelper;
+
+    @Autowired
+    private VenueNotificationHelper venueNotificationHelper;
 
     /**
      * 延迟关闭未支付订单
@@ -116,11 +124,15 @@ public class OrderAutoCancelMQConsumer {
                     OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
                     OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                     unlockMessage);
+            // 发送订单自动取消通知给买家
+            venueNotificationHelper.sendVenueOrderAutoCancelled(orderNo, order.getBuyerId());
         } else if (message.getSellerType().equals(SellerTypeEnum.COACH)){
             mqService.send(
                     OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
                     OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
                     message);
+            // 发送订单自动取消通知给学员
+            coachNotificationHelper.sendCoachOrderAutoCancelled(orderNo, order.getBuyerId());
         } else {
             throw new GloboxApplicationException(OrderCode.ORDER_SELLER_TYPE_NOT_EXIST);
         }

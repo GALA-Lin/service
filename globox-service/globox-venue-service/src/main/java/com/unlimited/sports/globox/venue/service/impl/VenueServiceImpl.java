@@ -157,6 +157,8 @@ public class VenueServiceImpl implements IVenueService {
                 .defaultOpenTime(defaultOpenTime)
                 .defaultCloseTime(defaultCloseTime)
                 .minPrice(minPrice)
+                .latitude(venue.getLatitude())
+                .longitude(venue.getLongitude())
                 .build();
     }
 
@@ -473,6 +475,7 @@ public class VenueServiceImpl implements IVenueService {
                             .nickName(userInfo != null ? userInfo.getNickName() : "")
                             .userNtrpLevel((userInfo != null && userInfo.getUserNtrpLevel() != null) ? userInfo.getUserNtrpLevel() : 0.0)
                             .participationCount(participationCount)
+                            .gender((userInfo == null || userInfo.getGender() == null) ? null : userInfo.getGender().getCode())
                             .build();
                 })
                 .collect(Collectors.toList());
@@ -609,7 +612,23 @@ public class VenueServiceImpl implements IVenueService {
         if (activities.isEmpty()) {
             return Collections.emptyList();
         }
-
+        Set<Long> courtIds = activities.stream()
+                .map(VenueActivity::getCourtId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long,String> courtMap;
+        if(!courtIds.isEmpty()) {
+            List<Court> courts = courtMapper.selectList(new LambdaQueryWrapper<Court>()
+                    .in(Court::getCourtId,courtIds));
+             courtMap = courts.stream()
+                    .collect(Collectors.toMap(
+                            Court::getCourtId,
+                            Court::getName,
+                            (existing,replacement) -> existing
+                    ));
+        } else {
+            courtMap = Collections.emptyMap();// 为了让lambda不报错
+        }
         // 转换为VO列表
         return activities.stream()
                 .map(activity -> {
@@ -622,6 +641,7 @@ public class VenueServiceImpl implements IVenueService {
                             .activityId(activity.getActivityId())
                             .venueId(activity.getVenueId())
                             .courtId(activity.getCourtId())
+                            .courtName(courtMap.get(activity.getCourtId()))
                             .activityTypeId(activity.getActivityTypeId())
                             .activityTypeDesc(activity.getActivityTypeDesc())
                             .activityName(activity.getActivityName())

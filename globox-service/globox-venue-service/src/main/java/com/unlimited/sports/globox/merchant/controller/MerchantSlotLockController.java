@@ -18,7 +18,8 @@ import javax.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
@@ -39,14 +40,15 @@ public class MerchantSlotLockController {
      */
     @PostMapping("/batch/lock")
     public R<Void> lockSlots(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid @RequestBody LockSlotRequest request) {
 
         log.info("锁场请求, employeeId: {}, roleStr: {}, request: {}",
                 employeeId, roleStr, request);
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 根据模板ID列表数量决定是单个锁场还是批量锁场
         if (request.getTemplateIds().size() == 1) {
@@ -81,14 +83,15 @@ public class MerchantSlotLockController {
      */
     @PostMapping("/batch/unlock")
     public R<Void> unlockSlots(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid @RequestBody UnlockSlotRequest request) {
 
         log.info("解锁场请求, employeeId: {}, roleStr: {}, request: {}",
                 employeeId, roleStr, request);
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 根据模板ID列表数量决定是单个解锁还是批量解锁
         if (request.getTemplateIds().size() == 1) {
@@ -124,15 +127,16 @@ public class MerchantSlotLockController {
      */
     @GetMapping("/locked-slots")
     public R<List<LockedSlotVo>> queryLockedSlots(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam(required = false) Long courtId,
             @RequestParam(required = false) Long venueId,
             @RequestParam @JsonFormat(pattern = "yyyy-MM-dd") LocalDate startDate,
             @RequestParam @JsonFormat(pattern = "yyyy-MM-dd") LocalDate endDate,
             @RequestParam(required = false) Integer lockedType) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 验证场馆访问权限
         if (venueId != null) {

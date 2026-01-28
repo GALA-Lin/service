@@ -20,7 +20,8 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
@@ -46,13 +47,14 @@ public class SlotManagementController {
      */
     @PostMapping("/templates/init")
     public R<Integer> initTemplates(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam @NotNull Long courtId,
             @RequestParam @DateTimeFormat(pattern = "HH:mm") LocalTime openTime,
             @RequestParam @DateTimeFormat(pattern = "HH:mm") LocalTime closeTime) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
 
         // 验证场地访问权限
         merchantAuthUtil.validateCourtAccess(context, courtId);
@@ -69,11 +71,12 @@ public class SlotManagementController {
      */
     @PostMapping("/templates/batch-init")
     public R<BatchTemplateInitResultVo> batchInitTemplates(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Valid BatchTemplateInitDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
 
         // 验证所有场地的访问权限
         dto.getCourtIds().forEach(courtId ->
@@ -93,13 +96,14 @@ public class SlotManagementController {
      */
     @PostMapping("/records/generate-daily")
     public R<SlotGenerationResultVo> generateDaily(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam @NotNull Long courtId,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date,
             @RequestParam(defaultValue = "false") boolean overwrite) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
 
         merchantAuthUtil.validateCourtAccess(context, courtId);
 
@@ -118,14 +122,15 @@ public class SlotManagementController {
      */
     @PostMapping("/records/generate-batch")
     public R<SlotGenerationResultVo> generateBatch(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam @NotNull Long courtId,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate startDate,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate endDate,
             @RequestParam(defaultValue = "false") boolean overwrite) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
 
         merchantAuthUtil.validateCourtAccess(context, courtId);
 
@@ -143,12 +148,13 @@ public class SlotManagementController {
      */
     @GetMapping("/records/availability")
     public R<List<SlotAvailabilityVo>> queryAvailability(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam @NotNull Long courtId,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
 
         merchantAuthUtil.validateCourtAccess(context, courtId);
 
@@ -167,14 +173,15 @@ public class SlotManagementController {
      */
     @GetMapping("/records/venue-availability")
     public R<List<VenueSlotAvailabilityVo>> queryVenueAvailability(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam @NotNull Long venueId,
             @RequestParam @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date,
             @RequestParam(required = false) @DateTimeFormat(pattern = "HH:mm") LocalTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "HH:mm") LocalTime endTime) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
         merchantAuthUtil.validateVenueAccess(context, venueId);
 
         List<VenueSlotAvailabilityVo> result = recordService.queryVenueAvailability(

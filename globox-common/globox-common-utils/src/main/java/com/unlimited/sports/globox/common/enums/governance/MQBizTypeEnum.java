@@ -12,6 +12,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum MQBizTypeEnum {
+    UNKNOW(0, BusinessServiceEnum.UNKNOW, BusinessServiceEnum.UNKNOW),
     UNLOCK_SLOT_MERCHANT(1, BusinessServiceEnum.ORDER, BusinessServiceEnum.MERCHANT),
     ORDER_AUTO_CANCEL(2, BusinessServiceEnum.ORDER, BusinessServiceEnum.ORDER),
     ORDER_AUTO_COMPLETE(3, BusinessServiceEnum.ORDER, BusinessServiceEnum.ORDER),

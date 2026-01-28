@@ -40,6 +40,11 @@ public class ActivityListVo {
     @NonNull
     private Long courtId;
 
+
+    /**
+     * 场地名称
+     */
+    private String courtName;
     /**
      * 活动类型ID
      */

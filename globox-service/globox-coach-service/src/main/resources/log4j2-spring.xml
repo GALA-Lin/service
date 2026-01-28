@@ -77,6 +77,7 @@
         <Logger name="org.eclipse.jetty.util.component.AbstractLifeCycle" level="ERROR"/>
         <Logger name="org.hibernate.validator.internal.util.Version" level="WARN"/>
         <Logger name="org.springframework.boot.actuate.endpoint.jmx" level="WARN"/>
+        <Logger name="org.apache.dubbo" level="WARN"/>
 
         <!-- Root Logger（关键） -->
         <Root level="INFO" includeLocation="true">

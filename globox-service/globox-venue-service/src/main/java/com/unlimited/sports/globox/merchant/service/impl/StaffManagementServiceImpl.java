@@ -8,6 +8,7 @@ import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
 import com.unlimited.sports.globox.merchant.service.StaffManagementService;
 import com.unlimited.sports.globox.model.merchant.dto.QueryStaffDto;
+import com.unlimited.sports.globox.model.merchant.dto.StaffSelfUpdateDto;
 import com.unlimited.sports.globox.model.merchant.dto.StaffUpdateDto;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
@@ -100,25 +101,47 @@ public class StaffManagementServiceImpl implements StaffManagementService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public StaffOperationResultVo updateStaff(Long merchantId, StaffUpdateDto dto) {
-        log.info("更新员工信息 - merchantId: {}, dto: {}", merchantId, dto);
+    public StaffOperationResultVo updateStaff(Long merchantId, Long operatorUserId, StaffUpdateDto dto) {
+        log.info("更新员工信息(管理员) - merchantId: {}, operatorUserId: {}, dto: {}",
+                merchantId, operatorUserId, dto);
 
-        // 1. 查询员工信息
-        VenueStaff staff = venueStaffMapper.selectById(dto.getVenueStaffId());
-        if (staff == null) {
+        // 1. 查询要修改的员工信息
+        VenueStaff targetStaff = venueStaffMapper.selectById(dto.getVenueStaffId());
+        if (targetStaff == null) {
             log.warn("员工不存在 - venueStaffId: {}", dto.getVenueStaffId());
             throw new GloboxApplicationException("员工信息不存在");
         }
 
         // 2. 验证员工是否属于该商家
-        if (!staff.getMerchantId().equals(merchantId)) {
-            log.error("无权操作该员工 - merchantId: {}, venueStaffId: {}, staffMerchantId: {}",
-                    merchantId, dto.getVenueStaffId(), staff.getMerchantId());
+        if (!targetStaff.getMerchantId().equals(merchantId)) {
+            log.error("员工不属于该商家 - merchantId: {}, venueStaffId: {}, staffMerchantId: {}",
+                    merchantId, dto.getVenueStaffId(), targetStaff.getMerchantId());
             throw new GloboxApplicationException("无权操作该员工");
         }
 
-        // 3. 如果修改了场馆，验证新场馆是否属于该商家
-        if (dto.getVenueId() != null && !dto.getVenueId().equals(staff.getVenueId())) {
+        // 3. 查询操作人信息，验证权限
+        VenueStaff operator = venueStaffMapper.selectActiveStaffByUserId(operatorUserId);
+        if (operator == null) {
+            log.error("操作人不是有效员工 - userId: {}", operatorUserId);
+            throw new GloboxApplicationException("无权限操作");
+        }
+
+        // 4. 权限验证：只有场馆OWNER可以修改其他员工信息
+        if (operator.getRoleType() != 1) { // 1=OWNER
+            log.error("操作人不是OWNER，无权修改其他员工信息 - operatorId: {}, roleType: {}",
+                    operator.getVenueStaffId(), operator.getRoleType());
+            throw new GloboxApplicationException("只有场馆负责人可以修改员工信息");
+        }
+
+        // 5. 验证操作人和目标员工在同一场馆
+        if (!operator.getVenueId().equals(targetStaff.getVenueId())) {
+            log.error("操作人和目标员工不在同一场馆 - operatorVenueId: {}, targetVenueId: {}",
+                    operator.getVenueId(), targetStaff.getVenueId());
+            throw new GloboxApplicationException("只能管理同一场馆的员工");
+        }
+
+        // 6. 如果修改了场馆，验证新场馆是否属于该商家
+        if (dto.getVenueId() != null && !dto.getVenueId().equals(targetStaff.getVenueId())) {
             Venue venue = venueMapper.selectById(dto.getVenueId());
             if (venue == null || !venue.getMerchantId().equals(merchantId)) {
                 log.error("场馆不存在或不属于该商家 - venueId: {}, merchantId: {}",
@@ -127,7 +150,7 @@ public class StaffManagementServiceImpl implements StaffManagementService {
             }
         }
 
-        // 4. 如果修改了工号，检查是否重复
+        // 7. 如果修改了工号，检查是否重复
         if (dto.getEmployeeNo() != null && !dto.getEmployeeNo().isEmpty()) {
             Integer employeeNoCount = venueStaffMapper.checkEmployeeNoExists(
                     merchantId, dto.getEmployeeNo(), dto.getVenueStaffId());
@@ -138,7 +161,7 @@ public class StaffManagementServiceImpl implements StaffManagementService {
             }
         }
 
-        // 5. 更新员工信息（只更新非null字段）
+        // 8. 更新员工信息
         LambdaUpdateWrapper<VenueStaff> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(VenueStaff::getVenueStaffId, dto.getVenueStaffId());
 
@@ -183,25 +206,86 @@ public class StaffManagementServiceImpl implements StaffManagementService {
             updateWrapper.set(VenueStaff::getRemark, dto.getRemark());
         }
 
-        // 6. 执行更新
+        // 9. 执行更新
         int updateCount = venueStaffMapper.update(null, updateWrapper);
         if (updateCount <= 0) {
             log.error("更新员工失败 - venueStaffId: {}", dto.getVenueStaffId());
             throw new GloboxApplicationException("更新员工信息失败");
         }
 
-        log.info("更新员工成功 - venueStaffId: {}, displayName: {}",
-                staff.getVenueStaffId(),
-                dto.getDisplayName() != null ? dto.getDisplayName() : staff.getDisplayName());
+        log.info("更新员工成功 - venueStaffId: {}, displayName: {}, operator: {}",
+                targetStaff.getVenueStaffId(),
+                dto.getDisplayName() != null ? dto.getDisplayName() : targetStaff.getDisplayName(),
+                operator.getDisplayName());
 
         return StaffOperationResultVo.success(
-                staff.getVenueStaffId(),
-                dto.getDisplayName() != null ? dto.getDisplayName() : staff.getDisplayName(),
+                targetStaff.getVenueStaffId(),
+                dto.getDisplayName() != null ? dto.getDisplayName() : targetStaff.getDisplayName(),
                 "UPDATE",
                 "员工信息更新成功"
         );
     }
 
+    /**
+     * 员工自助修改信息
+     * 员工只能修改自己的部分信息
+     *
+     * @param userId
+     * @param dto
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public StaffOperationResultVo updateSelfInfo(Long userId, StaffSelfUpdateDto dto) {
+        log.info("员工自助修改信息 - userId: {}, dto: {}", userId, dto);
+
+        // 1. 查询当前用户的员工信息
+        VenueStaff staff = venueStaffMapper.selectActiveStaffByUserId(userId);
+        if (staff == null) {
+            log.warn("用户不是员工或已离职 - userId: {}", userId);
+            throw new GloboxApplicationException("您不是有效的员工用户");
+        }
+
+        // 2. 更新员工信息（只能修改部分字段）
+        LambdaUpdateWrapper<VenueStaff> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(VenueStaff::getVenueStaffId, staff.getVenueStaffId());
+
+        boolean hasUpdate = false;
+
+        if (dto.getDisplayName() != null && !dto.getDisplayName().isEmpty()) {
+            updateWrapper.set(VenueStaff::getDisplayName, dto.getDisplayName());
+            hasUpdate = true;
+        }
+        if (dto.getContactPhone() != null && !dto.getContactPhone().isEmpty()) {
+            updateWrapper.set(VenueStaff::getContactPhone, dto.getContactPhone());
+            hasUpdate = true;
+        }
+        if (dto.getEmail() != null && !dto.getEmail().isEmpty()) {
+            updateWrapper.set(VenueStaff::getEmail, dto.getEmail());
+            hasUpdate = true;
+        }
+
+        if (!hasUpdate) {
+            log.warn("没有需要更新的字段 - userId: {}", userId);
+            throw new GloboxApplicationException("请至少修改一项信息");
+        }
+
+        // 3. 执行更新
+        int updateCount = venueStaffMapper.update(null, updateWrapper);
+        if (updateCount <= 0) {
+            log.error("更新员工信息失败 - venueStaffId: {}", staff.getVenueStaffId());
+            throw new GloboxApplicationException("更新信息失败");
+        }
+
+        log.info("员工自助修改成功 - venueStaffId: {}, displayName: {}",
+                staff.getVenueStaffId(), staff.getDisplayName());
+
+        return StaffOperationResultVo.success(
+                staff.getVenueStaffId(),
+                dto.getDisplayName() != null ? dto.getDisplayName() : staff.getDisplayName(),
+                "SELF_UPDATE",
+                "个人信息更新成功"
+        );
+    }
     @Override
     @Transactional(rollbackFor = Exception.class)
     public StaffOperationResultVo deleteStaff(Long merchantId, Long venueStaffId) {

@@ -49,7 +49,6 @@ public class CreateActivityDto {
     /**
      * 联系电话
      */
-    @NotBlank(message = "联系电话不能为空")
     @Size(max = 20, message = "联系电话不能超过20个字符")
     private String contactPhone;
 

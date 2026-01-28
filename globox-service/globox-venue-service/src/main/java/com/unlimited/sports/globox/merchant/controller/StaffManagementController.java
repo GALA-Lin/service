@@ -6,6 +6,7 @@ import com.unlimited.sports.globox.merchant.service.StaffManagementService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
 import com.unlimited.sports.globox.model.merchant.dto.QueryStaffDto;
+import com.unlimited.sports.globox.model.merchant.dto.StaffSelfUpdateDto;
 import com.unlimited.sports.globox.model.merchant.dto.StaffUpdateDto;
 import com.unlimited.sports.globox.model.merchant.vo.StaffOperationResultVo;
 import com.unlimited.sports.globox.model.merchant.vo.StaffSimpleVo;
@@ -18,11 +19,13 @@ import javax.validation.Valid;
 
 import java.util.List;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
  * 员工管理Controller
+ *
  * @since 2026-01-23
  */
 @Slf4j
@@ -44,15 +47,16 @@ public class StaffManagementController {
      */
     @GetMapping("/list")
     public R<IPage<StaffSimpleVo>> queryStaffList(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid QueryStaffDto dto) {
 
         log.info("查询员工列表 - employeeId: {}, roleStr: {}, dto: {}",
                 employeeId, roleStr, dto);
 
         // 验证权限并获取认证上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 只有商家所有者可以查询员工列表
         merchantAuthUtil.requireOwner(context);
@@ -79,15 +83,16 @@ public class StaffManagementController {
      */
     @GetMapping("/detail/{venueStaffId}")
     public R<StaffVo> getStaffDetail(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long venueStaffId) {
 
         log.info("查询员工详细信息 - employeeId: {}, roleStr: {}, venueStaffId: {}",
                 employeeId, roleStr, venueStaffId);
 
         // 验证权限并获取认证上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 只有商家所有者可以查询员工详情
         merchantAuthUtil.requireOwner(context);
@@ -109,15 +114,16 @@ public class StaffManagementController {
      */
     @GetMapping("/count")
     public R<Integer> countStaff(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam(required = false) Integer status) {
 
         log.info("统计员工数量 - employeeId: {}, roleStr: {}, status: {}",
                 employeeId, roleStr, status);
 
         // 验证权限并获取认证上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 只有商家所有者可以统计员工数量
         merchantAuthUtil.requireOwner(context);
@@ -127,51 +133,70 @@ public class StaffManagementController {
 
         return R.ok(count);
     }
-    /**
-    更新员工信息
 
-    @param employeeId 员工ID（请求头）
-    @param roleStr    角色字符串（请求头）
-    @param dto        更新信息
-    @return 操作结果
-    */
+    /**
+     * 更新员工信息
+     *
+     * @param employeeId 员工ID（请求头）
+     * @param roleStr    角色字符串（请求头）
+     * @param dto        更新信息
+     * @return 操作结果
+     */
     @PutMapping("/update")
     public R<StaffOperationResultVo> updateStaff(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @Valid @RequestBody StaffUpdateDto dto) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @Valid @RequestBody StaffUpdateDto dto
+    ) {
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId ,merchantId, roleStr);
+        Long operatorUserId = context.getEmployeeId();
+        if(context.isStaff()){
+            log.error("{}权限不足：是否为员工{}",employeeId,context.isStaff());
+        }
         log.info("更新员工信息 - employeeId: {}, roleStr: {}, dto: {}",
                 employeeId, roleStr, dto);
-        // 验证权限并获取认证上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-        // 只有商家所有者可以更新员工信息
-        merchantAuthUtil.requireOwner(context);
-        // 如果修改了场馆，验证场馆访问权限
-        if (dto.getVenueId() != null) {
-            merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
-        }
-        // 更新员工信息
-        StaffOperationResultVo result = staffManagementService.updateStaff(
-                context.getMerchantId(), dto);
+        StaffOperationResultVo result = staffManagementService.updateStaff(merchantId, operatorUserId, dto);
         return R.ok(result);
     }
-    /**
-     删除员工（软删除）设置为离职状态
 
-     @param employeeId   员工ID（请求头）
-     @param roleStr      角色字符串（请求头）
-     @param venueStaffId 要删除的员工ID
-     @return 操作结果
+    /**
+     * 员工更新自己信息
+     *
+     * @param employeeId
+     * @param roleStr
+     * @param dto
+     * @return
+     */
+    @PutMapping("/update-self")
+    public R<StaffOperationResultVo> updateSelfInfo(
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @Valid @RequestBody StaffSelfUpdateDto dto
+    ) {
+        StaffOperationResultVo result = staffManagementService.updateSelfInfo(employeeId, dto);
+        return R.ok(result);
+    }
+
+    /**
+     * 删除员工（软删除）设置为离职状态
+     *
+     * @param employeeId   员工ID（请求头）
+     * @param roleStr      角色字符串（请求头）
+     * @param venueStaffId 要删除的员工ID
+     * @return 操作结果
      */
     @DeleteMapping("/delete/{venueStaffId}")
     public R<StaffOperationResultVo> deleteStaff(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long venueStaffId) {
         log.info("删除员工 - employeeId: {}, roleStr: {}, venueStaffId: {}",
                 employeeId, roleStr, venueStaffId);
         // 验证权限并获取认证上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
         // 只有商家所有者可以删除员工
         merchantAuthUtil.requireOwner(context);
         // 删除员工
@@ -181,27 +206,28 @@ public class StaffManagementController {
     }
 
     /**
-     批量删除员工，设置为离职状态
-
-     @param employeeId    员工ID（请求头）
-     @param roleStr       角色字符串（请求头）
-     @param venueStaffIds 要删除的员工ID列表
-     @return 操作结果
+     * 批量删除员工，设置为离职状态
+     *
+     * @param employeeId    员工ID（请求头）
+     * @param roleStr       角色字符串（请求头）
+     * @param venueStaffIds 要删除的员工ID列表
+     * @return 操作结果
      */
     @DeleteMapping("/batch-delete")
     public R<StaffOperationResultVo> batchDeleteStaff(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody List<Long> venueStaffIds) {
         log.info("批量删除员工 - employeeId: {}, roleStr: {}, venueStaffIds: {}",
                 employeeId, roleStr, venueStaffIds);
         // 验证权限并获取认证上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId , roleStr);
         // 只有商家所有者可以批量删除员工
         merchantAuthUtil.requireOwner(context);
         // 批量删除员工
         StaffOperationResultVo result = staffManagementService.batchDeleteStaff(
-                context.getMerchantId(), venueStaffIds);
+                merchantId, venueStaffIds);
         return R.ok(result);
     }
 }

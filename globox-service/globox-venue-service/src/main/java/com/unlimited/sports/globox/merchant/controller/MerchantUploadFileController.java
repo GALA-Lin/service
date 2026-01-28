@@ -5,9 +5,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.cos.vo.BatchUploadResultVo;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
-import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.venue.service.IFileUploadService;
-import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +13,8 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
@@ -36,12 +35,13 @@ public class MerchantUploadFileController {
 
     @PostMapping("/image")
     public R<BatchUploadResultVo> batchUploadImages(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam("files") MultipartFile[] files) {
 
         // 权限验证
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
 
         log.info("开始批量上传图片 - 操作人: {}, 商家: {}, 文件数量: {}",
                 context.getEmployeeId(), context.getMerchantId(),

@@ -6,7 +6,8 @@ import javax.validation.constraints.*;
 import java.time.LocalDateTime;
 
 /**
- * 更新员工信息DTO
+ * 更新员工信息DTO（管理员使用）
+ * 场馆OWNER可以修改场馆内所有员工信息
  * @since 2026-01-23
  */
 @Data
@@ -19,7 +20,7 @@ public class StaffUpdateDto {
     private Long venueStaffId;
 
     /**
-     * 所属场馆ID
+     * 所属场馆ID（OWNER可修改员工所属场馆）
      */
     private Long venueId;
 
@@ -33,6 +34,7 @@ public class StaffUpdateDto {
     /**
      * 员工显示名称
      */
+    @Size(max = 50, message = "显示名称长度不能超过50字符")
     private String displayName;
 
     /**

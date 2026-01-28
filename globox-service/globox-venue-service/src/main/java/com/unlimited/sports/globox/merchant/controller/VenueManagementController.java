@@ -15,8 +15,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.validation.Valid;
 
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
 import static com.unlimited.sports.globox.common.result.MerchantErrorCode.NEED_OWNER;
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
@@ -42,15 +43,16 @@ public class VenueManagementController {
      */
     @PostMapping()
     public R<MerchantVenueBasicInfo> createVenue(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid @RequestBody  VenueCreateDto dto) {
 
         log.info("商家创建场馆 - venueName: {}",
                 dto.getName());
 
         // 认证并获取上下文（只有老板可以创建场馆）
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
         if (!context.isOwner()) {
             return R.error(NEED_OWNER);
         }
@@ -71,15 +73,16 @@ public class VenueManagementController {
      */
     @PutMapping()
     public R<MerchantVenueBasicInfo> updateVenue(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Valid @RequestBody  VenueUpdateDto dto) {
 
         log.info("商家更新场馆 - venueId: {}",
                 dto.getVenueId());
 
         // 认证并获取上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 验证场馆访问权限
         merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
@@ -100,14 +103,15 @@ public class VenueManagementController {
      */
     @DeleteMapping("/{venueId}")
     public R<Void> deleteVenue(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long venueId) {
 
         log.info("商家删除场馆 - venueId: {}", venueId);
 
         // 认证并获取上下文（只有老板可以删除场馆）
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
         if (!context.isOwner()) {
             return R.error(NEED_OWNER);
         }
@@ -128,15 +132,16 @@ public class VenueManagementController {
      */
     @PostMapping("/{venueId}/toggle-status")
     public R<MerchantVenueBasicInfo> toggleStatus(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(value = HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long venueId,
             @RequestParam Integer status) {
 
         log.info("切换场馆状态 - venueId: {}, status: {}", venueId, status);
 
         // 认证并获取上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 验证场馆访问权限
         merchantAuthUtil.validateVenueAccess(context, venueId);

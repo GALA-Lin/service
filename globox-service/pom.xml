@@ -12,7 +12,6 @@
     <artifactId>globox-service</artifactId>
     <packaging>pom</packaging>
     <modules>
-        <module>globox-merchant-service</module>
         <module>globox-venue-service</module>
         <module>globox-user-service</module>
         <module>globox-payment-service</module>
@@ -21,6 +20,7 @@
         <module>globox-notification-service</module>
         <module>globox-coach-service</module>
         <module>globox-governance-service</module>
+        <module>globox-search-service</module>
     </modules>
 
     <properties>

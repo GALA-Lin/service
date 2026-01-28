@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -86,9 +87,11 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
         }
 
         // 生成JWT双Token
+        Long employeeId = parseEmployeeId(merchantAccount.getEmployeeId(), merchantAccount.getAccountId());
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", merchantAccount.getRole().name());
-        claims.put("employee_id",merchantAccount.getEmployeeId()); // 插入职工id
+        claims.put("employee_id", employeeId);
+        claims.put("merchant_id", merchantAccount.getAccountId());
         String accessToken = JwtUtil.generateToken(
                 String.valueOf(merchantAccount.getAccountId()),
                 claims,
@@ -155,8 +158,11 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
         redisService.deleteRefreshToken(refreshToken, merchantJwtSecret);
 
         // 7. 生成新的 access token 和 refresh token
+        Long employeeId = parseEmployeeId(merchantAccount.getEmployeeId(), accountId);
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", merchantAccount.getRole().name());
+        claims.put("employee_id", employeeId);
+        claims.put("merchant_id", accountId);
 
         String newAccessToken = JwtUtil.generateToken(
                 String.valueOf(accountId),
@@ -200,6 +206,19 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
             merchantLoginRecordMapper.insert(record);
         } catch (Exception e) {
             log.error("【商家登录】记录登录日志失败", e);
+        }
+    }
+
+    private Long parseEmployeeId(String employeeId, Long accountId) {
+        if (!StringUtils.hasText(employeeId)) {
+            log.error("【商家登录】employeeId为空，accountId={}", accountId);
+            throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+        }
+        try {
+            return Long.valueOf(employeeId);
+        } catch (NumberFormatException e) {
+            log.error("【商家登录】employeeId格式非法，employeeId={}, accountId={}", employeeId, accountId);
+            throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
         }
     }
 }

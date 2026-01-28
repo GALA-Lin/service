@@ -55,4 +55,17 @@ public class VenueDetailVo {
 
     @NonNull
     private BigDecimal minPrice;
+
+
+    /**
+     * 纬度
+     */
+    @NonNull
+    private BigDecimal latitude;
+
+    /**
+     * 经度
+     */
+    @NonNull
+    private BigDecimal longitude;
 }

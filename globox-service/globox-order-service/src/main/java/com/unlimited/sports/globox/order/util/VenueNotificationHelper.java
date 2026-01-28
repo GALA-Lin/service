@@ -38,4 +38,20 @@ public class VenueNotificationHelper {
             log.error("[Venue通知] 退款成功通知发送失败, orderNo={}, buyerId={}", orderNo, buyerId, e);
         }
     }
+
+    /**
+     * 发送VENUE_ORDER_AUTO_CANCELLED通知（订单未支付超时自动取消，通知用户"订单已自动取消"）
+     */
+    public void sendVenueOrderAutoCancelled(Long orderNo, Long buyerId) {
+        try {
+            Map<String, Object> customData = new HashMap<>();
+            customData.put("orderNo", orderNo);
+            customData.put("cancelledAt", LocalDateTime.now().toString());
+
+            notificationSender.sendNotification(buyerId, NotificationEventEnum.VENUE_ORDER_AUTO_CANCELLED, orderNo, customData);
+            log.info("[Venue通知] 订单自动取消，通知用户, orderNo={}, buyerId={}", orderNo, buyerId);
+        } catch (Exception e) {
+            log.error("[Venue通知] 订单自动取消通知发送失败, orderNo={}, buyerId={}", orderNo, buyerId, e);
+        }
+    }
 }

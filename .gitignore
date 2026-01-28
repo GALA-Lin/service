@@ -1,1 +1,11 @@
 *.yaml
+globox-gateway/Dockerfile
+globox-service/globox-coach-service/Dockerfile
+globox-service/globox-user-service/Dockerfile
+globox-service/globox-order-service/Dockerfile
+globox-service/globox-venue-service/Dockerfile
+globox-service/globox-search-service/Dockerfile
+globox-service/globox-social-service/Dockerfile
+globox-service/globox-payment-service/Dockerfile
+globox-service/globox-governance-service/Dockerfile
+globox-service/globox-notification-service/Dockerfile

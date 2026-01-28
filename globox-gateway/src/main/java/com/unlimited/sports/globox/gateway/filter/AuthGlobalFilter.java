@@ -105,8 +105,9 @@ public class AuthGlobalFilter implements GlobalFilter {
         String openid = Optional.ofNullable(JwtUtil.getClaim(token, secret, "openid", Object.class))
                 .map(Object::toString)
                 .orElse(null);
-        String staffId = JwtUtil.getClaim(token,secret,"employee_id",String.class);
-        if(ClientType.MERCHANT.equals(clientType) && !StringUtils.hasText(staffId)) {
+        Long staffId = getLongClaim(token, secret, "employee_id");
+        Long merchantId = getLongClaim(token, secret, "merchant_id");
+        if (ClientType.MERCHANT.equals(clientType) && staffId == null) {
             return unauthorized(exchange,"Token missing merchant info");
         }
         if (!StringUtils.hasText(subject) || !StringUtils.hasText(role)) {
@@ -135,7 +136,7 @@ public class AuthGlobalFilter implements GlobalFilter {
 
         // 5. 根据客户端类型注入对应的 headers
         ServerHttpRequest mutatedRequest = request.mutate()
-                .headers(headers -> injectHeaders(headers, clientType, subject, role, openid,staffId))
+                .headers(headers -> injectHeaders(headers, clientType, subject, role, openid, staffId, merchantId))
                 .build();
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }
@@ -145,14 +146,32 @@ public class AuthGlobalFilter implements GlobalFilter {
                 .anyMatch(pattern -> matcher.match(pattern, path));
     }
 
+    private Long getLongClaim(String token, String secret, String key) {
+        Object value = JwtUtil.getClaim(token, secret, key, Object.class);
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        }
+        if (value instanceof String) {
+            try {
+                return Long.parseLong((String) value);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
 
     /**
      * 根据客户端类型注入对应的 headers（清除所有身份相关headers，防止伪造）
      */
-    private void injectHeaders(HttpHeaders headers, ClientType clientType, String subject, String role, String openid,String staffId) {
+    private void injectHeaders(HttpHeaders headers, ClientType clientType, String subject, String role, String openid, Long staffId, Long merchantId) {
         headers.remove(RequestHeaderConstants.HEADER_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);
@@ -170,9 +189,11 @@ public class AuthGlobalFilter implements GlobalFilter {
             }
             case MERCHANT -> {
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID, subject);
+                Long resolvedMerchantId = merchantId != null ? merchantId : Long.parseLong(subject);
+                headers.set(RequestHeaderConstants.HEADER_MERCHANT_ID, String.valueOf(resolvedMerchantId));
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_USER_ID, subject);  // 兼容第三方服务的user_id需求
                 headers.set(RequestHeaderConstants.HEADER_MERCHANT_ROLE, role);
-                headers.set(RequestHeaderConstants.HEADER_EMPLOYEE_ID,staffId);
+                headers.set(RequestHeaderConstants.HEADER_EMPLOYEE_ID, String.valueOf(staffId));
             }
         }
 
@@ -200,6 +221,7 @@ public class AuthGlobalFilter implements GlobalFilter {
         headers.remove(RequestHeaderConstants.HEADER_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_USER_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID);
+        headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_USER_ID);
         headers.remove(RequestHeaderConstants.HEADER_MERCHANT_ROLE);
         headers.remove(RequestHeaderConstants.HEADER_THIRD_PARTY_ID);

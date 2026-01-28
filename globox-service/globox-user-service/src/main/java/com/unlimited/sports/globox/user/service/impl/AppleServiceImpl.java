@@ -6,6 +6,8 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.user.config.AppleProperties;
 import com.unlimited.sports.globox.user.service.AppleService;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +16,11 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.PostConstruct;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
@@ -38,6 +44,9 @@ public class AppleServiceImpl implements AppleService {
     private RestTemplate restTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private Map<String, RSAPublicKey> applePublicKeys = new HashMap<>();
+    private long applePublicKeysExpireAt;
+    private static final long APPLE_PUBLIC_KEYS_CACHE_SECONDS = 3600;
 
     /**
      * 初始化：检测配置并决定使用Mock模式还是真实验证模式
@@ -59,8 +68,8 @@ public class AppleServiceImpl implements AppleService {
 
         // 非Mock模式下，严格依赖配置
         useMockMode = false;
-        if (!StringUtils.hasText(appleProperties.getClientId())) {
-            log.warn("【Apple服务】apple.client-id未配置，将使用Mock模式");
+        if (!StringUtils.hasText(appleProperties.getClientId()) && !StringUtils.hasText(appleProperties.getServiceId())) {
+            log.warn("【Apple服务】apple.client-id或apple.service-id未配置，将使用Mock模式");
             useMockMode = true;
         }
     }
@@ -130,12 +139,12 @@ public class AppleServiceImpl implements AppleService {
         }
 
         // 5. 验证audience（clientId或serviceId）
-        String aud = payloadNode.has("aud") ? payloadNode.get("aud").asText() : null;
+        JsonNode audNode = payloadNode.get("aud");
         String expectedAudience = StringUtils.hasText(appleProperties.getServiceId()) 
                 ? appleProperties.getServiceId() 
                 : appleProperties.getClientId();
-        if (!expectedAudience.equals(aud)) {
-            log.error("【Apple服务】audience验证失败：expected={}, actual={}", expectedAudience, aud);
+        if (!isAudienceMatched(audNode, expectedAudience)) {
+            log.error("【Apple服务】audience验证失败：expected={}, actual={}", expectedAudience, audNode);
             throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
         }
 
@@ -149,11 +158,8 @@ public class AppleServiceImpl implements AppleService {
             }
         }
 
-        // 7. 验证签名（需要从Apple获取公钥）
-        // 注意：完整的签名验证需要使用Apple的公钥，这里先跳过，生产环境需要实现
-        // 可以通过 https://appleid.apple.com/auth/keys 获取公钥并验证
-        // 由于涉及RSA签名验证，建议使用 jjwt 或 nimbus-jose-jwt 库
-        if (!verifySignature(identityToken, kid, parts[0], parts[1], parts[2])) {
+        // 7. 验证签名（通过Apple公钥）
+        if (!verifySignature(identityToken, kid)) {
             log.error("【Apple服务】签名验证失败");
             throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
         }
@@ -165,7 +171,7 @@ public class AppleServiceImpl implements AppleService {
         }
 
         String sub = payloadNode.get("sub").asText();
-        log.info("【Apple服务】验证成功：sub={}, iss={}, aud={}", sub, iss, aud);
+        log.info("【Apple服务】验证成功：sub={}, iss={}, aud={}", sub, iss, audNode);
         return sub;
     }
 
@@ -182,30 +188,25 @@ public class AppleServiceImpl implements AppleService {
      * @param signature JWT signature部分
      * @return 验证结果
      */
-    private boolean verifySignature(String identityToken, String kid, 
-                                     String header, String payload, String signature) {
-        // TODO: 实现完整的RSA签名验证
-        // 1. 从 https://appleid.apple.com/auth/keys 获取Apple公钥（根据kid匹配）
-        // 2. 使用公钥验证签名
-        // 
-        // 示例代码框架：
-        // try {
-        //     String publicKeyUrl = appleProperties.getPublicKeyUrl();
-        //     // 获取Apple公钥
-        //     JsonNode keysResponse = fetchApplePublicKeys(publicKeyUrl);
-        //     // 根据kid找到对应的公钥
-        //     String publicKey = findPublicKeyByKid(keysResponse, kid);
-        //     // 使用公钥验证签名
-        //     return JwtUtil.verifyRS256(header + "." + payload, signature, publicKey);
-        // } catch (Exception e) {
-        //     log.error("签名验证异常", e);
-        //     return false;
-        // }
-        
-        // 当前简化实现：仅检查格式，不进行实际签名验证
-        // 生产环境必须实现完整的签名验证！
-        log.warn("【Apple服务】签名验证暂未实现，仅进行格式检查。生产环境必须实现完整的RSA签名验证！");
-        return StringUtils.hasText(signature);
+    private boolean verifySignature(String identityToken, String kid) {
+        try {
+            RSAPublicKey publicKey = getApplePublicKey(kid);
+            if (publicKey == null) {
+                log.error("【Apple服务】未找到匹配的Apple公钥：kid={}", kid);
+                return false;
+            }
+            Jwts.parser()
+                    .verifyWith(publicKey)
+                    .build()
+                    .parseSignedClaims(identityToken);
+            return true;
+        } catch (JwtException e) {
+            log.error("【Apple服务】签名验证失败：{}", e.getMessage());
+            return false;
+        } catch (Exception e) {
+            log.error("【Apple服务】签名验证异常：{}", e.getMessage(), e);
+            return false;
+        }
     }
 
     /**
@@ -227,6 +228,60 @@ public class AppleServiceImpl implements AppleService {
         }
 
         return objectMapper.readTree(responseBody);
+    }
+
+    private RSAPublicKey getApplePublicKey(String kid) throws Exception {
+        if (!StringUtils.hasText(kid)) {
+            log.error("【Apple服务】identityToken缺少kid");
+            return null;
+        }
+        long now = System.currentTimeMillis();
+        if (now < applePublicKeysExpireAt && applePublicKeys.containsKey(kid)) {
+            return applePublicKeys.get(kid);
+        }
+        JsonNode keysResponse = fetchApplePublicKeys(appleProperties.getPublicKeyUrl());
+        Map<String, RSAPublicKey> keyMap = new HashMap<>();
+        if (keysResponse.has("keys")) {
+            for (JsonNode keyNode : keysResponse.get("keys")) {
+                String keyKid = keyNode.has("kid") ? keyNode.get("kid").asText() : null;
+                String kty = keyNode.has("kty") ? keyNode.get("kty").asText() : null;
+                String n = keyNode.has("n") ? keyNode.get("n").asText() : null;
+                String e = keyNode.has("e") ? keyNode.get("e").asText() : null;
+                if (!"RSA".equals(kty) || !StringUtils.hasText(keyKid) || !StringUtils.hasText(n) || !StringUtils.hasText(e)) {
+                    continue;
+                }
+                RSAPublicKey publicKey = buildRsaPublicKey(n, e);
+                keyMap.put(keyKid, publicKey);
+            }
+        }
+        applePublicKeys = keyMap;
+        applePublicKeysExpireAt = now + APPLE_PUBLIC_KEYS_CACHE_SECONDS * 1000;
+        return applePublicKeys.get(kid);
+    }
+
+    private RSAPublicKey buildRsaPublicKey(String n, String e) throws Exception {
+        byte[] nBytes = Base64.getUrlDecoder().decode(n);
+        byte[] eBytes = Base64.getUrlDecoder().decode(e);
+        BigInteger modulus = new BigInteger(1, nBytes);
+        BigInteger exponent = new BigInteger(1, eBytes);
+        RSAPublicKeySpec spec = new RSAPublicKeySpec(modulus, exponent);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        return (RSAPublicKey) keyFactory.generatePublic(spec);
+    }
+
+    private boolean isAudienceMatched(JsonNode audNode, String expectedAudience) {
+        if (audNode == null || !StringUtils.hasText(expectedAudience)) {
+            return false;
+        }
+        if (audNode.isArray()) {
+            for (JsonNode node : audNode) {
+                if (expectedAudience.equals(node.asText())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return expectedAudience.equals(audNode.asText());
     }
 }
 

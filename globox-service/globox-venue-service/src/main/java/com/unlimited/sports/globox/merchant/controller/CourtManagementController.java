@@ -3,13 +3,10 @@ package com.unlimited.sports.globox.merchant.controller;
 
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
-import com.unlimited.sports.globox.common.result.RpcResult;
-import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.merchant.mapper.MerchantMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
 import com.unlimited.sports.globox.merchant.service.CourtManagementService;
-import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.merchant.dto.CourtBatchCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtCreateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CourtUpdateDto;
@@ -21,16 +18,15 @@ import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueBasicInfo;
 import com.unlimited.sports.globox.model.merchant.vo.MerchantVenueDetailVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import com.unlimited.sports.globox.merchant.util.*;
 
 import java.util.List;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
@@ -58,17 +54,19 @@ public class CourtManagementController {
      */
     @GetMapping("/info")
     public R<MerchantInfoVo> getMerchantInfo(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr) {
 
         // 2. 认证并获取上下文，确保请求合法
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        log.info("[商家信息查询] staff{} merchantId: {}",employeeId , context.getMerchantId());
+        log.info("[商家信息查询] staff: {} merchantId: {}  context.getMerchantId:{}",employeeId ,merchantId, context.getMerchantId());
 
         // 3. 从数据库中查询商家详细信息
-        Merchant merchant = merchantMapper.selectById(context.getMerchantId());
-        VenueStaff staff = venueStaffMapper.selectById(employeeId);
+        Merchant merchant = merchantMapper.selectById(merchantId);
+        VenueStaff staff = venueStaffMapper.selectActiveStaffByUserId(employeeId);
+        log.info("[当前登陆商家信息]staff: {}", staff);
 
         if (merchant == null) {
             throw new GloboxApplicationException("商家信息不存在");
@@ -86,11 +84,12 @@ public class CourtManagementController {
      */
     @PostMapping("/courts/create")
     public R<CourtVo> createCourt(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Validated CourtCreateDto createDTO) {
         // 认证并获取上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 验证场馆访问权限（员工只能在自己场馆创建场地）
         merchantAuthUtil.validateVenueAccess(context, createDTO.getVenueId());
@@ -104,12 +103,13 @@ public class CourtManagementController {
      */
     @PostMapping("/courts/batch-create")
     public R<List<CourtVo>> batchCreateCourts(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Validated CourtBatchCreateDto batchDTO) {
 
         // 1. 认证并获取上下文
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         // 2. 验证场馆访问权限
         merchantAuthUtil.validateVenueAccess(context, batchDTO.getVenueId());
@@ -124,11 +124,12 @@ public class CourtManagementController {
      */
     @PutMapping("/courts/update")
     public R<CourtVo> updateCourt(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Validated CourtUpdateDto updateDTO) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         CourtVo court = courtManagementService.updateCourt(context.getMerchantId(), updateDTO);
         return R.ok(court);
@@ -139,11 +140,12 @@ public class CourtManagementController {
      */
     @DeleteMapping("/courts/{courtId}")
     public R<Long> deleteCourt(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long courtId) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         courtManagementService.deleteCourt(context.getMerchantId(), courtId);
         return R.ok(courtId);
@@ -154,11 +156,12 @@ public class CourtManagementController {
      */
     @GetMapping("/courts/list")
     public R<List<CourtVo>> listCourts(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestParam Long venueId) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
         // 验证场馆访问权限（员工只能查询自己的场馆）
         merchantAuthUtil.validateVenueAccess(context, venueId);
         log.info("[场地查询]参数：merchantId: {}, venueId: {}", context.getMerchantId(), venueId);
@@ -173,12 +176,13 @@ public class CourtManagementController {
      */
     @PostMapping("/courts/{courtId}/toggle-status")
     public R<CourtVo> toggleStatus(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long courtId,
             @RequestParam Integer status) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         CourtVo court = courtManagementService.toggleCourtStatus(context.getMerchantId(), courtId, status);
         return R.ok(court);
@@ -189,10 +193,11 @@ public class CourtManagementController {
      */
     @GetMapping("/venue/venue-ids")
     public R<List<Long>> getVenueIds(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         List<Long> venueIds;
         log.info("merchantId: {}", context.getMerchantId());
@@ -206,10 +211,11 @@ public class CourtManagementController {
      */
     @GetMapping("/venue/venues-info")
     public R<List<MerchantVenueBasicInfo>> getVenuesInfo(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         log.info("[场馆信息查询] merchantId: {}", context.getMerchantId());
 
@@ -224,10 +230,11 @@ public class CourtManagementController {
      */
     @GetMapping("/venue/venues-with-courts")
     public R<List<MerchantVenueDetailVo>> getVenuesWithCourts(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         log.info("[嵌套信息查询] merchantId: {}", context.getMerchantId());
         List<MerchantVenueDetailVo> result = courtManagementService.getVenuesWithCourts(context.getMerchantId());

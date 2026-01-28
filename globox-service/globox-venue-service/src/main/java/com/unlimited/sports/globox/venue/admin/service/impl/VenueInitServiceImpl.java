@@ -11,6 +11,7 @@ import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplateP
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConfig;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivitySlotLock;
+import com.unlimited.sports.globox.model.venue.entity.venues.VenueExtraChargeTemplate;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.model.venue.enums.VenueActivityStatusEnum;
 import com.unlimited.sports.globox.venue.admin.dto.CreateVenueInitDto;
@@ -73,6 +74,9 @@ public class VenueInitServiceImpl implements IVenueInitService {
     @Autowired
     private VenueBookingSlotRecordMapper venueBookingSlotRecordMapper;
 
+    @Autowired
+    private VenueExtraChargeTemplateMapper venueExtraChargeTemplateMapper;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public VenueInitResultVo createVenue(Long merchantId, CreateVenueInitDto dto) {
@@ -118,6 +122,10 @@ public class VenueInitServiceImpl implements IVenueInitService {
             createThirdPartyConfig(venueId, dto.getThirdPartyConfig());
             log.info("第三方平台配置创建成功：venueId={}", venueId);
         }
+
+        // 10. 创建额外费用配置
+        int extraChargeCount = createExtraCharges(venueId, dto.getExtraCharges());
+        log.info("额外费用配置创建成功：共{}条", extraChargeCount);
 
         // 返回结果
         return VenueInitResultVo.builder()
@@ -297,6 +305,36 @@ public class VenueInitServiceImpl implements IVenueInitService {
                 .build();
 
         venueThirdPartyConfigMapper.insert(config);
+    }
+
+    /**
+     * 创建额外费用配置
+     */
+    private int createExtraCharges(Long venueId, List<CreateVenueInitDto.ExtraChargeConfigDto> extraCharges) {
+        if (extraCharges == null || extraCharges.isEmpty()) {
+            return 0;
+        }
+
+        List<VenueExtraChargeTemplate> charges = extraCharges.stream()
+                .map(chargeDto -> {
+                    VenueExtraChargeTemplate charge = new VenueExtraChargeTemplate();
+                    charge.setVenueId(venueId);
+                    charge.setChargeName(chargeDto.getChargeName());
+                    charge.setChargeType(chargeDto.getChargeType());
+                    charge.setChargeLevel(chargeDto.getChargeLevel());
+                    charge.setChargeMode(chargeDto.getChargeMode());
+                    charge.setUnitAmount(chargeDto.getUnitAmount());
+                    charge.setApplicableCourtIds(chargeDto.getApplicableCourtIds());
+                    charge.setApplicableDays(chargeDto.getApplicableDays() != null ? chargeDto.getApplicableDays() : 0);
+                    charge.setDescription(chargeDto.getDescription());
+                    charge.setIsEnabled(chargeDto.getIsEnabled() != null ? chargeDto.getIsEnabled() : 1);
+                    charge.setIsDefault(chargeDto.getIsDefault() != null ? chargeDto.getIsDefault() : 0);
+                    return charge;
+                })
+                .toList();
+
+        charges.forEach(venueExtraChargeTemplateMapper::insert);
+        return charges.size();
     }
 
     @Override

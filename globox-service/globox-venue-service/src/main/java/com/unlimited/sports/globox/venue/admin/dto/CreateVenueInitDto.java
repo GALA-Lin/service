@@ -96,6 +96,14 @@ public class CreateVenueInitDto {
     private ThirdPartyConfigDto thirdPartyConfig;
 
     /**
+     * 额外费用配置列表（如灯光费、教练费等）
+     */
+    @Valid
+    @Size(max = 20, message = "额外费用配置不能超过20个")
+    @Schema(description = "额外费用配置列表")
+    private List<ExtraChargeConfigDto> extraCharges;
+
+    /**
      * 场馆基本信息
      */
     @Data
@@ -285,21 +293,82 @@ public class CreateVenueInitDto {
         private String endTime;
 
         @NotNull(message = "工作日价格不能为空")
-        @DecimalMin(value = "0.01", message = "工作日价格必须大于0")
+        @DecimalMin(value = "0", message = "工作日价格不能为负数")
         @Digits(integer = 6, fraction = 2, message = "价格格式不正确")
         @Schema(description = "工作日价格")
         private BigDecimal weekdayPrice;
 
         @NotNull(message = "周末价格不能为空")
-        @DecimalMin(value = "0.01", message = "周末价格必须大于0")
+        @DecimalMin(value = "0", message = "周末价格不能为负数")
         @Digits(integer = 6, fraction = 2, message = "价格格式不正确")
         @Schema(description = "周末价格")
         private BigDecimal weekendPrice;
 
         @NotNull(message = "节假日价格不能为空")
-        @DecimalMin(value = "0.01", message = "节假日价格必须大于0")
+        @DecimalMin(value = "0", message = "节假日价格不能为负数")
         @Digits(integer = 6, fraction = 2, message = "价格格式不正确")
         @Schema(description = "节假日价格")
         private BigDecimal holidayPrice;
+    }
+
+    /**
+     * 额外费用配置
+     */
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Schema(description = "额外费用配置")
+    public static class ExtraChargeConfigDto {
+
+        @NotBlank(message = "费用名称不能为空")
+        @Length(min = 1, max = 50, message = "费用名称长度1-50个字符")
+        @Schema(description = "费用名称（商家自定义），如LED灯光费、专业教练")
+        private String chargeName;
+
+        @NotNull(message = "费用类型不能为空")
+        @Min(value = 1, message = "费用类型范围1-6")
+        @Max(value = 6, message = "费用类型范围1-6")
+        @Schema(description = "费用类型：1=LIGHT(灯光费)，2=COACH(教练费)，3=EQUIPMENT(器材费)，4=PARKING(停车费)，5=CLEANING(清洁费)，6=OTHER(其他)")
+        private Integer chargeType;
+
+        @NotNull(message = "费用级别不能为空")
+        @Min(value = 1, message = "费用级别范围1-2")
+        @Max(value = 2, message = "费用级别范围1-2")
+        @Schema(description = "费用级别：1=ORDER_LEVEL(订单级别)，2=ORDER_ITEM_LEVEL(订单项级别)")
+        private Integer chargeLevel;
+
+        @NotNull(message = "计费方式不能为空")
+        @Min(value = 1, message = "计费方式范围1-2")
+        @Max(value = 2, message = "计费方式范围1-2")
+        @Schema(description = "计费方式：1=FIXED(固定金额)，2=PERCENTAGE(百分比)")
+        private Integer chargeMode;
+
+        @NotNull(message = "单位金额或比例不能为空")
+        @DecimalMin(value = "0", message = "单位金额或比例不能为负数")
+        @Digits(integer = 6, fraction = 2, message = "数值格式不正确")
+        @Schema(description = "单位金额或比例（FIXED时为固定费用金额，PERCENTAGE时为百分比值，如5表示5%）")
+        private BigDecimal unitAmount;
+
+        @Schema(description = "适用场地ID列表（留空表示对所有场地适用）")
+        private List<Long> applicableCourtIds;
+
+        @Min(value = 0, message = "适用天数范围0-2")
+        @Max(value = 2, message = "适用天数范围0-2")
+        @Schema(description = "适用天数：0=ALL(所有天)，1=WEEKDAY(工作日)，2=WEEKEND(周末)，默认为0")
+        private Integer applicableDays = 0;
+
+        @Schema(description = "费用描述")
+        @Length(max = 200, message = "费用描述长度不能超过200个字符")
+        private String description;
+
+        @Schema(description = "是否启用：0=否，1=是，默认为1")
+        @Min(value = 0, message = "是否启用范围0-1")
+        @Max(value = 1, message = "是否启用范围0-1")
+        private Integer isEnabled = 1;
+
+        @Schema(description = "是否为默认费用（用户预订时自动选中）：0=否，1=是，默认为0")
+        @Min(value = 0, message = "是否为默认费用范围0-1")
+        @Max(value = 1, message = "是否为默认费用范围0-1")
+        private Integer isDefault = 0;
     }
 }

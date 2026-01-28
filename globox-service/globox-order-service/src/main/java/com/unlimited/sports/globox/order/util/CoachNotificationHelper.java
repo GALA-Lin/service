@@ -11,6 +11,7 @@ import com.unlimited.sports.globox.model.order.entity.OrderItems;
 import com.unlimited.sports.globox.order.mapper.OrderItemsMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.util.ObjectUtils;
 
@@ -103,6 +104,22 @@ public class CoachNotificationHelper {
             log.info("[Coach通知] 退款成功到账，通知学员, orderNo={}, buyerId={}, refundAmount={}", orderNo, buyerId, refundAmount);
         } catch (Exception e) {
             log.error("[Coach通知] 退款成功通知发送失败, orderNo={}, buyerId={}", orderNo, buyerId, e);
+        }
+    }
+
+    /**
+     * 发送COACH_ORDER_AUTO_CANCELLED通知（订单未支付超时自动取消，通知学员"订单已自动取消"）
+     */
+    public void sendCoachOrderAutoCancelled(Long orderNo, Long buyerId) {
+        try {
+            Map<String, Object> customData = new HashMap<>();
+            customData.put("orderNo", orderNo);
+            customData.put("cancelledAt", LocalDateTime.now().toString());
+
+            notificationSender.sendNotification(buyerId, NotificationEventEnum.COACH_ORDER_AUTO_CANCELLED, orderNo, customData);
+            log.info("[Coach通知] 订单自动取消，通知学员, orderNo={}, buyerId={}", orderNo, buyerId);
+        } catch (Exception e) {
+            log.error("[Coach通知] 订单自动取消通知发送失败, orderNo={}, buyerId={}", orderNo, buyerId, e);
         }
     }
 

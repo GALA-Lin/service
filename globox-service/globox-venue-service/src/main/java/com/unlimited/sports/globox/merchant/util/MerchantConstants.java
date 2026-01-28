@@ -6,9 +6,9 @@ package com.unlimited.sports.globox.merchant.util;
 public class MerchantConstants {
 
     /**
-     * 请求头：员工ID（商家所有者则是商家ID，员工则是venue_staff_id）
+     * 请求头：商家ID（由认证中心传入，仅商家所有者有值）
      */
-    public static final String HEADER_EMPLOYEE_ID = "X-Employee-Id";
+    public static final String HEADER_MERCHANT_ID = "X-Merchant-Id";
 
     /**
      * 请求头：商家角色（MERCHANT_OWNER 或 MERCHANT_STAFF）

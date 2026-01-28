@@ -4,29 +4,27 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.dubbo.order.OrderForCoachDubboService;
 import com.unlimited.sports.globox.dubbo.order.OrderForMerchantDubboService;
 import com.unlimited.sports.globox.dubbo.order.OrderForMerchantRefundDubboService;
 import com.unlimited.sports.globox.dubbo.order.dto.*;
-import com.unlimited.sports.globox.merchant.service.VenueOrderService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
-import com.unlimited.sports.globox.model.merchant.dto.OrderCancelDto;
-import com.unlimited.sports.globox.model.merchant.dto.OrderQueryDto;
-import com.unlimited.sports.globox.model.merchant.vo.OrderCancelResultVo;
-import com.unlimited.sports.globox.model.merchant.vo.VenueOrderStatisticsVo;
-import com.unlimited.sports.globox.model.merchant.vo.VenueOrderVo;
+import com.unlimited.sports.globox.model.merchant.dto.MerchantCancelOrderDto;
+import com.unlimited.sports.globox.model.merchant.dto.MerchantGetOrderDetailsDto;
+import com.unlimited.sports.globox.model.merchant.dto.MerchantGetOrderDto;
+import com.unlimited.sports.globox.model.merchant.dto.MerchantRefundDto;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.springframework.beans.BeanUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
 
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_EMPLOYEE_ID;
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 
@@ -53,23 +51,25 @@ public class VenueOrderController {
      */
     @GetMapping("/list")
     public R<IPage<MerchantGetOrderResultDto>> getOrderPage(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @Valid MerchantGetOrderPageRequestDto dto) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @Valid MerchantGetOrderDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
+        MerchantGetOrderPageRequestDto requestDto = new MerchantGetOrderPageRequestDto();
+        BeanUtils.copyProperties(dto, requestDto);
         // 如果指定了场馆ID，需要验证访问权限
-        if (dto.getVenueId() != null) {
-            merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+        if (requestDto.getVenueId() != null) {
+            merchantAuthUtil.validateVenueAccess(context, requestDto.getVenueId());
         }
 
         // 如果是员工且未指定场馆，则只查询自己场馆的订单
-        if (context.isStaff() && dto.getVenueId() == null) {
-            dto.setVenueId(context.getVenueId());
+        if (context.isStaff() && requestDto.getVenueId() == null) {
+            requestDto.setVenueId(context.getVenueId());
         }
-        dto.setMerchantId(context.getMerchantId());
-        RpcResult<IPage<MerchantGetOrderResultDto>> resultDto = orderForMerchantDubboService.getOrderPage(dto);
+        requestDto.setMerchantId(context.getMerchantId());
+        RpcResult<IPage<MerchantGetOrderResultDto>> resultDto = orderForMerchantDubboService.getOrderPage(requestDto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
     }
@@ -80,17 +80,27 @@ public class VenueOrderController {
     @Operation(summary = "查询订单详情")
     @GetMapping("/details")
     public R<MerchantGetOrderResultDto>  getOrderDetail(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @Valid MerchantGetOrderDetailsRequestDto dto) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @Valid MerchantGetOrderDetailsDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-        dto.setMerchantId(context.getMerchantId());
-        RpcResult<MerchantGetOrderResultDto> resultDto = orderForMerchantDubboService.getOrderDetails(dto);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+        MerchantGetOrderDetailsRequestDto requestDto = MerchantGetOrderDetailsRequestDto.builder()
+                .orderNo(dto.getOrderNo())
+                .merchantId(merchantId)
+                .venueId(dto.getVenueId())
+                .build();
+        // 如果是员工且未指定场馆，则只查询自己场馆的订单
+        if (context.isStaff()) {
+            requestDto.setVenueId(context.getVenueId());
+        }
+        requestDto.setMerchantId(context.getMerchantId());
+        RpcResult<MerchantGetOrderResultDto> resultDto = orderForMerchantDubboService.getOrderDetails(requestDto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
     }
-
 
     /**
      * 取消订单（全部/部分）
@@ -98,13 +108,25 @@ public class VenueOrderController {
     @Operation(summary = "取消订单（全部/部分）")
     @PostMapping("/cancel")
     public R<SellerCancelOrderResultDto> cancelOrder(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestBody @Valid MerchantCancelOrderRequestDto dto) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @RequestBody @Valid MerchantCancelOrderDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-        dto.setMerchantId(context.getMerchantId());
-        RpcResult<SellerCancelOrderResultDto> resultDto =  orderForMerchantDubboService.cancelUnpaidOrder(dto);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+
+        merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+        MerchantCancelOrderRequestDto requestDto = MerchantCancelOrderRequestDto.builder()
+                .orderNo(dto.getOrderNo())
+                .venueId(dto.getVenueId())
+                .merchantId(merchantId)
+                .build();
+        // 如果是员工且未指定场馆，则只查询自己场馆的订单
+        if (context.isStaff()) {
+            requestDto.setVenueId(context.getVenueId());
+        }
+        requestDto.setMerchantId(context.getMerchantId());
+        RpcResult<SellerCancelOrderResultDto> resultDto =  orderForMerchantDubboService.cancelUnpaidOrder(requestDto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
     }
@@ -115,13 +137,27 @@ public class VenueOrderController {
     @Operation(summary = "商家发起退款")
     @PostMapping("/refund")
     public R<SellerRefundResultDto> refundOrder(
-            @RequestHeader(value = HEADER_EMPLOYEE_ID, required = false) Long employeeId,
-            @RequestHeader(value = HEADER_MERCHANT_ROLE, required = false) String roleStr,
-            @RequestBody @Valid MerchantRefundRequestDto dto) {
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @RequestBody @Valid MerchantRefundDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, roleStr);
-        dto.setMerchantId(context.getMerchantId());
-        RpcResult<SellerRefundResultDto> resultDto = orderForMerchantRefundDubboService.refund(dto);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+
+        MerchantRefundRequestDto requestDto = MerchantRefundRequestDto.builder()
+                .merchantId(merchantId)
+                .venueId(dto.getVenueId())
+                .orderNo(dto.getOrderNo())
+                .remark(dto.getRemark())
+                .build();
+
+        // 如果是员工且未指定场馆，则只查询自己场馆的订单
+        if (context.isStaff()) {
+            requestDto.setVenueId(context.getVenueId());
+        }
+        requestDto.setMerchantId(context.getMerchantId());
+        RpcResult<SellerRefundResultDto> resultDto = orderForMerchantRefundDubboService.refund(requestDto);
         Assert.rpcResultOk(resultDto);
         return R.ok(resultDto.getData());
     }

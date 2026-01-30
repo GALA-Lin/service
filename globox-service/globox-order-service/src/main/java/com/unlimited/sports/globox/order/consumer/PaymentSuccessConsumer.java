@@ -290,6 +290,7 @@ public class PaymentSuccessConsumer {
 
         long delayMillis = LocalDateUtils.delayMillis(bookingDate, localTime);
         int delay = Math.toIntExact(delayMillis / 1000);
+        log.info("[支付成功回调] 发送自动完成延迟事件，延迟时间：{}s，orderNo：{}",delay, orderNo);
 
         // 10) 发送延迟消息订单完成
         OrderAutoCompleteMessage autoCompleteMessage = OrderAutoCompleteMessage.builder()

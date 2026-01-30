@@ -393,6 +393,8 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
                             .scheduleType("PLATFORM_SLOT")
                             .studentName(user != null ? user.getNickName() : "未知学员")
                             .studentPhone(finalPhoneMap.get(record.getLockedByUserId()))
+                            .venue(record.getVenue())
+                            .remark(record.getRemark())
                             .bookingId(record.getCoachSlotRecordId())
                             .build();
                 })
@@ -410,6 +412,8 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
                             .endTime(custom.getEndTime())
                             .scheduleType("CUSTOM_EVENT")
                             .studentName(custom.getStudentName())
+                            .venue(custom.getVenueName())
+                            .remark(custom.getRemark())
                             // .studentPhone(custom.getContactPhone())
                             .customScheduleId(custom.getCoachCustomScheduleId())
                             .build())
@@ -438,6 +442,10 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
 
         // 如果提供了recordId，直接更新
         if (dto.getSlotRecordId() != null) {
+            CoachSlotRecord record = slotRecordMapper.selectById(dto.getSlotRecordId());
+            if (record == null) {
+                throw new GloboxApplicationException("时段记录不存在");
+            }
             int updated = slotRecordMapper.updateLockIfAvailable(
                     dto.getSlotRecordId(),
                     CoachSlotRecordStatusEnum.LOCKED.getCode(), // 使用枚举
@@ -446,6 +454,12 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
             );
 
             if (updated > 0) {
+                if (dto.getVenue() != null || dto.getRemark() != null) {
+                    record = slotRecordMapper.selectById(dto.getSlotRecordId());
+                    record.setVenue(dto.getVenue());
+                    record.setRemark(dto.getRemark());
+                    slotRecordMapper.updateById(record);
+                }
                 log.info("时段锁定成功 - slotRecordId: {}", dto.getSlotRecordId());
                 return true;
             } else {
@@ -490,7 +504,8 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         record.setLockedType(CoachSlotLockType.USER_ORDER_LOCK.getCode()); // 使用枚举
         record.setOperatorId(dto.getUserId());
         record.setOperatorSource(2); // 用户端
-
+        record.setVenue(dto.getVenue());
+        record.setRemark(dto.getRemark());
         slotRecordMapper.insert(record);
         log.info("创建新记录并锁定成功 - recordId: {}", record.getCoachSlotRecordId());
         return true;
@@ -744,9 +759,37 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         return unlockedCount;
     }
 
+    /**
+     * 更新时段的场地和备注信息
+     * 教练可以在确认订单后修改上课地点和备注
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void updateSlotVenue(UpdateCoachSlotVenueDto dto) {
+        log.info("更新时段场地信息 - slotRecordId: {}, coachUserId: {}",
+                dto.getSlotRecordId(), dto.getCoachUserId());
+
+        CoachSlotRecord record = slotRecordMapper.selectById(dto.getSlotRecordId());
+        if (record == null) {
+            throw new GloboxApplicationException("时段记录不存在");
+        }
+
+        // 验证权限：只有该教练可以修改自己的时段
+        if (!record.getCoachUserId().equals(dto.getCoachUserId())) {
+            throw new GloboxApplicationException("无权限修改该时段");
+        }
+
+        // 更新场地和备注信息
+        record.setVenue(dto.getVenue());
+        record.setRemark(dto.getRemark());
+
+        slotRecordMapper.updateById(record);
+        log.info("时段场地信息更新成功 - slotRecordId: {}", dto.getSlotRecordId());
+    }
+
 
     /**
-     * 创建自定义日程(按需生成占位记录)
+         * 创建自定义日程(按需生成占位记录)
      */
     @Override
     @Transactional(rollbackFor = Exception.class)

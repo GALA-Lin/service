@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties("user.profile")
 public class UserProfileDefaultProperties {
     private String defaultAvatarUrl;
+    private String defaultAvatarUrlApp;
+    private String defaultAvatarUrlMiniapp;
     private String defaultStarCardMaleUrl;
     private String defaultStarCardFemaleUrl;
 }

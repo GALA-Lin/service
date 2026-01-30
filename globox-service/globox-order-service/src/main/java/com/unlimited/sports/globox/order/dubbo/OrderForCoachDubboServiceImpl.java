@@ -361,7 +361,7 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
         List<OrderItems> orderItems = orderItemsMapper.selectList(
                 Wrappers.<OrderItems>lambdaQuery()
                         .eq(OrderItems::getOrderNo, dto.getOrderNo()));
-        if (!ObjectUtils.isEmpty(orderItems)) {
+        if (ObjectUtils.isEmpty(orderItems)) {
             return RpcResult.error(OrderCode.ORDER_ITEM_NOT_EXIST);
         }
         List<Long> reqItemIds = orderItems.stream().map(OrderItems::getId).toList();

@@ -7,6 +7,7 @@ import com.unlimited.sports.globox.common.enums.notification.NotificationEventEn
 import com.unlimited.sports.globox.common.enums.social.RallyTimeTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.social.RallyStartingReminderMessage;
+import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.NotificationSender;
 import com.unlimited.sports.globox.common.result.PaginationResult;
@@ -193,10 +194,10 @@ public class RallyServiceImpl implements RallyService {
      * @return 创建的活动实体
      */
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public RallyPosts createRally(RallyPostsDto rallyPostsDto, Long rallyApplicantId) {
         if (rallyPostsDto.getRallyEventDate().isBefore(LocalDate.now())){
-            return null;
+            throw new GloboxApplicationException(SocialCode.RALLY_EVENT_DATE_BEFORE_NOW);
         }
         StringBuilder builder = new StringBuilder();
         builder.append(rallyPostsDto.getRallyTitle())
@@ -209,7 +210,6 @@ public class RallyServiceImpl implements RallyService {
             builder.append(rallyPostsDto.getRallyCourtName())
                     .append('\n');
         }
-
 
         RpcResult<Void> voidRpcResult = sensitiveWordsDubboService.checkSensitiveWords(builder.toString());
         Assert.rpcResultOk(voidRpcResult);

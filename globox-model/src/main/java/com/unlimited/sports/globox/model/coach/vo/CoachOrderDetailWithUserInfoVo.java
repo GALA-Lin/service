@@ -146,6 +146,15 @@ public class CoachOrderDetailWithUserInfoVo implements Serializable {
 
     private Long refundApplyId;
 
+    /**
+     * 场地名称（球场名称）
+     */
+    private String venue;
+
+    /**
+     * 订单备注（学员填写的特殊需求）
+     */
+    private String remark;
 
     /**
      * 下单人基本信息

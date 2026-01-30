@@ -30,6 +30,8 @@ public class MerchantAccount implements Serializable {
      */
     private String account;
 
+    private Long merchantId;
+
     /**
      * 密码hash
      */

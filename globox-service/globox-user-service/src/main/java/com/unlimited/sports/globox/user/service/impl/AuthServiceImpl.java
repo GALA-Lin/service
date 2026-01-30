@@ -403,7 +403,7 @@ public class AuthServiceImpl implements AuthService {
                     .id(authUser.getUserId())
                     .phone(phoneIdentity != null ? phoneIdentity.getIdentifier() : null)
                     .nickname(userProfile != null ? userProfile.getNickName() : null)
-                    .avatarUrl(resolveAvatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null))
+                    .avatarUrl(resolveAvatarUrlForResponse(userProfile != null ? userProfile.getAvatarUrl() : null, clientType))
                     .build();
 
             // 已绑定直接登录（除非是重新激活的账号）
@@ -500,7 +500,7 @@ public class AuthServiceImpl implements AuthService {
                         .id(authUser.getUserId())
                         .phone(phoneIdentity != null ? phoneIdentity.getIdentifier() : null)
                         .nickname(userProfile != null ? userProfile.getNickName() : null)
-                        .avatarUrl(resolveAvatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null))
+                        .avatarUrl(resolveAvatarUrlForResponse(userProfile != null ? userProfile.getAvatarUrl() : null, clientType))
                         .build();
 
                 WechatLoginResponse response = WechatLoginResponse.builder()
@@ -862,7 +862,7 @@ public class AuthServiceImpl implements AuthService {
                 .id(userId)
                 .phone(phone)
                 .nickname(userProfile != null ? userProfile.getNickName() : null)
-                .avatarUrl(resolveAvatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null))
+                .avatarUrl(resolveAvatarUrlForResponse(userProfile != null ? userProfile.getAvatarUrl() : null, clientType))
                 .build();
 
         ThirdPartyLoginResponse response = ThirdPartyLoginResponse.builder()
@@ -1483,7 +1483,7 @@ public class AuthServiceImpl implements AuthService {
                     .id(authUser.getUserId())
                     .phone(phoneIdentity != null ? phoneIdentity.getIdentifier() : null)
                     .nickname(userProfile != null ? userProfile.getNickName() : null)
-                    .avatarUrl(resolveAvatarUrl(userProfile != null ? userProfile.getAvatarUrl() : null))
+                    .avatarUrl(resolveAvatarUrlForResponse(userProfile != null ? userProfile.getAvatarUrl() : null, clientType))
                     .build();
 
             WechatLoginResponse response = WechatLoginResponse.builder()
@@ -1533,7 +1533,7 @@ public class AuthServiceImpl implements AuthService {
         // 生成默认昵称：微信用户 + 用户ID后4位
         String defaultNickname = "微信用户" + String.format("%04d", userId % 10000);
         profile.setNickName(defaultNickname);
-        profile.setAvatarUrl(resolveAvatarUrl(null));
+        profile.setAvatarUrl(normalizeAvatarForStorage(null));
         applyDefaultProfileValues(profile);
         userProfileMapper.insert(profile);
 
@@ -1594,7 +1594,7 @@ public class AuthServiceImpl implements AuthService {
                 .id(userId)
                 .phone(null) // App端新用户未绑定手机号
                 .nickname(profile.getNickName())
-                .avatarUrl(resolveAvatarUrl(profile.getAvatarUrl()))
+                .avatarUrl(resolveAvatarUrlForResponse(profile.getAvatarUrl(), clientType))
                 .build();
 
         WechatLoginResponse response = WechatLoginResponse.builder()
@@ -1654,7 +1654,7 @@ public class AuthServiceImpl implements AuthService {
     private void resetUserProfileForCancellation(Long userId) {
         LambdaUpdateWrapper<UserProfile> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(UserProfile::getUserId, userId)
-                .set(UserProfile::getAvatarUrl, resolveAvatarUrl(null))
+                .set(UserProfile::getAvatarUrl, normalizeAvatarForStorage(null))
                 .set(UserProfile::getPortraitUrl, null)
                 .set(UserProfile::getNickName, "已注销用户")
                 .set(UserProfile::getSignature, DEFAULT_SIGNATURE)
@@ -1751,9 +1751,9 @@ public class AuthServiceImpl implements AuthService {
         }
         
         if (profileInit != null && StringUtils.hasText(profileInit.avatarUrl())) {
-            profile.setAvatarUrl(resolveAvatarUrl(profileInit.avatarUrl()));
+            profile.setAvatarUrl(normalizeAvatarForStorage(profileInit.avatarUrl()));
         } else {
-            profile.setAvatarUrl(resolveAvatarUrl(null));
+            profile.setAvatarUrl(normalizeAvatarForStorage(null));
         }
         
         applyDefaultProfileValues(profile);
@@ -1844,7 +1844,7 @@ public class AuthServiceImpl implements AuthService {
         LambdaUpdateWrapper<UserProfile> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(UserProfile::getUserId, userId)
                 .set(UserProfile::getNickName, nickname)
-                .set(UserProfile::getAvatarUrl, resolveAvatarUrl(null))
+                .set(UserProfile::getAvatarUrl, normalizeAvatarForStorage(null))
                 .set(UserProfile::getSignature, DEFAULT_SIGNATURE)
                 .set(UserProfile::getGender, GenderEnum.OTHER)
                 .set(UserProfile::getSportsStartYear, DEFAULT_SPORTS_YEARS)
@@ -2022,14 +2022,38 @@ public class AuthServiceImpl implements AuthService {
             throw new GloboxApplicationException(UserAuthCode.TOKEN_INVALID);
         }
     }
-    private String resolveAvatarUrl(String avatarUrl) {
+    private String normalizeAvatarForStorage(String avatarUrl) {
         if (StringUtils.hasText(avatarUrl)) {
             return avatarUrl;
+        }
+        return "";
+    }
+
+    private String resolveAvatarUrlForResponse(String avatarUrl, String clientType) {
+        if (StringUtils.hasText(avatarUrl)) {
+            return avatarUrl;
+        }
+        String resolvedClientType = clientType;
+        if (!StringUtils.hasText(resolvedClientType)) {
+            resolvedClientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        }
+        return resolveDefaultAvatarUrl(resolvedClientType);
+    }
+
+    private String resolveDefaultAvatarUrl(String clientType) {
+        if (StringUtils.hasText(clientType)) {
+            ClientType type = ClientType.fromValue(clientType);
+            if (ClientType.APP.equals(type) && StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrlApp())) {
+                return userProfileDefaultProperties.getDefaultAvatarUrlApp();
+            }
+            if (ClientType.THIRD_PARTY_JSAPI.equals(type) && StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrlMiniapp())) {
+                return userProfileDefaultProperties.getDefaultAvatarUrlMiniapp();
+            }
         }
         if (StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrl())) {
             return userProfileDefaultProperties.getDefaultAvatarUrl();
         }
-        return null;
+        return "";
     }
 
     /**

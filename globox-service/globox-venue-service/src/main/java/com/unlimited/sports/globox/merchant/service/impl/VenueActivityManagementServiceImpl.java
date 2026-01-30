@@ -110,7 +110,7 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
             // 员工 - 使用VenueStaff的displayName
             organizerType = OrganizerTypeEnum.STAFF;
             organizerId = context.getEmployeeId();
-            VenueStaff staff = venueStaffMapper.selectById(context.getEmployeeId());
+            VenueStaff staff = venueStaffMapper.selectActiveStaffByUserId(context.getEmployeeId());
             if (staff == null) {
                 log.warn("未找到员工信息 - employeeId: {}", context.getEmployeeId());
                 throw new GloboxApplicationException("员工信息不存在");

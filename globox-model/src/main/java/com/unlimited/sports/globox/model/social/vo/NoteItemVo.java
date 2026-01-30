@@ -1,13 +1,18 @@
 package com.unlimited.sports.globox.model.social.vo;
 
+import com.unlimited.sports.globox.common.vo.SearchDocumentDto;
+import com.unlimited.sports.globox.common.vo.SearchResultItem;
+import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 
 /**
  * 笔记列表项视图
  */
+@Slf4j
 @Data
 @Schema(description = "笔记列表项视图")
 public class NoteItemVo {
@@ -50,5 +55,45 @@ public class NoteItemVo {
 
     @Schema(description = "当前用户是否已点赞", example = "true")
     private Boolean liked;
+
+    /**
+     * 从搜索文档DTO转换为笔记列表项
+     *
+     * @param searchDocDto 搜索文档DTO
+     * @param userInfo 用户信息（昵称、头像）
+     * @return 笔记搜索结果项
+     */
+    public static SearchResultItem<NoteItemVo> fromSearchDocument(SearchDocumentDto searchDocDto, UserInfoVo userInfo) {
+        log.info("dto: {}", searchDocDto);
+
+        // 创建NoteItemVo
+        NoteItemVo noteItem = new NoteItemVo();
+        noteItem.setNoteId(searchDocDto.getBusinessId());
+        noteItem.setUserId(Long.parseLong(searchDocDto.getCreatorId()));
+        noteItem.setNickName(userInfo != null ? userInfo.getNickName() : null);
+        noteItem.setAvatarUrl(userInfo != null ? userInfo.getAvatarUrl() : null);
+        noteItem.setTitle(searchDocDto.getTitle());
+
+        // 截断内容（最多150字符）
+        String content = searchDocDto.getContent();
+        if (content != null && content.length() > 150) {
+            content = content.substring(0, 150) + "...";
+        }
+        noteItem.setContent(content);
+
+        noteItem.setCoverUrl(searchDocDto.getCoverUrl());
+        noteItem.setMediaType(searchDocDto.getNoteMediaType() != null ? searchDocDto.getNoteMediaType() : "IMAGE");
+        noteItem.setLikeCount(searchDocDto.getLikes() != null ? searchDocDto.getLikes() : 0);
+        noteItem.setCommentCount(searchDocDto.getComments() != null ? searchDocDto.getComments() : 0);
+        noteItem.setStatus(searchDocDto.getStatus() != null ? searchDocDto.getStatus() : "PUBLISHED");
+        noteItem.setCreatedAt(searchDocDto.getCreatedAt());
+        noteItem.setLiked(false); // 默认未点赞，需要调用方根据当前用户设置
+
+        // 返回搜索结果项
+        return SearchResultItem.<NoteItemVo>builder()
+                .dataType(searchDocDto.getDataType())
+                .data(noteItem)
+                .build();
+    }
 }
 

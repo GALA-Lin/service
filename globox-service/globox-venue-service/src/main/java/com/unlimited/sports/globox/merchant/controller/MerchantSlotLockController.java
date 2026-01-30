@@ -59,7 +59,7 @@ public class MerchantSlotLockController {
                     request.getReason(),
                     request.getUserName(),
                     request.getUserPhone(),
-                    employeeId,
+                    merchantId,
                     context.getMerchantId()
             );
         } else {
@@ -70,7 +70,7 @@ public class MerchantSlotLockController {
                     request.getReason(),
                     request.getUserName(),
                     request.getUserPhone(),
-                    employeeId,
+                    merchantId,
                     context.getMerchantId()
             );
         }

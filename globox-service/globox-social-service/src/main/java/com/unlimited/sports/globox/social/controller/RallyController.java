@@ -5,6 +5,7 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 
+import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.model.social.dto.*;
 import com.unlimited.sports.globox.model.social.entity.*;
 import com.unlimited.sports.globox.model.social.vo.RallyApplicationVo;
@@ -104,13 +105,9 @@ public class RallyController {
             @RequestBody @Valid RallyPostsDto rallyPostsDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long rallyApplicantId) {
-        if (rallyApplicantId == null){
-            log.error("请求头中缺少{}",HEADER_USER_ID);
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
         RallyPosts rally = rallyService.createRally(rallyPostsDto, rallyApplicantId);
         if (rally == null){
-            return R.error();
+            return R.error(SocialCode.RALLY_CREATE_FAILED);
         }else {
             return R.ok(rally);
         }

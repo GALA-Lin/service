@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Size;
 import java.time.LocalDate;
 
 /**
@@ -47,4 +48,17 @@ public class CoachSlotLockDto {
     @Max(value = 30, message = "锁定时间最多30分钟")
     @Builder.Default
     private Integer lockMinutes = 15;
+
+    /**
+     * 场地名称（学员下单时填写/教练修改）
+     */
+    @Size(max = 50, message = "场地名称不能超过200字")
+    private String venue;
+
+    /**
+     * 备注说明（学员下单时填写特殊需求/教练修改）
+     */
+    @Size(max = 500, message = "备注不能超过500字")
+    private String remark;
 }
+

@@ -101,7 +101,6 @@ public class OrderController {
     public R<GetOrderDetailsVo> getOrderDetails(
             @PathVariable @Parameter(description = "订单号", required = true, example = "202512180001") Long orderNo,
             @ModelAttribute @Valid @Parameter(description = "用户地理位置信息") GetOrderDetailsDto dto) {
-
         dto.setOrderNo(orderNo);
         GetOrderDetailsVo resultVo = orderService.getDetails(dto);
         return R.ok(resultVo);

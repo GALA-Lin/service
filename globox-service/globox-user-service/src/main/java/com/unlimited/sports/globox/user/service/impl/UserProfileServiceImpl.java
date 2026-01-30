@@ -7,6 +7,9 @@ import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
+import com.unlimited.sports.globox.common.enums.ClientType;
+import com.unlimited.sports.globox.common.utils.AuthContextHolder;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusDto;
@@ -266,8 +269,12 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setIsFollowed(false);
         vo.setIsMutual(false);
         vo.setHomeDistrictName(getRegionNameByCode(profile.getHomeDistrict()));
-        if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrl())) {
-            vo.setAvatarUrl(userProfileDefaultProperties.getDefaultAvatarUrl());
+        if (!StringUtils.hasText(vo.getAvatarUrl())) {
+            String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+            String defaultAvatarUrl = resolveDefaultAvatarUrl(clientType);
+            if (StringUtils.hasText(defaultAvatarUrl)) {
+                vo.setAvatarUrl(defaultAvatarUrl);
+            }
         }
 
         // 设置默认球星卡
@@ -1149,5 +1156,21 @@ public class UserProfileServiceImpl implements UserProfileService {
             log.error("球星卡肖像上传异常: userId={}", userId, e);
             return R.<String>error(UserAuthCode.PORTRAIT_MATTING_FAILED).message("球星卡肖像提交失败");
         }
+    }
+
+    private String resolveDefaultAvatarUrl(String clientType) {
+        if (StringUtils.hasText(clientType)) {
+            ClientType type = ClientType.fromValue(clientType);
+            if (ClientType.APP.equals(type) && StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrlApp())) {
+                return userProfileDefaultProperties.getDefaultAvatarUrlApp();
+            }
+            if (ClientType.THIRD_PARTY_JSAPI.equals(type) && StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrlMiniapp())) {
+                return userProfileDefaultProperties.getDefaultAvatarUrlMiniapp();
+            }
+        }
+        if (StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrl())) {
+            return userProfileDefaultProperties.getDefaultAvatarUrl();
+        }
+        return "";
     }
 }

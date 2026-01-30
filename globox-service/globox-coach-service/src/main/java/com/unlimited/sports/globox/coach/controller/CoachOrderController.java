@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.coach.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.unlimited.sports.globox.coach.constants.CoachConstants;
+import com.unlimited.sports.globox.coach.mapper.CoachSlotRecordMapper;
 import com.unlimited.sports.globox.coach.util.CoachNotificationUtil;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
@@ -14,7 +15,9 @@ import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
+import com.unlimited.sports.globox.model.coach.entity.CoachSlotRecord;
 import com.unlimited.sports.globox.model.coach.vo.CoachOrderDetailWithUserInfoVo;
+import com.unlimited.sports.globox.model.coach.vo.CoachRecordDto;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
@@ -43,6 +46,9 @@ public class CoachOrderController {
     @DubboReference(group = "rpc", timeout = CoachConstants.DUBBO_RPC_TIMEOUT)
     private UserDubboService userDubboService;
 
+    @Autowired
+    private CoachSlotRecordMapper coachSlotRecordMapper;
+
 
 
     @Autowired
@@ -65,52 +71,95 @@ public class CoachOrderController {
         log.info("获取教练订单列表 - coachUserId: {}, pageNum: {}, pageSize: {}",
                 coachUserId, pageNum, pageSize);
 
-        // 构建请求参数
+        // 1. 调用订单服务RPC接口获取分页基础数据
         CoachGetOrderPageRequestDto requestDto = CoachGetOrderPageRequestDto.builder()
                 .coachId(coachUserId)
                 .pageNum(pageNum)
                 .pageSize(pageSize)
                 .build();
 
-        // 调用订单服务RPC接口
         RpcResult<IPage<CoachGetOrderResultDto>> rpcResult =
                 orderForCoachDubboService.getOrderPage(requestDto);
 
-        // 检查RPC调用结果
         Assert.rpcResultOk(rpcResult);
-
-        log.info("成功获取教练订单列表 - coachUserId: {}, 总记录数: {}",
-                coachUserId, rpcResult.getData().getTotal());
         IPage<CoachGetOrderResultDto> orderPage = rpcResult.getData();
-        // 2. 提取所有 userId 并去重
+
+        if (orderPage.getRecords().isEmpty()) {
+            return R.ok(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+        }
+
+        // 2. 提取并去重所有关联 ID (用于批量查询优化性能)
+        // 提取用户ID
         List<Long> userIds = orderPage.getRecords().stream()
                 .map(CoachGetOrderResultDto::getUserId)
                 .distinct()
                 .collect(Collectors.toList());
 
-        // 3. 批量获取用户信息
+        // 提取所有时段记录ID (RecordId)
+        List<Long> allRecordIds = orderPage.getRecords().stream()
+                .flatMap(order -> order.getRecords().stream())
+                .map(RecordDto::getRecordId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        // 3. 批量查询本地数据库 (获取场馆和备注)
+        Map<Long, CoachSlotRecord> recordMap = Map.of();
+        if (!allRecordIds.isEmpty()) {
+            List<CoachSlotRecord> slotRecords = coachSlotRecordMapper.selectBatchIds(allRecordIds);
+            recordMap = slotRecords.stream()
+                    .collect(Collectors.toMap(
+                            CoachSlotRecord::getCoachSlotRecordId,
+                            record -> record,
+                            (v1, v2) -> v1
+                    ));
+        }
+
+        // 4. 批量调用用户服务 RPC (获取用户信息和手机号)
+        // 获取基本资料
         BatchUserInfoRequest userReq = new BatchUserInfoRequest();
         userReq.setUserIds(userIds);
-        BatchUserInfoResponse userResp = userDubboService.batchGetUserInfo(userReq).getData();
-        Map<Long, UserInfoVo> userMap = userResp.getUsers().stream()
+        RpcResult<BatchUserInfoResponse> userRpcResp = userDubboService.batchGetUserInfo(userReq);
+        Assert.rpcResultOk(userRpcResp);
+        Map<Long, UserInfoVo> userMap = userRpcResp.getData().getUsers().stream()
                 .collect(Collectors.toMap(UserInfoVo::getUserId, vo -> vo, (v1, v2) -> v1));
 
+        // 获取手机号
         RpcResult<List<UserPhoneDto>> phoneRpcResult = userDubboService.batchGetUserPhone(userIds);
         Assert.rpcResultOk(phoneRpcResult);
         Map<Long, String> phoneMap = phoneRpcResult.getData().stream()
                 .collect(Collectors.toMap(UserPhoneDto::getUserId, UserPhoneDto::getPhone, (v1, v2) -> v1));
 
-        // 3. 转换并封装 VO
+        // 5. 转换并封装最终的分页 VO
+        Map<Long, CoachSlotRecord> finalRecordMap = recordMap; // 用于 Lambda
         IPage<CoachOrderDetailWithUserInfoVo> resultPage = orderPage.convert(orderDto -> {
             CoachOrderDetailWithUserInfoVo vo = new CoachOrderDetailWithUserInfoVo();
-            // 复制订单基础属性
+            // 复制基础属性 (orderNo, totalPrice, status 等)
             BeanUtils.copyProperties(orderDto, vo);
 
-            // 设置用户信息
+            // A. 设置下单人信息
             vo.setBuyerInfo(userMap.get(orderDto.getUserId()));
+            vo.setBuyerPhone(phoneMap.get(orderDto.getUserId()));
+
+            // B. 设置时段记录列表 (使用已有的私有转换方法)
+            vo.setRecords(convertToCoachRecordDtos(orderDto.getRecords()));
+
+            // C. 提取场馆和备注 (逻辑：取该订单下第一个有时段信息的记录)
+            if (orderDto.getRecords() != null) {
+                for (RecordDto recordDto : orderDto.getRecords()) {
+                    CoachSlotRecord dbRecord = finalRecordMap.get(recordDto.getRecordId());
+                    if (dbRecord != null) {
+                        // 只要找到一个有值的就填充并跳出（通常同一订单的场地和备注是一致的）
+                        if (dbRecord.getVenue() != null) vo.setVenue(dbRecord.getVenue());
+                        if (dbRecord.getRemark() != null) vo.setRemark(dbRecord.getRemark());
+                        if (vo.getVenue() != null || vo.getRemark() != null) break;
+                    }
+                }
+            }
+
             return vo;
         });
 
+        log.info("成功处理教练订单列表分页 - 记录数: {}", resultPage.getRecords().size());
         return R.ok(resultPage);
     }
 
@@ -141,14 +190,34 @@ public class CoachOrderController {
         Assert.rpcResultOk(orderRpcResult);
 
         CoachGetOrderResultDto orderDto = orderRpcResult.getData();
+        // 2. 提取所有 recordId
+        List<Long> recordIds = orderDto.getRecords().stream()
+                .map(RecordDto::getRecordId)
+                .toList();
+        String venueName = null;
+        String remark = null;
+
+        if (!recordIds.isEmpty()) {
+            // 批量查询 coach_slot_record
+            List<CoachSlotRecord> slotRecords =
+                    coachSlotRecordMapper.selectBatchIds(recordIds);
+
+            // 取第一个非空的 venue/remark（同一订单应该一致）
+            CoachSlotRecord firstRecord = slotRecords.stream()
+                    .filter(record -> record.getVenue() != null ||
+                            record.getRemark() != null)
+                    .findFirst()
+                    .orElse(!slotRecords.isEmpty() ? slotRecords.get(0) : null);
+
+            if (firstRecord != null) {
+                venueName = firstRecord.getVenue();
+                remark = firstRecord.getRemark();
+            }
+        }
 
         log.info("成功获取订单详情 - orderNo: {}, 订单状态: {}",
                 orderNo, orderRpcResult.getData().getOrderStatus());
 
-        // 3. 封装为业务 VO
-        CoachOrderDetailWithUserInfoVo vo = new CoachOrderDetailWithUserInfoVo();
-        // 复制订单基础属性 (如 orderNo, totalPrice, statusName 等)
-        BeanUtils.copyProperties(orderDto, vo);
 
         RpcResult<UserInfoVo> RpcUserInfo = userDubboService.getUserInfo(orderDto.getUserId());
         Assert.rpcResultOk(RpcUserInfo);
@@ -158,17 +227,55 @@ public class CoachOrderController {
         Assert.rpcResultOk(RpcUserPhone);
         String buyerPhone = RpcUserPhone.getData().getPhone();
 
+        // 5. 构建返回VO
+        CoachOrderDetailWithUserInfoVo result = CoachOrderDetailWithUserInfoVo.builder()
+                .orderNo(orderDto.getOrderNo())
+                .userId(orderDto.getUserId())
+                .coachId(orderDto.getCoachId())
+                .coachName(orderDto.getCoachName())
+                .isActivity(orderDto.isActivity())
+                .activityTypeName(orderDto.getActivityTypeName())
+                .basePrice(orderDto.getBasePrice())
+                .extraChargeTotal(orderDto.getExtraChargeTotal())
+                .subtotal(orderDto.getSubtotal())
+                .discountAmount(orderDto.getDiscountAmount())
+                .totalPrice(orderDto.getTotalPrice())
+                .paymentStatus(orderDto.getPaymentStatus())
+                .paymentStatusName(orderDto.getPaymentStatusName())
+                .orderStatus(orderDto.getOrderStatus())
+                .orderStatusName(orderDto.getOrderStatusName())
+                .source(orderDto.getSource())
+                .paidAt(orderDto.getPaidAt())
+                .createdAt(orderDto.getCreatedAt())
+                .refundApplyId(orderDto.getRefundApplyId())
+                // 设置 venue 和 remark（从本地 coach_slot_record 查询）
+                .venue(venueName)
+                .remark(remark)
+                .buyerInfo(userInfoVo)
+                .buyerPhone(buyerPhone)
+                .records(convertToCoachRecordDtos(orderDto.getRecords()))
+                .build();
 
-        // 设置下单人信息
-        vo.setBuyerInfo(userInfoVo);
-        vo.setBuyerPhone(buyerPhone);
-
+        log.info("成功查询教练订单详情 - orderNo: {}, venue: {}, remark: {}",
+                orderDto.getOrderNo(), venueName, remark);
         log.info("成功获取订单详情 - orderNo: {}, 下单人昵称: {}",
                 orderNo, userInfoVo != null ? userInfoVo.getNickName() : "未知");
 
-        return R.ok(vo);
+        return R.ok(result);
     }
+    private List<CoachRecordDto> convertToCoachRecordDtos(List<RecordDto> records) {
+        if (records == null || records.isEmpty()) {
+            return List.of();
+        }
 
+        return records.stream()
+                .map(record -> {
+                    CoachRecordDto dto = new CoachRecordDto();
+                    BeanUtils.copyProperties(record, dto);
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
     /**
      * 教练取消未支付订单
      *

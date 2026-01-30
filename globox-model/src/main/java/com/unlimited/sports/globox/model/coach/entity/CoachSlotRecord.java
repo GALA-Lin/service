@@ -61,6 +61,20 @@ public class CoachSlotRecord implements Serializable {
     @TableField(value = "end_time")
     private LocalTime endTime;
 
+
+    /**
+     * 场地名称（球场名称）
+     */
+    @TableField(value = "venue")
+    private String venue;
+
+    /**
+     * 订单备注（学员/教练填写的特殊需求）
+     */
+    @TableField(value = "remark")
+    private String remark;
+
+
     /**
      * 时段状态：1=LOCKED(锁定中/下单中) 2=UNAVAILABLE(不可预约/教练关闭) 3=CUSTOM_EVENT(自定义日程占用)
      */

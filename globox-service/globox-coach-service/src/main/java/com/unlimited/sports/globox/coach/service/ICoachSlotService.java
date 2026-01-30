@@ -70,7 +70,6 @@ public interface ICoachSlotService  extends IService<CoachSlotRecord> {
      */
     void unlockSlot(Long slotRecordId, Long userId);
 
-    @Transactional(rollbackFor = Exception.class)
     int batchUnlockSlots(List<Long> recordIds, Long userId);
 
     /**
@@ -84,6 +83,8 @@ public interface ICoachSlotService  extends IService<CoachSlotRecord> {
      * 返回成功解锁的数量
      */
     int batchUnlockSlots(CoachSlotBatchUnlockDto dto);
+
+    void updateSlotVenue(UpdateCoachSlotVenueDto dto);
 
     /**
      * 创建自定义日程(按需生成占位记录)

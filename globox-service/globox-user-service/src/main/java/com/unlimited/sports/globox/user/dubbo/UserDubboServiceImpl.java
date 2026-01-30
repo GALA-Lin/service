@@ -11,7 +11,6 @@ import com.unlimited.sports.globox.user.service.UserProfileService;
 import com.unlimited.sports.globox.user.mapper.AuthIdentityMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -34,8 +33,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class UserDubboServiceImpl implements UserDubboService {
 
-    @Value("${user.profile.default-avatar-url:}")
-    private String defaultAvatarUrl;
+    @Autowired
+    private com.unlimited.sports.globox.user.prop.UserProfileDefaultProperties userProfileDefaultProperties;
 
     @Autowired
     private UserProfileService userProfileService;
@@ -58,8 +57,11 @@ public class UserDubboServiceImpl implements UserDubboService {
         vo.setGender(profile.getGender());
         vo.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : null);
         vo.setCancelled(Boolean.TRUE.equals(profile.getCancelled()));
-        if (!StringUtils.hasText(vo.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
-            vo.setAvatarUrl(defaultAvatarUrl);
+        if (!StringUtils.hasText(vo.getAvatarUrl())) {
+            String defaultAvatarUrl = resolveDefaultAvatarUrl();
+            if (StringUtils.hasText(defaultAvatarUrl)) {
+                vo.setAvatarUrl(defaultAvatarUrl);
+            }
         }
         return RpcResult.ok(vo);
     }
@@ -97,8 +99,11 @@ public class UserDubboServiceImpl implements UserDubboService {
                     dto.setGender(profile.getGender());
                     dto.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : null);
                     dto.setCancelled(Boolean.TRUE.equals(profile.getCancelled()));
-                    if (!StringUtils.hasText(dto.getAvatarUrl()) && StringUtils.hasText(defaultAvatarUrl)) {
-                        dto.setAvatarUrl(defaultAvatarUrl);
+                    if (!StringUtils.hasText(dto.getAvatarUrl())) {
+                        String defaultAvatarUrl = resolveDefaultAvatarUrl();
+                        if (StringUtils.hasText(defaultAvatarUrl)) {
+                            dto.setAvatarUrl(defaultAvatarUrl);
+                        }
                     }
                     return dto;
                 })
@@ -167,5 +172,18 @@ public class UserDubboServiceImpl implements UserDubboService {
     @Override
     public RpcResult<CoachInfoForProfitSharing> getCoachInfoForProfitSharing(Long coachId) {
         return RpcResult.ok();
+    }
+
+    private String resolveDefaultAvatarUrl() {
+        if (StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrl())) {
+            return userProfileDefaultProperties.getDefaultAvatarUrl();
+        }
+        if (StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrlApp())) {
+            return userProfileDefaultProperties.getDefaultAvatarUrlApp();
+        }
+        if (StringUtils.hasText(userProfileDefaultProperties.getDefaultAvatarUrlMiniapp())) {
+            return userProfileDefaultProperties.getDefaultAvatarUrlMiniapp();
+        }
+        return "";
     }
 }

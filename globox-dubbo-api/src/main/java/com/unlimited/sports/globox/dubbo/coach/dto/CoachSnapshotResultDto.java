@@ -70,4 +70,14 @@ public class CoachSnapshotResultDto implements Serializable {
      */
     private Integer ratingCount;
 
+    /**
+     * 场地名称（球场名称）
+     */
+    private String venue;
+
+    /**
+     * 订单备注（学员/教练填写的特殊需求）
+     */
+    private String remark;
+
 }

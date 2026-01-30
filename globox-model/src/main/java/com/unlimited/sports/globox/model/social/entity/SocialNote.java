@@ -80,6 +80,12 @@ public class SocialNote {
     private Integer collectCount;
 
     /**
+     * 笔记标签列表 (各个标签之间通过 ; 隔开)
+     */
+    @TableField("tags")
+    private String tags;
+
+    /**
      * 状态
      */
     private Status status;

@@ -182,7 +182,7 @@ public class SlotManagementController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "HH:mm") LocalTime endTime) {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
-        merchantAuthUtil.validateVenueAccess(context, venueId);
+        merchantAuthUtil.validateVenueAccess(context, merchantId);
 
         List<VenueSlotAvailabilityVo> result = recordService.queryVenueAvailability(
                 venueId, date, startTime, endTime);

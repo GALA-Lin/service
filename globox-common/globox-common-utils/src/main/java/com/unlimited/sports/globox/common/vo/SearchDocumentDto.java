@@ -65,14 +65,9 @@ public class SearchDocumentDto {
     private String creatorId;
 
     /**
-     * 创建者昵称
+     * 创建者昵称 - 仅用于搜索，不用于展示
      */
     private String creatorName;
-
-    /**
-     * 创建者头像URL
-     */
-    private String creatorAvatar;
 
     /**
      * 封面图/缩略图URL
@@ -197,4 +192,31 @@ public class SearchDocumentDto {
      * 最低技术水平
      */
     private Double ntrpMin;
+
+    // ==================== 笔记专属字段 ====================
+
+    /**
+     * 点赞数
+     */
+    private Integer likes;
+
+    /**
+     * 评论数
+     */
+    private Integer comments;
+
+    /**
+     * 收藏/保存数
+     */
+    private Integer saves;
+
+    /**
+     * 媒体类型: IMAGE / VIDEO
+     */
+    private String noteMediaType;
+
+    /**
+     * 是否允许评论
+     */
+    private Boolean noteAllowComment;
 }

@@ -63,6 +63,7 @@ public class OrderAutoCompleteConsumer {
             Message amqpMessage) {
 
         message.incrementRetryCount();
+        log.info("[订单自动完成] 收到订单自动完成消息 orderNo：{}", message.getOrderNo());
 
         Orders orders = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()
@@ -70,6 +71,7 @@ public class OrderAutoCompleteConsumer {
         Assert.isNotEmpty(orders, OrderCode.ORDER_NOT_EXIST);
 
         OrderStatusEnum orderStatus = orders.getOrderStatus();
+        log.info("[订单自动完成] 当前订单状态 orderNo：{}， orderStatus:{}", message.getOrderNo(), orderStatus);
         if (orderStatus.equals(OrderStatusEnum.PAID)
                 || orderStatus.equals(OrderStatusEnum.CONFIRMED)
                 || orderStatus.equals(OrderStatusEnum.PARTIALLY_REFUNDED)
@@ -97,14 +99,16 @@ public class OrderAutoCompleteConsumer {
             ProfitSharingMessage profitSharingMessage = new ProfitSharingMessage();
             BeanUtils.copyProperties(orders, profitSharingMessage);
 
+            log.info("[订单自动完成] 订单状态已更新为完成:{}", orders.getOrderNo());
 
         } else if (orderStatus.equals(OrderStatusEnum.REFUND_APPLYING)
                 || orderStatus.equals(OrderStatusEnum.REFUNDING)) {
             if (message.getRetryCount() > 15) {
-                log.error("[订单自动确认] orderNo：{} 第 {} 次尝试更新状态为完成但失败", orders.getOrderNo(), message.getRetryCount());
+                log.error("[订单自动完成] orderNo：{} 第 {} 次尝试更新状态为完成但失败", orders.getOrderNo(), message.getRetryCount());
             } else if (message.getRetryCount() > 5) {
-                log.warn("[订单自动确认] orderNo：{} 第 {} 次尝试更新状态为完成但失败", orders.getOrderNo(), message.getRetryCount());
+                log.warn("[订单自动完成] orderNo：{} 第 {} 次尝试更新状态为完成但失败", orders.getOrderNo(), message.getRetryCount());
             }
+
             // 正在退款申请、正在退款 发送一条半小时后的消息，等待订单状态变化
             int delay = 30 * 60;
             mqService.sendDelay(
@@ -112,11 +116,13 @@ public class OrderAutoCompleteConsumer {
                     OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
                     message,
                     delay);
+            log.info("[订单自动完成] 当前订单状态不能变为已完成，{}s 后重试，orderNo:{}, orderStatus:{}",delay, orders.getOrderNo(), orderStatus);
         } else if (orderStatus.equals(OrderStatusEnum.PENDING)
                 || orderStatus.equals(OrderStatusEnum.COMPLETED)
                 || orderStatus.equals(OrderStatusEnum.CANCELLED)
                 || orderStatus.equals(OrderStatusEnum.REFUNDED)) {
             // 待支付 已完成 已取消 已全额退款 状态不做更改
+            log.info("[订单自动完成] 当前订单状态不需要改变，orderNo:{}, orderStatus:{}", orders.getOrderNo(), orderStatus);
         } else {
             // 未知支付状态异常
             throw new GloboxApplicationException(OrderCode.ORDER_STATUS_NOT_EXIST);

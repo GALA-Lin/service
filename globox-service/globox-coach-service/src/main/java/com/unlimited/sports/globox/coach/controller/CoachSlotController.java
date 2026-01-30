@@ -18,6 +18,8 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
+
 /**
  * @since 2026/1/3 16:43
  * 教练时段管理接口
@@ -86,6 +88,20 @@ public class CoachSlotController {
                 dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
         Map<String, List<CoachAvailableSlotVo>> slots = coachSlotService.getAvailableSlots(dto);
         return R.ok(slots);
+    }
+    /**
+     * 更新时段记录的场地和备注信息
+     * 教练可以在确认订单后修改上课地点和备注
+     */
+    @PutMapping("/venue-slot-recorde")
+    public R<Void> updateSlotVenue(
+            @Valid @RequestBody UpdateCoachSlotVenueDto dto,
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
+        log.info("更新时段场地信息 - slotRecordId: {}, coachUserId: {}",
+                dto.getSlotRecordId(), coachUserId);
+        dto.setCoachUserId(coachUserId);
+        coachSlotService.updateSlotVenue(dto);
+        return R.ok();
     }
 
     /**

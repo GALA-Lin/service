@@ -20,6 +20,11 @@ public class PaginationResult<T> {
 
     private int totalPages;
 
+    /**
+     * 是否有更多数据（用于游标分页或无限滚动场景）
+     */
+    private Boolean hasMore;
+
 
 
     public PaginationResult(List<T> list, long total, int page, int pageSize) {
@@ -28,6 +33,7 @@ public class PaginationResult<T> {
         this.page = page;
         this.pageSize = pageSize;
         this.totalPages = (int) Math.ceil((double) total / pageSize);
+        this.hasMore = page < this.totalPages;
     }
 
     public static <T> PaginationResult<T> build(List<T> items, long total, int page, int pageSize) {

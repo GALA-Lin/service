@@ -701,6 +701,27 @@ public class CoachDubboServiceImpl implements CoachDubboService {
         Assert.rpcResultOk(rpcResult);
         UserInfoVo coachUserInfo = rpcResult.getData();
 
+        String venue = null;
+        String remark = null;
+        if (dto.getRecordList() != null && !dto.getRecordList().isEmpty()) {
+            List<CoachSlotRecord> slotRecords = slotRecordMapper.selectBatchIds(dto.getRecordList());
+            // 只要有一个 Record venue / remark有值就返回
+            if (!slotRecords.isEmpty()) {
+                // 1. 寻找第一个不为空的场馆名 (使用 Stream 过滤 null 和 空字符串)
+                venue = slotRecords.stream()
+                        .map(CoachSlotRecord::getVenue)
+                        .filter(v -> v != null && !v.trim().isEmpty())
+                        .findFirst()
+                        .orElse(null);
+
+                // 2. 寻找第一个不为空的备注
+                remark = slotRecords.stream()
+                        .map(CoachSlotRecord::getRemark)
+                        .filter(r -> r != null && !r.trim().isEmpty())
+                        .findFirst()
+                        .orElse(null);
+            }
+        }
 
         // 3. 构建并返回结果 (不包含时段信息)
         CoachSnapshotResultDto resultDto = CoachSnapshotResultDto.builder()
@@ -714,6 +735,8 @@ public class CoachDubboServiceImpl implements CoachDubboService {
                 .specialtyTags(coachProfile.getCoachSpecialtyTags())
                 .ratingScore(coachProfile.getCoachRatingScore())
                 .ratingCount(coachProfile.getCoachRatingCount())
+                .venue(venue)
+                .remark(remark)
                 .build();
 
         return RpcResult.ok(resultDto);

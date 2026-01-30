@@ -19,4 +19,7 @@ public class CoachSnapshotRequestDto implements Serializable {
     @NotNull(message = "教练ID不能为空")
     private Long coachUserId;
 
+    @NotNull
+    private List<Long> recordList;
+
 }

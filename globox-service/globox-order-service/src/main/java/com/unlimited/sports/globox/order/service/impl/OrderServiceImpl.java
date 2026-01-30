@@ -765,7 +765,6 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public GetOrderDetailsVo getDetails(GetOrderDetailsDto dto) {
-
         LocalDateTime now = LocalDateTime.now();
         Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
@@ -871,8 +870,11 @@ public class OrderServiceImpl implements OrderService {
             }
         } else if (orders.getSellerType() == SellerTypeEnum.COACH) {
             Long coachId = orders.getSellerId();
+            List<Long> recordIds = items.stream().map(OrderItems::getRecordId).toList();
+            log.info("【用户查询教练订单详情】coachId:{}  recordIds:{}" , coachId , recordIds);
             CoachSnapshotRequestDto req = CoachSnapshotRequestDto.builder()
                     .coachUserId(coachId)
+                    .recordList(recordIds)
                     .build();
             RpcResult<CoachSnapshotResultDto> coachSnapshotRpcResult = coachDubboService.getCoachSnapshot(req);
             Assert.rpcResultOk(coachSnapshotRpcResult);

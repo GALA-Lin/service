@@ -11,7 +11,6 @@ import lombok.Getter;
 @AllArgsConstructor
 public enum SocialCode implements ResultCode {
 
-    // 笔记相关 3001-3012
     NOTE_CONTENT_EMPTY(3001, "正文不能为空"),
     NOTE_MEDIA_EMPTY(3002, "媒体不能为空"),
     NOTE_MEDIA_TOO_MANY(3003, "图片最多9张，视频仅1条"),
@@ -30,8 +29,8 @@ public enum SocialCode implements ResultCode {
     NOTE_MEDIA_NOT_FOUND(3017, "媒体不存在"),
     NOTE_DRAFT_EMPTY(3018, "草稿不能完全为空，标题、正文、媒体至少填写一项"),
     NOTE_PUBLISH_VALIDATION_FAILED(3020, "发布失败：正文和媒体不能为空"),
+    NOTE_SYNC_FAILED(3019, "笔记数据同步失败"),
 
-    // 评论相关 3021-3027
     COMMENT_CONTENT_EMPTY(3021, "评论内容不能为空"),
     COMMENT_CLOSED(3022, "评论已关闭"),
     COMMENT_NOT_FOUND(3023, "评论不存在或已删除"),
@@ -40,18 +39,18 @@ public enum SocialCode implements ResultCode {
     COMMENT_CURSOR_INVALID(3026, "评论游标格式错误"),
     COMMENT_PAGE_SIZE_EXCEEDED(3027, "每页数量不能超过50"),
 
-    // 草稿相关 3028-3029
     NOTE_DRAFT_MEDIA_REQUIRED(3028, "草稿必须有媒体"),
     NOTE_ID_REQUIRED(3029, "笔记ID不能为空"),
 
-    // 关系相关 3030-3032
     FOLLOW_SELF_NOT_ALLOWED(3030, "不允许关注自己"),
     USER_BLOCKED(3031, "你已被对方拉黑或已拉黑对方"),
     FOLLOW_DISABLED_BY_BLOCK(3032, "拉黑状态下无法关注"),
 
     IMPORT_USER_TO_IM_FAILED(3033, "用户注册即时通讯系统失败"),
     RELATION_RPC_FAILED(3034, "关注关系RPC调用失败"),
-    USER_NOT_FOUND(3035, "用户不存在");
+    USER_NOT_FOUND(3035, "用户不存在"),
+    RALLY_CREATE_FAILED(3036, "创建社交活动失败，请稍后重试"),
+    RALLY_EVENT_DATE_BEFORE_NOW(3037, "社交活动创建时间早于当前时间，请重新核对时间");
 
     private final Integer code;
     private final String message;

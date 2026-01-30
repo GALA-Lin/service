@@ -1,8 +1,10 @@
 package com.unlimited.sports.globox.model.coach.vo;
 
 import com.unlimited.sports.globox.common.enums.order.RefundStatusEnum;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
@@ -16,6 +18,8 @@ import java.time.LocalTime;
  */
 @Data
 @Builder
+@AllArgsConstructor
+@NoArgsConstructor
 public class CoachRecordDto {
     /**
      * 记录 ID

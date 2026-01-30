@@ -96,16 +96,10 @@ public class UnifiedSearchDocument {
     private String creatorId;
 
     /**
-     * 创建者昵称 - 用于展示
+     * 创建者昵称 - 仅用于搜索，不用于展示（展示时从用户服务实时获取）
      */
     @Field(type = FieldType.Text, analyzer = "ik_max_word", searchAnalyzer = "ik_smart")
     private String creatorName;
-
-    /**
-     * 创建者头像URL
-     */
-    @Field(type = FieldType.Keyword)
-    private String creatorAvatar;
 
     /**
      * 封面图/缩略图URL - 笔记/约球的首图

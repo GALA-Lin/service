@@ -34,7 +34,7 @@ public interface OrderDubboService {
      * @param sellerType  服务提供方类型
      * @return 返回服务提供方确认订单的结果，包括订单号、是否确认成功、当前订单状态、状态描述以及确认时间
      */
-    RpcResult<SellerConfirmResultDto> sellerConfirm(Long orderNo, boolean autoConfirm, Long operatorId, SellerTypeEnum sellerType);
+    RpcResult<SellerConfirmResultDto> sellerConfirm(Long orderNo, boolean autoConfirm, Long operatorId, SellerTypeEnum sellerType, Long sellerId);
 
 
     /**

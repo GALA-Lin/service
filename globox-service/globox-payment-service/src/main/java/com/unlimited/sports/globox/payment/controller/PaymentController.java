@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.payment.controller;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.ClientType;
 import com.unlimited.sports.globox.common.enums.order.PaymentTypeEnum;
@@ -35,6 +36,7 @@ public class PaymentController {
      * @param orderNo 订单号
      * @return orderStr / prepayId
      */
+    @SentinelResource("payment:submit")
     @PostMapping("/submit/{orderNo}")
     public R<SubmitResultVo> submit(
             @PathVariable("orderNo") Long orderNo,

@@ -14,8 +14,6 @@ import javax.validation.constraints.NotNull;
 @NoArgsConstructor
 public class InspectDto {
 
-
-
     /**
      * 帖子ID，审核的目标帖子
      */

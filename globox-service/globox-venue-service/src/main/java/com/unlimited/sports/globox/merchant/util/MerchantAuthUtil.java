@@ -129,8 +129,8 @@ public class MerchantAuthUtil {
         if (context.isStaff() && context.getVenueId() != null) {
             if (!venueId.equals(context.getVenueId())) {
                 log.error("员工无权访问其他场馆 - venueStaffId: {}, requestVenueId: {}, staffVenueId: {}",
-                        context.getVenueStaffId(), venueId, context.getVenueId());
-                throw new GloboxApplicationException("您只能访问自己所在的场馆");
+                        context.getEmployeeId(), venueId, context.getVenueId());
+                throw new GloboxApplicationException("您无权访问该场馆，只能访问自己所在的场馆");
             }
         }
 

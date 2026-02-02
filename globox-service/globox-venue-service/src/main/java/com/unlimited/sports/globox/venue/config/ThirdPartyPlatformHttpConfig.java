@@ -19,6 +19,7 @@ public class ThirdPartyPlatformHttpConfig {
 
     /**
      * 创建第三方平台专用的RestTemplate
+     * 支持Cookie自动管理（用于wefitos等基于Cookie认证的平台）
      */
     @Bean("thirdPartyRestTemplate")
     public RestTemplate thirdPartyRestTemplate() {
@@ -34,17 +35,19 @@ public class ThirdPartyPlatformHttpConfig {
                 .setConnectionRequestTimeout(5000)
                 .build();
 
-        // 创建HttpClient
+        // 创建HttpClient（禁用自动Cookie管理，由代码手动控制Cookie）
+        // 不使用setDefaultCookieStore，避免多场馆Cookie冲突
         HttpClient httpClient = HttpClients.custom()
                 .setConnectionManager(connectionManager)
                 .setDefaultRequestConfig(requestConfig)
+                .disableCookieManagement()  // 禁用自动Cookie管理
                 .build();
 
         // 创建RestTemplate
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
         RestTemplate restTemplate = new RestTemplate(factory);
 
-        log.info("第三方平台 RestTemplate初始化成功: maxConnTotal=200, maxConnPerRoute=50, connectTimeout=5000ms, socketTimeout=10000ms");
+        log.info("第三方平台 RestTemplate初始化成功: maxConnTotal=200, maxConnPerRoute=50, connectTimeout=5000ms, socketTimeout=10000ms, cookieManagement=disabled(手动控制)");
 
         return restTemplate;
     }

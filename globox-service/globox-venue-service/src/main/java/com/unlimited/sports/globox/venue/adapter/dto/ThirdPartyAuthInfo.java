@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 第三方平台认证信息
@@ -15,6 +16,8 @@ import java.io.Serializable;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ThirdPartyAuthInfo implements Serializable {
+
+    private static final long serialVersionUID = 1L;
 
     /**
      * Token
@@ -30,4 +33,14 @@ public class ThirdPartyAuthInfo implements Serializable {
      * 场馆ID
      */
     private String stadiumId;
+
+    /**
+     * 商户ID（业务ID）
+     */
+    private String businessId;
+
+    /**
+     * 球场项目ID列表（Wefitos平台专用，存储时段ID）
+     */
+    private List<String> courtProjectIds;
 }

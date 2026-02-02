@@ -3,12 +3,14 @@ package com.unlimited.sports.globox.venue.service.impl;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConfig;
 import com.unlimited.sports.globox.service.RedisService;
 import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapter;
+import com.unlimited.sports.globox.venue.adapter.constant.AwayVenueCacheConstants;
 import com.unlimited.sports.globox.venue.adapter.dto.ThirdPartyAuthInfo;
 import com.unlimited.sports.globox.venue.service.IThirdPartyTokenService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -33,8 +35,8 @@ public class ThirdPartyTokenServiceImpl implements IThirdPartyTokenService {
         ThirdPartyAuthInfo authInfo = redisService.getCacheObject(redisKey, ThirdPartyAuthInfo.class);
 
         if (authInfo != null) {
-            log.debug("[认证管理] 从缓存获取认证信息成功: venueId={}, platformId={}",
-                    config.getVenueId(), config.getThirdPartyPlatformId());
+            log.info("[认证管理] 从缓存获取认证信息成功: venueId={}, platformId={}, businessId={}, cachedStadiumId={}",
+                    config.getVenueId(), config.getThirdPartyPlatformId(), authInfo.getBusinessId(), authInfo.getStadiumId());
             return authInfo;
         }
 
@@ -59,12 +61,17 @@ public class ThirdPartyTokenServiceImpl implements IThirdPartyTokenService {
             throw new RuntimeException("登录第三方平台失败，无法获取认证信息");
         }
 
+        log.info("[认证管理] 登录后的authInfo: businessId={}, stadiumId={}",
+                authInfo.getBusinessId(), authInfo.getStadiumId());
+
         // 存入Redis缓存（TTL=23小时）
         String redisKey = buildAuthInfoKey(config);
-        redisService.setCacheObject(redisKey, authInfo, AUTH_INFO_TTL_HOURS, TimeUnit.HOURS);
+//        redisService.setCacheObject(redisKey, authInfo, AUTH_INFO_TTL_HOURS, TimeUnit.HOURS);
+        redisService.setCacheObject(redisKey, authInfo, 30L, TimeUnit.SECONDS);
 
-        log.info("[认证管理] 认证信息刷新成功并已缓存: venueId={}, platformCode={}, ttl={}h",
-                config.getVenueId(), platformCode, AUTH_INFO_TTL_HOURS);
+
+        log.info("[认证管理] 认证信息刷新成功并已缓存: venueId={}, platformCode={}, ttl={}h, businessId={}",
+                config.getVenueId(), platformCode, AUTH_INFO_TTL_HOURS, authInfo.getBusinessId());
 
         return authInfo;
     }

@@ -1,14 +1,17 @@
 package com.unlimited.sports.globox.user.service;
 
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.auth.dto.SetUsernameRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.entity.UserProfile;
+import com.unlimited.sports.globox.model.auth.vo.SetUsernameResultVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.StyleTagVo;
 import com.unlimited.sports.globox.model.auth.vo.UserProfileVo;
+import com.unlimited.sports.globox.model.auth.vo.UserSearchResultVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -125,4 +128,34 @@ public interface UserProfileService {
      * @return 提示消息
      */
     R<String> uploadStarCardPortrait(Long userId, MultipartFile file);
+
+    /**
+     * 设置/修改球盒号（含校验与冷却期检查）
+     *
+     * 规则：
+     * 1. 格式校验：4-20位字母或数字
+     * 2. 唯一性校验：username_lower 全局唯一
+     * 3. 冷却期校验：距上次修改需满足冷却时间（默认60天）
+     * 4. 首次设置时写入 username、username_lower、last_username_changed_at
+     *
+     * @param userId  用户ID
+     * @param request 设置球盒号请求
+     * @return 设置结果（包含 username 和 cooldownUntil）
+     */
+    R<SetUsernameResultVo> setUsername(Long userId, SetUsernameRequest request);
+
+    /**
+     * 按球盒号搜索用户（不区分大小写）
+     *
+     * 搜索规则：
+     * 1. 精确匹配优先（LOWER(input) = username_lower）
+     * 2. 前缀匹配其次（username_lower LIKE 'input%'）
+     * 3. 支持分页
+     *
+     * @param keyword  搜索关键词
+     * @param page     页码（从1开始）
+     * @param pageSize 每页大小
+     * @return 搜索结果列表
+     */
+    R<UserSearchResultVo> searchUsersByUsername(String keyword, Integer page, Integer pageSize);
 }

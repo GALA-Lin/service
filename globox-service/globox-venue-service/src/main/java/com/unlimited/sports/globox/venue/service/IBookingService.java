@@ -99,17 +99,13 @@ public interface IBookingService {
      * 此方法会开启事务，事务快照在获取锁之后建立，确保能读取到其他已提交事务的最新数据
      *
      * @param dto 价格请求DTO
-     * @param templates 槽位模板列表
-     * @param venue 场馆对象（外部已查询）
-     * @param courtNameMap 场地名称映射表
+     * @param context 上下文
      * @param userName 用户昵称
      * @return 价格结果DTO
      */
     PricingResultDto executeBookingInTransaction(
             PricingRequestDto dto,
-            List<VenueBookingSlotTemplate> templates,
-            Venue venue,
-            Map<Long, String> courtNameMap,
+            SlotBookingContext context,
             String userName);
 
 }

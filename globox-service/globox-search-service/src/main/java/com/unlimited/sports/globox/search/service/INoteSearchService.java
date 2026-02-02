@@ -1,7 +1,10 @@
 package com.unlimited.sports.globox.search.service;
 
 import com.unlimited.sports.globox.common.result.PaginationResult;
+import com.unlimited.sports.globox.model.social.dto.NoteStatisticsDto;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
+import com.unlimited.sports.globox.search.document.NoteSearchDocument;
+import com.unlimited.sports.globox.search.document.UserSearchDocument;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.search.sort.SortBuilder;
 
@@ -27,9 +30,10 @@ public interface INoteSearchService {
      * @param sortBy 排序方式: latest / hottest / selected
      * @param page 分页页码 (从1开始)
      * @param pageSize 每页大小
+     * @param userId 当前登录用户ID (用于查询点赞状态)，可为null
      * @return 笔记搜索结果 PaginationResult<NoteItemVo>
      */
-    PaginationResult<NoteItemVo> searchNotes(String keyword, String tag, String sortBy, Integer page, Integer pageSize);
+    PaginationResult<NoteItemVo> searchNotes(String keyword, String tag, String sortBy, Integer page, Integer pageSize, Long userId);
 
     /**
      * 构建公共查询条件
@@ -102,4 +106,24 @@ public interface INoteSearchService {
      * @return 计算出的热度分数
      */
     Double calculateHotScore(Integer likeCount, Integer commentCount, Integer collectCount, LocalDateTime createdAt);
+
+    /**
+     * 将NoteSearchDocument转换为NoteItemVo
+     * @param document 笔记搜索文档
+     * @param userDocument 用户搜索文档（包含用户昵称和头像）
+     * @param stats 笔记统计信息（包含点赞数、评论数、用户是否点赞）
+     * @return 笔记列表项视图对象
+     */
+    NoteItemVo toListItemVo(NoteSearchDocument document, UserSearchDocument userDocument, NoteStatisticsDto stats);
+
+    /**
+     * 获取精选笔记 - 支持随机排序和分页
+     *
+     * @param page 分页页码 (从1开始)
+     * @param pageSize 每页大小
+     * @param seed 随机种子（用于保证分页一致性，翻页时使用相同的seed，刷新时使用新的seed）
+     * @param userId 当前登录用户ID (用于查询点赞状态)，可为null
+     * @return 精选笔记搜索结果 PaginationResult<NoteItemVo>
+     */
+    PaginationResult<NoteItemVo> getFeaturedNotes(Integer page, Integer pageSize, Long seed, Long userId);
 }

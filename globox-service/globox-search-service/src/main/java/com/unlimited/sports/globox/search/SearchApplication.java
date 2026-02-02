@@ -9,7 +9,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * Search 模块 - 启动类
  */
 @Slf4j
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.unlimited.sports.globox")
 @EnableDiscoveryClient
 public class SearchApplication {
 

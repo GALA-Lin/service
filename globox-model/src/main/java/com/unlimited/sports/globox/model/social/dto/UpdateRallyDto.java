@@ -17,6 +17,7 @@ import java.time.LocalTime;
 @NoArgsConstructor
 @AllArgsConstructor
 public class UpdateRallyDto {
+
     @NotNull
     private Long id;
     /**
@@ -28,7 +29,6 @@ public class UpdateRallyDto {
     /**
      * 区域
      */
-    @NotNull
     private String rallyRegion;
 
     /**
@@ -46,7 +46,6 @@ public class UpdateRallyDto {
     /**
      * 日期
      */
-    @NotNull
     private LocalDate rallyEventDate;
 
     /**
@@ -68,13 +67,11 @@ public class UpdateRallyDto {
     /**
      * 费用
      */
-    @NotNull
     private BigDecimal rallyCost;
 
     /**
      * 承担方式: 0=发起人承担 1=AA分摊
      */
-    @NotNull
     private int rallyCostBearer;
 
     /**
@@ -90,24 +87,20 @@ public class UpdateRallyDto {
     /**
      * NTRP最低水平(1.5-7.0)
      */
-    @NotNull
     private double rallyNtrpMin;
 
     /**
      * NTRP最高水平(1.5-7.0)
      */
-    @NotNull
     private double rallyNtrpMax;
 
     /**
      * 总人数
      */
-    @NotNull
     private Integer rallyTotalPeople;
     /**
      * 剩余人数
      */
-    @NotNull
     private Integer rallyRemainingPeople;
     /**
      * 备注

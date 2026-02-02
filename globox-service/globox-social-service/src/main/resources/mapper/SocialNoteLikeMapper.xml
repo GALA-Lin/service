@@ -40,6 +40,7 @@
         INNER JOIN social_note n ON l.note_id = n.note_id
         WHERE
             l.user_id = #{userId}
+            AND l.deleted = false
             AND n.status = 'PUBLISHED'
         <if test="cursorTime != null and cursorLikeId != null">
             AND (
@@ -63,6 +64,7 @@
             social_note_like
         WHERE
             user_id = #{userId}
+            AND deleted = false
             AND note_id IN
             <foreach collection="noteIds" item="noteId" open="(" separator="," close=")">
                 #{noteId}

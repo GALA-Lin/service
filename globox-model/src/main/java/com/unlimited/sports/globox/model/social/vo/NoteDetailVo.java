@@ -61,6 +61,12 @@ public class NoteDetailVo {
     @Schema(description = "媒体列表")
     private List<NoteMediaVo> mediaList;
 
+    @Schema(description = "标签代码列表", example = "[\"TENNIS_COMMUNITY\", \"EQUIPMENT_REVIEW\"]")
+    private List<String> tags;
+
+    @Schema(description = "标签描述列表", example = "[\"网球社区\", \"装备测评\"]")
+    private List<String> tagsDesc;
+
     @Schema(description = "当前用户是否已点赞", example = "true")
     private Boolean liked;
 }

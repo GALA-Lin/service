@@ -17,6 +17,7 @@ public interface SocialUserBlockMapper extends BaseMapper<SocialUserBlock> {
         LambdaQueryWrapper<SocialUserBlock> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserBlock::getUserId, userId)
                 .eq(SocialUserBlock::getBlockedUserId, targetUserId)
+                .eq(SocialUserBlock::getDeleted, false)
                 .last("LIMIT 1");
         return this.selectOne(query) != null;
     }
@@ -24,6 +25,7 @@ public interface SocialUserBlockMapper extends BaseMapper<SocialUserBlock> {
     default List<SocialUserBlock> selectBlocks(Long userId, List<Long> targetIds) {
         LambdaQueryWrapper<SocialUserBlock> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserBlock::getUserId, userId)
+                .eq(SocialUserBlock::getDeleted, false)
                 .in(SocialUserBlock::getBlockedUserId, targetIds);
         return this.selectList(query);
     }

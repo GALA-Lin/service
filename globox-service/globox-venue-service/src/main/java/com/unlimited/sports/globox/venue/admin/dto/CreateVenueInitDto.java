@@ -139,7 +139,6 @@ public class CreateVenueInitDto {
         private BigDecimal longitude;
 
         @NotBlank(message = "联系电话不能为空")
-        @Pattern(regexp = "^1[3-9]\\d{9}$", message = "请输入有效的手机号码")
         @Schema(description = "联系电话")
         private String phone;
 
@@ -215,6 +214,9 @@ public class CreateVenueInitDto {
 
         @Schema(description = "API地址（可选，为空则使用平台默认地址）")
         private String apiUrl;
+
+        @Schema(description = "额外配置（JSON字符串，存储平台特定的配置数据，如clubId、courtProjectId等）")
+        private String extraConfig;
     }
 
     /**

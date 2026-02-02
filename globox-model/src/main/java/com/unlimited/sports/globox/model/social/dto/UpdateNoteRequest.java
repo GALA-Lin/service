@@ -30,4 +30,7 @@ public class UpdateNoteRequest {
     @Valid
     @Schema(description = "媒体列表（全量替换）")
     private List<NoteMediaRequest> mediaList;
+
+    @Schema(description = "笔记标签列表（如果为空则不更新）")
+    private List<String> tags;
 }

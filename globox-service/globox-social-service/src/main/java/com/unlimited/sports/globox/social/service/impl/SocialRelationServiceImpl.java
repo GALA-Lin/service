@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
@@ -28,6 +29,7 @@ import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -81,25 +83,40 @@ public class SocialRelationServiceImpl implements SocialRelationService {
             throw new GloboxApplicationException(SocialCode.FOLLOW_DISABLED_BY_BLOCK);
         }
 
-        // 幂等：已关注直接返回成功
-        LambdaQueryWrapper<SocialUserFollow> existQuery = new LambdaQueryWrapper<>();
-        existQuery.eq(SocialUserFollow::getUserId, userId)
+        // Soft-delete safety: check the unique key first to avoid duplicate key exceptions.
+        LambdaQueryWrapper<SocialUserFollow> existingQuery = new LambdaQueryWrapper<>();
+        existingQuery.eq(SocialUserFollow::getUserId, userId)
                 .eq(SocialUserFollow::getFollowUserId, targetUserId)
                 .last("LIMIT 1");
-        SocialUserFollow exist = socialUserFollowMapper.selectOne(existQuery);
-        if (exist != null) {
+        SocialUserFollow existing = socialUserFollowMapper.selectOne(existingQuery);
+        if (existing != null) {
+            if (Boolean.TRUE.equals(existing.getDeleted())) {
+                existing.setDeleted(false);
+                existing.setCreatedAt(LocalDateTime.now());
+                socialUserFollowMapper.updateById(existing);
+                socialNotificationUtil.sendFollowNotification(targetUserId, userId);
+                log.info("Revived follow: userId={}, targetUserId={}", userId, targetUserId);
+            }
             return R.ok("关注成功");
         }
 
-        SocialUserFollow follow = SocialUserFollow.builder()
-                .userId(userId)
-                .followUserId(targetUserId)
-                .createdAt(LocalDateTime.now())
-                .build();
-        socialUserFollowMapper.insert(follow);
-
-        // 发送被关注通知
-        socialNotificationUtil.sendFollowNotification(targetUserId, userId);
+        // No existing row; insert with a concurrency-safe fallback.
+        try {
+            SocialUserFollow follow = SocialUserFollow.builder()
+                    .userId(userId)
+                    .followUserId(targetUserId)
+                    .createdAt(LocalDateTime.now())
+                    .deleted(false)
+                    .build();
+            socialUserFollowMapper.insert(follow);
+            
+            // 插入成功，发送通知
+            socialNotificationUtil.sendFollowNotification(targetUserId, userId);
+            log.info("新增关注成功：userId={}, targetUserId={}", userId, targetUserId);
+        } catch (DuplicateKeyException e) {
+            // 并发插入冲突，当幂等成功处理
+            log.info("并发关注冲突，幂等处理：userId={}, targetUserId={}", userId, targetUserId);
+        }
 
         return R.ok("关注成功");
     }
@@ -110,10 +127,20 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         if (userId == null || targetUserId == null) {
             return R.error(SocialCode.USER_NOT_FOUND);
         }
-        LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
-        query.eq(SocialUserFollow::getUserId, userId)
-                .eq(SocialUserFollow::getFollowUserId, targetUserId);
-        socialUserFollowMapper.delete(query);
+        
+        // 条件更新：只更新 deleted=false 的记录
+        LambdaUpdateWrapper<SocialUserFollow> cancelUpdate = new LambdaUpdateWrapper<>();
+        cancelUpdate.eq(SocialUserFollow::getUserId, userId)
+                .eq(SocialUserFollow::getFollowUserId, targetUserId)
+                .eq(SocialUserFollow::getDeleted, false)
+                .set(SocialUserFollow::getDeleted, true);
+        int cancelledRows = socialUserFollowMapper.update(null, cancelUpdate);
+        
+        if (cancelledRows > 0) {
+            log.info("取消关注成功：userId={}, targetUserId={}", userId, targetUserId);
+        }
+        // 无论是否取消成功，都幂等返回
+        
         return R.ok("取消关注成功");
     }
 
@@ -126,30 +153,70 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         if (userId.equals(targetUserId)) {
             throw new GloboxApplicationException(SocialCode.FOLLOW_SELF_NOT_ALLOWED);
         }
-        // 已拉黑直接返回
-        if (socialUserBlockMapper.existsBlock(userId, targetUserId)) {
+        // Soft-delete safety: check the unique key first to avoid duplicate key exceptions.
+        LambdaQueryWrapper<SocialUserBlock> existingQuery = new LambdaQueryWrapper<>();
+        existingQuery.eq(SocialUserBlock::getUserId, userId)
+                .eq(SocialUserBlock::getBlockedUserId, targetUserId)
+                .last("LIMIT 1");
+        SocialUserBlock existing = socialUserBlockMapper.selectOne(existingQuery);
+        if (existing != null) {
+            if (Boolean.TRUE.equals(existing.getDeleted())) {
+                existing.setDeleted(false);
+                existing.setCreatedAt(LocalDateTime.now());
+                socialUserBlockMapper.updateById(existing);
+                log.info("Revived block: userId={}, targetUserId={}", userId, targetUserId);
+            }
+            // Ensure follow relations are removed even on idempotent calls.
+            softDeleteBidirectionalFollow(userId, targetUserId);
             return R.ok("拉黑成功");
         }
+        // No existing row; insert with a concurrency-safe fallback.
+        try {
+            SocialUserBlock block = SocialUserBlock.builder()
+                    .userId(userId)
+                    .blockedUserId(targetUserId)
+                    .createdAt(LocalDateTime.now())
+                    .deleted(false)
+                    .build();
+            socialUserBlockMapper.insert(block);
+            
+            // 插入成功，软删双向关注
+            softDeleteBidirectionalFollow(userId, targetUserId);
+            log.info("新增拉黑成功：userId={}, targetUserId={}", userId, targetUserId);
+        } catch (DuplicateKeyException e) {
+            // 并发插入冲突，当幂等成功处理
+            log.info("并发拉黑冲突，幂等处理：userId={}, targetUserId={}", userId, targetUserId);
+            // 即使冲突，也要确保双向关注被删除
+            softDeleteBidirectionalFollow(userId, targetUserId);
+        }
 
-        SocialUserBlock block = SocialUserBlock.builder()
-                .userId(userId)
-                .blockedUserId(targetUserId)
-                .createdAt(LocalDateTime.now())
-                .build();
-        socialUserBlockMapper.insert(block);
+        return R.ok("拉黑成功");
+    }
 
-        // 删除双向关注
+    /**
+     * 软删双向关注关系
+     */
+    private void softDeleteBidirectionalFollow(Long userId, Long targetUserId) {
+        // 软删双向关注
         LambdaQueryWrapper<SocialUserFollow> del1 = new LambdaQueryWrapper<>();
         del1.eq(SocialUserFollow::getUserId, userId)
-                .eq(SocialUserFollow::getFollowUserId, targetUserId);
-        socialUserFollowMapper.delete(del1);
+                .eq(SocialUserFollow::getFollowUserId, targetUserId)
+                .eq(SocialUserFollow::getDeleted, false);
+        SocialUserFollow follow1 = socialUserFollowMapper.selectOne(del1);
+        if (follow1 != null) {
+            follow1.setDeleted(true);
+            socialUserFollowMapper.updateById(follow1);
+        }
 
         LambdaQueryWrapper<SocialUserFollow> del2 = new LambdaQueryWrapper<>();
         del2.eq(SocialUserFollow::getUserId, targetUserId)
-                .eq(SocialUserFollow::getFollowUserId, userId);
-        socialUserFollowMapper.delete(del2);
-
-        return R.ok("拉黑成功");
+                .eq(SocialUserFollow::getFollowUserId, userId)
+                .eq(SocialUserFollow::getDeleted, false);
+        SocialUserFollow follow2 = socialUserFollowMapper.selectOne(del2);
+        if (follow2 != null) {
+            follow2.setDeleted(true);
+            socialUserFollowMapper.updateById(follow2);
+        }
     }
 
     @Override
@@ -158,10 +225,20 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         if (userId == null || targetUserId == null) {
             return R.error(SocialCode.NOTE_NOT_FOUND);
         }
-        LambdaQueryWrapper<SocialUserBlock> query = new LambdaQueryWrapper<>();
-        query.eq(SocialUserBlock::getUserId, userId)
-                .eq(SocialUserBlock::getBlockedUserId, targetUserId);
-        socialUserBlockMapper.delete(query);
+        
+        // 条件更新：只更新 deleted=false 的记录
+        LambdaUpdateWrapper<SocialUserBlock> cancelUpdate = new LambdaUpdateWrapper<>();
+        cancelUpdate.eq(SocialUserBlock::getUserId, userId)
+                .eq(SocialUserBlock::getBlockedUserId, targetUserId)
+                .eq(SocialUserBlock::getDeleted, false)
+                .set(SocialUserBlock::getDeleted, true);
+        int cancelledRows = socialUserBlockMapper.update(null, cancelUpdate);
+        
+        if (cancelledRows > 0) {
+            log.info("取消拉黑成功：userId={}, targetUserId={}", userId, targetUserId);
+        }
+        // 无论是否取消成功，都幂等返回
+        
         return R.ok("取消拉黑成功");
     }
 
@@ -199,6 +276,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         List<Long> targetIds = following.stream().map(SocialUserFollow::getFollowUserId).collect(Collectors.toList());
         LambdaQueryWrapper<SocialUserFollow> reverseQuery = new LambdaQueryWrapper<>();
         reverseQuery.eq(SocialUserFollow::getFollowUserId, listOwnerId)
+                .eq(SocialUserFollow::getDeleted, false)
                 .in(SocialUserFollow::getUserId, targetIds);
         List<SocialUserFollow> reverse = socialUserFollowMapper.selectList(reverseQuery);
         Set<Long> mutualSet = reverse.stream().map(SocialUserFollow::getUserId).collect(Collectors.toSet());
@@ -216,12 +294,14 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         }
         // 关注数
         LambdaQueryWrapper<SocialUserFollow> followCountQuery = new LambdaQueryWrapper<>();
-        followCountQuery.eq(SocialUserFollow::getUserId, targetUserId);
+        followCountQuery.eq(SocialUserFollow::getUserId, targetUserId)
+                .eq(SocialUserFollow::getDeleted, false);
         long followCount = socialUserFollowMapper.selectCount(followCountQuery);
 
         // 粉丝数
         LambdaQueryWrapper<SocialUserFollow> fansCountQuery = new LambdaQueryWrapper<>();
-        fansCountQuery.eq(SocialUserFollow::getFollowUserId, targetUserId);
+        fansCountQuery.eq(SocialUserFollow::getFollowUserId, targetUserId)
+                .eq(SocialUserFollow::getDeleted, false);
         long fansCount = socialUserFollowMapper.selectCount(fansCountQuery);
 
         // 获赞数（已发布笔记）
@@ -284,6 +364,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         // 反查我对对方的关注，标记 isFollowed/isMutual
         LambdaQueryWrapper<SocialUserFollow> myFollowQuery = new LambdaQueryWrapper<>();
         myFollowQuery.eq(SocialUserFollow::getUserId, viewerId)
+                .eq(SocialUserFollow::getDeleted, false)
                 .in(SocialUserFollow::getFollowUserId, targetIds);
         List<SocialUserFollow> myFollows = socialUserFollowMapper.selectList(myFollowQuery);
         Set<Long> myFollowSet = myFollows.stream().map(SocialUserFollow::getFollowUserId).collect(Collectors.toSet());
@@ -291,6 +372,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         // 反查对方是否关注我，用于互关
         LambdaQueryWrapper<SocialUserFollow> reverseQuery = new LambdaQueryWrapper<>();
         reverseQuery.eq(SocialUserFollow::getFollowUserId, viewerId)
+                .eq(SocialUserFollow::getDeleted, false)
                 .in(SocialUserFollow::getUserId, targetIds);
         List<SocialUserFollow> reverse = socialUserFollowMapper.selectList(reverseQuery);
         Set<Long> reverseSet = reverse.stream().map(SocialUserFollow::getUserId).collect(Collectors.toSet());
@@ -309,8 +391,9 @@ public class SocialRelationServiceImpl implements SocialRelationService {
                 vo.setNickName(info.getNickName());
                 vo.setAvatarUrl(info.getAvatarUrl());
             }
-            vo.setIsFollowed(myFollowSet.contains(targetId));
-            vo.setIsMutual(reverseSet.contains(targetId));
+            boolean followed = myFollowSet.contains(targetId);
+            vo.setIsFollowed(followed);
+            vo.setIsMutual(followed && reverseSet.contains(targetId));
             vo.setFollowedAt(rel.getCreatedAt());
             voList.add(vo);
         }
@@ -331,6 +414,7 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         Page<SocialUserBlock> mpPage = new Page<>(p, ps);
         LambdaQueryWrapper<SocialUserBlock> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserBlock::getUserId, userId)
+                .eq(SocialUserBlock::getDeleted, false)
                 .orderByDesc(SocialUserBlock::getCreatedAt);
         socialUserBlockMapper.selectPage(mpPage, query);
 

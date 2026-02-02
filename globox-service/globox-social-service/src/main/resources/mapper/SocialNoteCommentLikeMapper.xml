@@ -10,6 +10,7 @@
             social_note_comment_like
         WHERE
             user_id = #{userId}
+            AND deleted = false
             AND comment_id IN
             <foreach collection="commentIds" item="commentId" open="(" separator="," close=")">
                 #{commentId}

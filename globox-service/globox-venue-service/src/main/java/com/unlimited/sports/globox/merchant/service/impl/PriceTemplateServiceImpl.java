@@ -8,7 +8,6 @@ import com.unlimited.sports.globox.merchant.service.PriceTemplateService;
 import com.unlimited.sports.globox.model.merchant.dto.*;
 import com.unlimited.sports.globox.model.merchant.entity.*;
 import com.unlimited.sports.globox.model.merchant.vo.*;
-
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplate;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplateMapper;
@@ -20,13 +19,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * 价格模板服务实现
+ * 价格模板服务实现（优化版）
  */
 @Slf4j
 @Service
@@ -35,8 +34,8 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
 
     private final VenuePriceTemplateMapper priceTemplateMapper;
     private final VenuePriceTemplatePeriodMapper priceTemplatePeriodMapper;
+    private final CourtMapper courtMapper;
     private final VenueMapper venueMapper;
-    private final BookingSlotMapper bookingSlotMapper;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -154,14 +153,14 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
             throw new GloboxApplicationException("无权操作该价格模板");
         }
 
-        // 检查是否有场馆正在使用该模板
-        LambdaQueryWrapper<Venue> venueWrapper = new LambdaQueryWrapper<>();
-        venueWrapper.eq(Venue::getTemplateId, templateId);
-        Long venueCount = venueMapper.selectCount(venueWrapper);
+        // 检查是否有场地正在使用该模板
+        LambdaQueryWrapper<Court> courtWrapper = new LambdaQueryWrapper<>();
+        courtWrapper.eq(Court::getTemplateId, templateId);
+        Long courtCount = courtMapper.selectCount(courtWrapper);
 
-        if (venueCount > 0) {
+        if (courtCount > 0) {
             throw new GloboxApplicationException(
-                    String.format("该价格模板正在被 %d 个场馆使用，无法删除", venueCount));
+                    String.format("该价格模板正在被 %d 个场地使用，无法删除", courtCount));
         }
 
         // 逻辑删除价格时段（设置为不启用）
@@ -195,13 +194,13 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
         // 查询价格时段
         List<VenuePriceTemplatePeriod> periods = priceTemplatePeriodMapper.selectByTemplateId(templateId);
 
-        // 查询使用该模板的场馆数量
-        LambdaQueryWrapper<Venue> venueWrapper = new LambdaQueryWrapper<>();
-        venueWrapper.eq(Venue::getTemplateId, templateId);
-        Long venueCount = venueMapper.selectCount(venueWrapper);
+        // 查询使用该模板的场地数量
+        LambdaQueryWrapper<Court> courtWrapper = new LambdaQueryWrapper<>();
+        courtWrapper.eq(Court::getTemplateId, templateId);
+        Long courtCount = courtMapper.selectCount(courtWrapper);
 
         // 转换为VO
-        return convertToVo(template, periods, venueCount.intValue());
+        return convertToVo(template, periods, courtCount.intValue());
     }
 
     @Override
@@ -238,16 +237,7 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void bindPriceTemplate(Long merchantId, BindPriceTemplateDto dto) {
-        // 验证场馆归属
-        Venue venue = venueMapper.selectById(dto.getVenueId());
-        if (venue == null) {
-            throw new GloboxApplicationException("场馆不存在");
-        }
-        if (!venue.getMerchantId().equals(merchantId)) {
-            throw new GloboxApplicationException("无权操作该场馆");
-        }
-
+    public BindPriceTemplateResultVo bindPriceTemplate(Long merchantId, BindPriceTemplateDto dto) {
         // 验证模板归属
         VenuePriceTemplate template = priceTemplateMapper.selectById(dto.getTemplateId());
         if (template == null) {
@@ -257,18 +247,139 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
             throw new GloboxApplicationException("无权使用该价格模板");
         }
 
-        // 更新场馆的价格模板
-        venue.setTemplateId(dto.getTemplateId());
-        venueMapper.updateById(venue);
+        // 批量处理场地
+        List<BindPriceTemplateResultVo.CourtBindDetail> details = new ArrayList<>();
+        int successCount = 0;
+        int failedCount = 0;
+        int skippedCount = 0;
 
-        // 如果需要刷新已生成的时段价格
-        if (Boolean.TRUE.equals(dto.getRefreshExistingSlots())) {
-            // TODO: 实现刷新未来所有未支付时段的价格
-            // 这里需要调用SlotManagementService的refreshSlots方法
-            log.info("刷新场馆 {} 的未来时段价格（功能待实现）", dto.getVenueId());
+        for (Long courtId : dto.getCourtIds()) {
+            BindPriceTemplateResultVo.CourtBindDetail detail = processCourtBind(
+                    merchantId, courtId, template);
+
+            details.add(detail);
+
+            switch (detail.getStatus()) {
+                case "success":
+                    successCount++;
+                    break;
+                case "failed":
+                    failedCount++;
+                    break;
+                case "skipped":
+                    skippedCount++;
+                    break;
+            }
         }
 
-        log.info("绑定价格模板成功，场馆ID：{}，模板ID：{}", dto.getVenueId(), dto.getTemplateId());
+        // 构建返回结果
+        if (successCount == dto.getCourtIds().size()) {
+            log.info("批量绑定价格模板全部成功，商家ID：{}，场地id：{}，成功{}个场地", merchantId,dto.getCourtIds() , successCount);
+            return BindPriceTemplateResultVo.allSuccess(
+                    template.getTemplateId(),
+                    template.getTemplateName(),
+                    details);
+        } else if (successCount > 0) {
+            log.warn("批量绑定价格模板部分成功，商家ID：{}，场地id：{}， ，成功{}个，失败{}个，跳过{}个",
+                    merchantId, dto.getCourtIds() , successCount, failedCount, skippedCount);
+            return BindPriceTemplateResultVo.partialSuccess(
+                    template.getTemplateId(),
+                    template.getTemplateName(),
+                    successCount,
+                    failedCount,
+                    skippedCount,
+                    details);
+        } else {
+            log.error("批量绑定价格模板全部失败，商家ID：{} ，场地id：{}", merchantId,dto.getCourtIds() );
+            throw new GloboxApplicationException(
+                    BindPriceTemplateResultVo.allFailed(
+                            template.getTemplateId(),
+                            template.getTemplateName(),
+                            details,
+                            "所有场地绑定均失败").getMessage());
+        }
+    }
+
+    /**
+     * 处理单个场地的绑定
+     */
+    private BindPriceTemplateResultVo.CourtBindDetail processCourtBind(
+            Long merchantId, Long courtId, VenuePriceTemplate newTemplate) {
+
+        BindPriceTemplateResultVo.CourtBindDetail.CourtBindDetailBuilder detailBuilder =
+                BindPriceTemplateResultVo.CourtBindDetail.builder()
+                        .courtId(courtId)
+                        .newTemplateId(newTemplate.getTemplateId())
+                        .newTemplateName(newTemplate.getTemplateName());
+
+        try {
+            // 1. 查询场地信息
+            Court court = courtMapper.selectById(courtId);
+            if (court == null) {
+                return detailBuilder
+                        .status("failed")
+                        .remark("场地不存在")
+                        .build();
+            }
+
+            detailBuilder.courtName(court.getName());
+
+            // 2. 查询场馆信息
+            Venue venue = venueMapper.selectById(court.getVenueId());
+            if (venue == null) {
+                return detailBuilder
+                        .status("failed")
+                        .remark("场地无对应场馆")
+                        .build();
+            }
+
+            detailBuilder.venueId(venue.getVenueId())
+                    .venueName(venue.getName());
+
+            // 3. 验证场地所属场馆是否属于该商家
+            if (!venue.getMerchantId().equals(merchantId)) {
+                return detailBuilder
+                        .status("failed")
+                        .remark("无权操作该场地（场馆不属于当前商家）")
+                        .build();
+            }
+
+            // 4. 记录原模板信息
+            if (court.getTemplateId() != null) {
+                VenuePriceTemplate oldTemplate = priceTemplateMapper.selectById(court.getTemplateId());
+                if (oldTemplate != null) {
+                    detailBuilder.oldTemplateId(oldTemplate.getTemplateId())
+                            .oldTemplateName(oldTemplate.getTemplateName());
+
+                    // 如果已经绑定了相同的模板，跳过
+                    if (court.getTemplateId().equals(newTemplate.getTemplateId())) {
+                        return detailBuilder
+                                .status("skipped")
+                                .remark("该场地已绑定此模板")
+                                .build();
+                    }
+                }
+            }
+
+            // 5. 更新场地的价格模板
+            court.setTemplateId(newTemplate.getTemplateId());
+            courtMapper.updateById(court);
+
+            log.info("绑定价格模板成功，场地ID：{}，场地名称：{}，模板ID：{}",
+                    courtId, court.getName(), newTemplate.getTemplateId());
+
+            return detailBuilder
+                    .status("success")
+                    .remark("绑定成功")
+                    .build();
+
+        } catch (Exception e) {
+            log.error("绑定价格模板失败，场地ID：{}，错误：{}", courtId, e.getMessage(), e);
+            return detailBuilder
+                    .status("failed")
+                    .remark("系统错误：" + e.getMessage())
+                    .build();
+        }
     }
 
     @Override
@@ -347,7 +458,7 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
      */
     private PriceTemplateVo convertToVo(VenuePriceTemplate template,
                                         List<VenuePriceTemplatePeriod> periods,
-                                        Integer venueCount) {
+                                        Integer courtCount) {
         // 转换时段列表
         List<PriceTemplatePeriodVo> periodVos = periods.stream()
                 .map(this::convertPeriodToVo)
@@ -360,7 +471,7 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
                 .templateName(template.getTemplateName())
                 .isDefault(template.getIsDefault())
                 .isEnabled(template.getIsEnabled())
-                .venueCount(venueCount)
+                .venueCount(courtCount) // 这里改为场地数量
                 .createdAt(template.getCreatedAt())
                 .updatedAt(template.getUpdatedAt())
                 .periods(periodVos)
@@ -395,10 +506,10 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
             priceRange = minPrice.intValue() + "-" + maxPrice.intValue() + "元";
         }
 
-        // 查询使用该模板的场馆数量
-        LambdaQueryWrapper<Venue> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Venue::getTemplateId, template.getTemplateId());
-        Long venueCount = venueMapper.selectCount(wrapper);
+        // 查询使用该模板的场地数量
+        LambdaQueryWrapper<Court> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Court::getTemplateId, template.getTemplateId());
+        Long courtCount = courtMapper.selectCount(wrapper);
 
         // 使用Builder模式构建VO
         return PriceTemplateSimpleVo.builder()
@@ -409,7 +520,7 @@ public class PriceTemplateServiceImpl implements PriceTemplateService {
                 .createdAt(template.getCreatedAt())
                 .periodCount(periodCount)
                 .priceRange(priceRange)
-                .venueCount(venueCount != null ? venueCount.intValue() : 0)
+                .venueCount(courtCount != null ? courtCount.intValue() : 0) // 这里改为场地数量
                 .build();
     }
 

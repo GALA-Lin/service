@@ -35,4 +35,9 @@ public class ThirdPartySlotDto {
      * 槽位价格
      */
     private BigDecimal price;
+
+    /**
+     * 锁定ID（仅在已锁定状态时有值）
+     */
+    private String lockId;
 }

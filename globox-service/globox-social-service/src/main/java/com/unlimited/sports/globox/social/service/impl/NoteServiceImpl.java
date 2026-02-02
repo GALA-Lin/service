@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
@@ -9,18 +10,18 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.NotificationSender;
-import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.NoteMediaRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
 import com.unlimited.sports.globox.model.social.dto.UpdateNoteRequest;
 import com.unlimited.sports.globox.model.social.entity.SocialNote;
+import com.unlimited.sports.globox.model.social.enums.NoteTag;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteLike;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteMedia;
 import com.unlimited.sports.globox.model.social.entity.SocialNotePool;
+import com.unlimited.sports.globox.model.social.event.NoteLikeEvent;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
@@ -31,15 +32,21 @@ import com.unlimited.sports.globox.social.mapper.SocialNoteLikeMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMediaMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNotePoolMapper;
+import com.unlimited.sports.globox.social.service.NoteLikeSyncService;
 import com.unlimited.sports.globox.social.service.NoteService;
 import com.unlimited.sports.globox.social.service.SocialRelationService;
 import com.unlimited.sports.globox.social.util.CursorUtils;
+import com.unlimited.sports.globox.social.util.NoteSyncMQSender;
 import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
+import com.unlimited.sports.globox.service.RedisService;
 import com.unlimited.sports.globox.dubbo.governance.SensitiveWordsDubboService;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
@@ -47,18 +54,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -66,12 +66,13 @@ import java.util.stream.Collectors;
  */
 @Service
 @Slf4j
-public class NoteServiceImpl implements NoteService {
+public class NoteServiceImpl   implements NoteService {
 
     private static final int MAX_IMAGE_COUNT = 9;
     private static final int MAX_VIDEO_COUNT = 1;
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
+    private static final String TAGS_DELIMITER = ";";
 
     @Autowired
     private SocialNoteMapper socialNoteMapper;
@@ -84,6 +85,9 @@ public class NoteServiceImpl implements NoteService {
 
     @Autowired
     private SocialNoteLikeMapper socialNoteLikeMapper;
+
+    @Autowired
+    private NoteLikeSyncService noteLikeSyncService;
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -100,6 +104,12 @@ public class NoteServiceImpl implements NoteService {
     @Autowired
     private SocialNotificationUtil socialNotificationUtil;
 
+    @Autowired
+    private RedisService redisService;
+
+    @Autowired
+    private NoteSyncMQSender noteSyncMQSender;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public R<Long> saveDraft(Long userId, SaveDraftRequest request) {
@@ -107,25 +117,38 @@ public class NoteServiceImpl implements NoteService {
             return R.error(SocialCode.NOTE_NOT_FOUND);
         }
 
+        Long noteId = request.getNoteId();
+
+        log.info("draft save start: userId={}, noteId={}, hasTitle={}, hasContent={}, mediaCount={}",
+                userId,
+                noteId,
+                StringUtils.hasText(request.getTitle()),
+                StringUtils.hasText(request.getContent()),
+                request.getMediaList() == null ? -1 : request.getMediaList().size());
+
         // 至少一项非空
         if (!hasAnyContent(request.getTitle(), request.getContent(), request.getMediaList())) {
+            log.warn("draft save rejected (empty): userId={}, noteId={}", userId, noteId);
             throw new GloboxApplicationException(SocialCode.NOTE_DRAFT_EMPTY);
         }
 
-        // 查找现有草稿（事务保护），按创建时间倒序，保留最新
-        LambdaQueryWrapper<SocialNote> query = new LambdaQueryWrapper<>();
-        query.eq(SocialNote::getUserId, userId)
-                .eq(SocialNote::getStatus, SocialNote.Status.DRAFT)
-                .orderByDesc(SocialNote::getCreatedAt);
-        List<SocialNote> drafts = socialNoteMapper.selectList(query);
-
         SocialNote draft = null;
-        if (!drafts.isEmpty()) {
-            draft = drafts.get(0);
-            if (drafts.size() > 1) {
-                for (int i = 1; i < drafts.size(); i++) {
-                    socialNoteMapper.deleteById(drafts.get(i).getNoteId());
-                    log.warn("清理多余草稿：userId={}, noteId={}", userId, drafts.get(i).getNoteId());
+
+        if (!ObjectUtils.isEmpty(noteId)) {
+            // 查找现有草稿（事务保护），按创建时间倒序，保留最新
+            LambdaQueryWrapper<SocialNote> query = new LambdaQueryWrapper<>();
+            query.eq(SocialNote::getUserId, userId)
+                    .eq(SocialNote::getStatus, SocialNote.Status.DRAFT)
+                    .orderByDesc(SocialNote::getCreatedAt);
+            List<SocialNote> drafts = socialNoteMapper.selectList(query);
+
+            if (!drafts.isEmpty()) {
+                draft = drafts.get(0);
+                if (drafts.size() > 1) {
+                    for (int i = 1; i < drafts.size(); i++) {
+                        socialNoteMapper.deleteById(drafts.get(i).getNoteId());
+                        log.warn("清理多余草稿：userId={}, noteId={}", userId, drafts.get(i).getNoteId());
+                    }
                 }
             }
         }
@@ -138,9 +161,16 @@ public class NoteServiceImpl implements NoteService {
 
         if (draft != null) {
             // 更新草稿
-            draft.setTitle(request.getTitle());
-            draft.setContent(request.getContent());
+            if (request.getTitle() != null) {
+                draft.setTitle(request.getTitle());
+            }
+            if (request.getContent() != null) {
+                draft.setContent(request.getContent());
+            } else if (!StringUtils.hasText(draft.getContent())) {
+                draft.setContent("");
+            }
             draft.setAllowComment(request.getAllowComment() != null ? request.getAllowComment() : draft.getAllowComment());
+            draft.setTags(formatTags(request.getTags()));
             draft.setUpdatedAt(LocalDateTime.now());
 
             if (request.getMediaList() != null) {
@@ -149,9 +179,12 @@ public class NoteServiceImpl implements NoteService {
                 socialNoteMapper.updateById(draft);
 
                 // 替换媒体
-                LambdaQueryWrapper<SocialNoteMedia> deleteQuery = new LambdaQueryWrapper<>();
-                deleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId());
-                socialNoteMediaMapper.delete(deleteQuery);
+                LambdaUpdateWrapper<SocialNoteMedia> deleteQuery = new LambdaUpdateWrapper<>();
+                deleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId())
+                        .set(SocialNoteMedia::getDeleted, true);
+                int mediaSoftDelete = socialNoteMediaMapper.update(null, deleteQuery);
+                log.info("draft media soft delete: userId={}, noteId={}, affected={}",
+                        userId, draft.getNoteId(), mediaSoftDelete);
 
                 if (!request.getMediaList().isEmpty()) {
                     insertMediaList(draft.getNoteId(), request.getMediaList(), request.getMediaType());
@@ -164,12 +197,14 @@ public class NoteServiceImpl implements NoteService {
             return R.ok(draft.getNoteId());
         } else {
             // 新建草稿
+            String draftContent = request.getContent() != null ? request.getContent() : "";
             SocialNote newDraft = SocialNote.builder()
                     .userId(userId)
                     .title(request.getTitle())
-                    .content(request.getContent())
+                    .content(draftContent)
                     .status(SocialNote.Status.DRAFT)
                     .allowComment(request.getAllowComment() != null ? request.getAllowComment() : Boolean.TRUE)
+                    .tags(formatTags(request.getTags()))
                     .likeCount(0)
                     .commentCount(0)
                     .collectCount(0)
@@ -223,6 +258,7 @@ public class NoteServiceImpl implements NoteService {
                 .content(request.getContent())
                 .status(SocialNote.Status.PUBLISHED)
                 .allowComment(request.getAllowComment() != null ? request.getAllowComment() : Boolean.TRUE)
+                .tags(formatTags(request.getTags()))
                 .likeCount(0)
                 .commentCount(0)
                 .collectCount(0)
@@ -240,24 +276,29 @@ public class NoteServiceImpl implements NoteService {
         insertMediaList(note.getNoteId(), request.getMediaList(), request.getMediaType());
 
         // 9. 发布成功后，删除用户所有草稿
-        LambdaQueryWrapper<SocialNote> draftQuery = new LambdaQueryWrapper<>();
-        draftQuery.eq(SocialNote::getUserId, userId)
-                .eq(SocialNote::getStatus, SocialNote.Status.DRAFT);
-        List<SocialNote> drafts = socialNoteMapper.selectList(draftQuery);
-
-        if (!drafts.isEmpty()) {
-            for (SocialNote draft : drafts) {
-                // 删除草稿的媒体
-                LambdaQueryWrapper<SocialNoteMedia> mediaDeleteQuery = new LambdaQueryWrapper<>();
-                mediaDeleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId());
-                socialNoteMediaMapper.delete(mediaDeleteQuery);
-                // 删除草稿
-                socialNoteMapper.deleteById(draft.getNoteId());
-            }
-            log.info("发布成功后清理草稿：userId={}, 清理数量={}", userId, drafts.size());
-        }
+//        LambdaQueryWrapper<SocialNote> draftQuery = new LambdaQueryWrapper<>();
+//        draftQuery.eq(SocialNote::getUserId, userId)
+//                .eq(SocialNote::getStatus, SocialNote.Status.DRAFT);
+//        List<SocialNote> drafts = socialNoteMapper.selectList(draftQuery);
+//
+//        if (!drafts.isEmpty()) {
+//            for (SocialNote draft : drafts) {
+//                // 删除草稿的媒体
+//                LambdaUpdateWrapper<SocialNoteMedia> mediaDeleteQuery = new LambdaUpdateWrapper<>();
+//                mediaDeleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId())
+//                        .set(SocialNoteMedia::getDeleted, true);
+//                socialNoteMediaMapper.update(null, mediaDeleteQuery);
+//                // 删除草稿
+//                socialNoteMapper.deleteById(draft.getNoteId());
+//            }
+//            log.info("发布成功后清理草稿：userId={}, 清理数量={}", userId, drafts.size());
+//        }
 
         log.info("笔记发布成功：userId={}, noteId={}", userId, note.getNoteId());
+        
+        // 10. 发送MQ消息同步到ES
+        noteSyncMQSender.sendNoteSyncMessage(Collections.singletonList(note));
+        
         return R.ok(note.getNoteId());
     }
 
@@ -307,18 +348,24 @@ public class NoteServiceImpl implements NoteService {
         draft.setTitle(request.getTitle());
         draft.setContent(request.getContent());
         draft.setAllowComment(request.getAllowComment() != null ? request.getAllowComment() : draft.getAllowComment());
+        draft.setTags(formatTags(request.getTags()));
         draft.setStatus(SocialNote.Status.PUBLISHED);
         draft.setUpdatedAt(LocalDateTime.now());
         applyMediaSummary(draft, request.getMediaType(), request.getMediaList());
         socialNoteMapper.updateById(draft);
 
         // 7. 更新媒体列表
-        LambdaQueryWrapper<SocialNoteMedia> mediaDeleteQuery = new LambdaQueryWrapper<>();
-        mediaDeleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId());
-        socialNoteMediaMapper.delete(mediaDeleteQuery);
+        LambdaUpdateWrapper<SocialNoteMedia> mediaDeleteQuery = new LambdaUpdateWrapper<>();
+        mediaDeleteQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId())
+                .set(SocialNoteMedia::getDeleted, true);
+        socialNoteMediaMapper.update(null, mediaDeleteQuery);
         insertMediaList(draft.getNoteId(), request.getMediaList(), request.getMediaType());
 
         log.info("草稿转正成功：userId={}, noteId={}", userId, draft.getNoteId());
+        
+        // 8. 发送MQ消息同步到ES
+        noteSyncMQSender.sendNoteSyncMessage(Collections.singletonList(draft));
+        
         return R.ok(draft.getNoteId());
     }
 
@@ -366,9 +413,16 @@ public class NoteServiceImpl implements NoteService {
             }
         }
 
-        note.setTitle(request.getTitle());
-        note.setContent(request.getContent());
+        if (request.getTitle() != null) {
+            note.setTitle(request.getTitle());
+        }
+        if (request.getContent() != null) {
+            note.setContent(request.getContent());
+        }
         note.setAllowComment(request.getAllowComment() != null ? request.getAllowComment() : note.getAllowComment());
+        if (request.getTags() != null) {
+            note.setTags(formatTags(request.getTags()));
+        }
         note.setUpdatedAt(LocalDateTime.now());
 
         if (request.getMediaList() != null) {
@@ -384,9 +438,10 @@ public class NoteServiceImpl implements NoteService {
             socialNoteMapper.updateById(note);
             
             // 删除旧媒体
-            LambdaQueryWrapper<SocialNoteMedia> deleteQuery = new LambdaQueryWrapper<>();
-            deleteQuery.eq(SocialNoteMedia::getNoteId, noteId);
-            socialNoteMediaMapper.delete(deleteQuery);
+            LambdaUpdateWrapper<SocialNoteMedia> deleteQuery = new LambdaUpdateWrapper<>();
+            deleteQuery.eq(SocialNoteMedia::getNoteId, noteId)
+                    .set(SocialNoteMedia::getDeleted, true);
+            socialNoteMediaMapper.update(null, deleteQuery);
             
             // 插入新媒体
             insertMediaList(noteId, request.getMediaList(), request.getMediaType());
@@ -396,6 +451,12 @@ public class NoteServiceImpl implements NoteService {
         }
 
         log.info("笔记更新成功：userId={}, noteId={}", userId, noteId);
+        
+        // 发送MQ消息同步到ES（仅已发布状态）
+        if (note.getStatus() == SocialNote.Status.PUBLISHED) {
+            noteSyncMQSender.sendNoteSyncMessage(Collections.singletonList(note));
+        }
+        
         return R.ok("更新成功");
     }
 
@@ -420,6 +481,10 @@ public class NoteServiceImpl implements NoteService {
         socialNoteMapper.updateById(note);
 
         log.info("笔记删除成功：userId={}, noteId={}", userId, noteId);
+        
+        // 发送MQ消息同步到ES（删除）
+        noteSyncMQSender.sendNoteSyncMessage(Collections.singletonList(note));
+        
         return R.ok("删除成功");
     }
 
@@ -436,6 +501,7 @@ public class NoteServiceImpl implements NoteService {
 
         LambdaQueryWrapper<SocialNoteMedia> mediaQuery = new LambdaQueryWrapper<>();
         mediaQuery.eq(SocialNoteMedia::getNoteId, noteId)
+                .eq(SocialNoteMedia::getDeleted, false)
                 .orderByAsc(SocialNoteMedia::getSort);
         List<SocialNoteMedia> mediaList = socialNoteMediaMapper.selectList(mediaQuery);
 
@@ -443,6 +509,9 @@ public class NoteServiceImpl implements NoteService {
         BeanUtils.copyProperties(note, vo);
         vo.setStatus(note.getStatus() != null ? note.getStatus().name() : null);
         vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
+        List<String> tags = parseTags(note.getTags());
+        vo.setTags(tags);
+        vo.setTagsDesc(NoteTag.toDescriptions(tags));
 
         List<NoteMediaVo> mediaVos = mediaList.stream()
                 .map(media -> {
@@ -544,6 +613,8 @@ public class NoteServiceImpl implements NoteService {
 
         Page<SocialNote> pageParam = new Page<>(page, pageSize);
         IPage<SocialNote> pageResult = socialNoteMapper.selectPage(pageParam, queryWrapper);
+        log.info("drafts query: userId={}, page={}, pageSize={}, total={}",
+                userId, page, pageSize, pageResult.getTotal());
 
         List<DraftNoteItemVo> voList = pageResult.getRecords().stream()
                 .map(note -> {
@@ -590,24 +661,19 @@ public class NoteServiceImpl implements NoteService {
     }
 
     @Override
-    public R<DraftNoteVo> getDraft(Long userId) {
-        if (userId == null) {
-            return R.error(SocialCode.NOTE_NOT_FOUND);
-        }
+    public R<DraftNoteVo> getDraft(Long userId, Long noteId) {
 
         LambdaQueryWrapper<SocialNote> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(SocialNote::getUserId, userId)
+                .eq(SocialNote::getNoteId, noteId)
                 .eq(SocialNote::getStatus, SocialNote.Status.DRAFT)
-                .orderByDesc(SocialNote::getCreatedAt)
-                .last("LIMIT 1");
+                .orderByDesc(SocialNote::getCreatedAt);
         SocialNote draft = socialNoteMapper.selectOne(queryWrapper);
-
-        if (draft == null) {
-            return R.ok(null);
-        }
+        Assert.isNotEmpty(draft, SocialCode.NOTE_DRAFT_NOT_FOUND);
 
         LambdaQueryWrapper<SocialNoteMedia> mediaQuery = new LambdaQueryWrapper<>();
         mediaQuery.eq(SocialNoteMedia::getNoteId, draft.getNoteId())
+                .eq(SocialNoteMedia::getDeleted, false)
                 .orderByAsc(SocialNoteMedia::getSort);
         List<SocialNoteMedia> mediaList = socialNoteMediaMapper.selectList(mediaQuery);
 
@@ -677,6 +743,7 @@ public class NoteServiceImpl implements NoteService {
             media.setCoverUrl(mediaReq.getCoverUrl());
             media.setSort(mediaReq.getSort() != null ? mediaReq.getSort() : 0);
             media.setCreatedAt(LocalDateTime.now());
+            media.setDeleted(false);
             socialNoteMediaMapper.insert(media);
         }
     }
@@ -1068,34 +1135,28 @@ public class NoteServiceImpl implements NoteService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public R<String> likeNote(Long userId, Long noteId) {
-        // 1. 查询笔记是否存在且已发布
+        // 1. 校验笔记存在且已发布
         SocialNote note = socialNoteMapper.selectById(noteId);
         if (note == null || note.getStatus() != SocialNote.Status.PUBLISHED) {
             throw new GloboxApplicationException(SocialCode.NOTE_NOT_FOUND);
         }
 
-        // 2. 检查是否已点赞（幂等性）
-        LambdaQueryWrapper<SocialNoteLike> query = new LambdaQueryWrapper<>();
-        query.eq(SocialNoteLike::getUserId, userId)
-                .eq(SocialNoteLike::getNoteId, noteId);
-        SocialNoteLike existingLike = socialNoteLikeMapper.selectOne(query);
+        // 2. 获取当前点赞状态（包括数据库和 Redis 未消费事件）
+        LikeStatus likeStatus = getCurrentLikeStatus(userId, noteId);
+        if (likeStatus.alreadyLiked) {
+            return R.ok("已经点赞，无法重复点赞");
+        }
 
-        if (existingLike == null) {
-            // 3. 插入点赞记录
-            SocialNoteLike like = new SocialNoteLike();
-            like.setUserId(userId);
-            like.setNoteId(noteId);
-            like.setCreatedAt(LocalDateTime.now());
-            socialNoteLikeMapper.insert(like);
+        // 3. 添加点赞事件到 Redis
+        noteLikeSyncService.addLikeEvent(userId, noteId, likeStatus.existsInDb, likeStatus.isDeletedInDb);
 
-            // 4. 原子更新笔记点赞数
-            socialNoteMapper.incrementLikeCount(noteId);
-
-            // 5. 发送点赞通知（点赞者不是笔记作者时）
-            if (!note.getUserId().equals(userId)) {
+        // 4. 异步发送通知（不影响主流程）
+        if (!note.getUserId().equals(userId)) {
+            try {
                 socialNotificationUtil.sendNoteLikedNotification(noteId, userId, note.getTitle(), note.getUserId());
+            } catch (Exception e) {
+                log.warn("Failed to send like notification: userId={}, noteId={}", userId, noteId, e);
             }
         }
 
@@ -1103,27 +1164,21 @@ public class NoteServiceImpl implements NoteService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public R<String> unlikeNote(Long userId, Long noteId) {
-        // 1. 查询笔记是否存在且已发布
+        // 1. 校验笔记存在且已发布
         SocialNote note = socialNoteMapper.selectById(noteId);
         if (note == null || note.getStatus() != SocialNote.Status.PUBLISHED) {
             throw new GloboxApplicationException(SocialCode.NOTE_NOT_FOUND);
         }
 
-        // 2. 查询点赞记录
-        LambdaQueryWrapper<SocialNoteLike> query = new LambdaQueryWrapper<>();
-        query.eq(SocialNoteLike::getUserId, userId)
-                .eq(SocialNoteLike::getNoteId, noteId);
-        SocialNoteLike existingLike = socialNoteLikeMapper.selectOne(query);
-
-        if (existingLike != null) {
-            // 3. 删除点赞记录
-            socialNoteLikeMapper.deleteById(existingLike.getLikeId());
-
-            // 4. 原子更新笔记点赞数（确保不为负数）
-            socialNoteMapper.decrementLikeCount(noteId);
+        // 2. 获取当前点赞状态（包括数据库和 Redis 未消费事件）
+        LikeStatus likeStatus = getCurrentLikeStatus(userId, noteId);
+        if (!likeStatus.alreadyLiked) {
+            return R.ok("未点赞，无法取消");
         }
+
+        // 3. 添加取消点赞事件到 Redis（事件创建和写入都在 NoteLikeSyncService 中处理）
+        noteLikeSyncService.addUnlikeEvent(userId, noteId, likeStatus.existsInDb, likeStatus.isDeletedInDb);
 
         return R.ok("取消点赞成功");
     }
@@ -1149,13 +1204,14 @@ public class NoteServiceImpl implements NoteService {
 
         // 4. 查询媒体是否存在
         SocialNoteMedia media = socialNoteMediaMapper.selectById(mediaId);
-        if (media == null || !media.getNoteId().equals(noteId)) {
+        if (media == null || Boolean.TRUE.equals(media.getDeleted()) || !media.getNoteId().equals(noteId)) {
             throw new GloboxApplicationException(SocialCode.NOTE_MEDIA_NOT_FOUND);
         }
 
         // 5. 查询该笔记的所有媒体
         LambdaQueryWrapper<SocialNoteMedia> query = new LambdaQueryWrapper<>();
-        query.eq(SocialNoteMedia::getNoteId, noteId);
+        query.eq(SocialNoteMedia::getNoteId, noteId)
+                .eq(SocialNoteMedia::getDeleted, false);
         List<SocialNoteMedia> allMedia = socialNoteMediaMapper.selectList(query);
 
         // 6. 校验：删除后不能为0
@@ -1164,7 +1220,10 @@ public class NoteServiceImpl implements NoteService {
         }
 
         // 7. 删除媒体
-        socialNoteMediaMapper.deleteById(mediaId);
+        LambdaUpdateWrapper<SocialNoteMedia> deleteWrapper = new LambdaUpdateWrapper<>();
+        deleteWrapper.eq(SocialNoteMedia::getMediaId, mediaId)
+                .set(SocialNoteMedia::getDeleted, true);
+        socialNoteMediaMapper.update(null, deleteWrapper);
 
         // 8. 如果删除的是封面对应的媒体，重新生成封面
         boolean needUpdateCover = note.getCoverUrl() != null && note.getCoverUrl().equals(media.getUrl());
@@ -1267,6 +1326,9 @@ public class NoteServiceImpl implements NoteService {
                     BeanUtils.copyProperties(note, vo);
                     vo.setStatus(note.getStatus() != null ? note.getStatus().name() : null);
                     vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
+                    List<String> tags = parseTags(note.getTags());
+                    vo.setTags(tags);
+                    vo.setTagsDesc(NoteTag.toDescriptions(tags));
                     if (StringUtils.hasText(note.getContent()) && note.getContent().length() > 100) {
                         vo.setContent(note.getContent().substring(0, 100) + "...");
                     }
@@ -1274,17 +1336,28 @@ public class NoteServiceImpl implements NoteService {
                 })
                 .collect(Collectors.toList());
 
-        // 2. 如果提供了 userId，批量查询 liked 状态
+        // 2. 如果提供了 userId，批量查询 liked 状态（结合数据库和Redis未同步事件）
         if (userId != null) {
             List<Long> noteIds = notes.stream()
                     .map(SocialNote::getNoteId)
                     .collect(Collectors.toList());
-            Set<Long> likedNoteIds = socialNoteLikeMapper.selectLikedNoteIdsByUser(userId, noteIds);
+            
+            // 2.1 从数据库查询已点赞的笔记ID
+            Set<Long> dbLikedNoteIds = socialNoteLikeMapper.selectLikedNoteIdsByUser(userId, noteIds);
+            
+            // 2.2 从Redis获取未同步的点赞事件（会覆盖数据库状态）
+            Set<Long> pendingLikedNoteIds = noteLikeSyncService.batchGetPendingLikedNoteIds(userId, noteIds);
+            Set<Long> pendingUnlikedNoteIds = noteLikeSyncService.batchGetPendingUnlikedNoteIds(userId, noteIds);
+            
+            // 2.3 计算最终点赞状态：(数据库点赞 + Redis点赞) - Redis取消点赞
+            Set<Long> finalLikedNoteIds = new HashSet<>(dbLikedNoteIds);
+            finalLikedNoteIds.addAll(pendingLikedNoteIds);
+            finalLikedNoteIds.removeAll(pendingUnlikedNoteIds);
             
             // 3. 填充 liked 字段
             Map<Long, NoteItemVo> voMap = voList.stream()
                     .collect(Collectors.toMap(NoteItemVo::getNoteId, vo -> vo));
-            likedNoteIds.forEach(noteId -> {
+            finalLikedNoteIds.forEach(noteId -> {
                 NoteItemVo vo = voMap.get(noteId);
                 if (vo != null) {
                     vo.setLiked(true);
@@ -1353,6 +1426,139 @@ public class NoteServiceImpl implements NoteService {
      */
     private List<NoteItemVo> convertToNoteItemVo(List<SocialNote> notes) {
         return convertToNoteItemVo(notes, null);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<String> setNotesFeatured(List<Long> noteIds, Boolean featured) {
+        if (noteIds == null || noteIds.isEmpty()) {
+            return R.error(SocialCode.NOTE_ID_REQUIRED);
+        }
+        if (featured == null) {
+            return R.error(SocialCode.NOTE_STATUS_INVALID);
+        }
+
+        List<Long> distinctIds = noteIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (distinctIds.isEmpty()) {
+            return R.error(SocialCode.NOTE_ID_REQUIRED);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LambdaUpdateWrapper<SocialNote> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.in(SocialNote::getNoteId, distinctIds)
+                .set(SocialNote::getFeatured, featured)
+                .set(SocialNote::getUpdatedAt, now);
+        socialNoteMapper.update(null, updateWrapper);
+
+        LambdaQueryWrapper<SocialNote> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.in(SocialNote::getNoteId, distinctIds);
+        List<SocialNote> notes = socialNoteMapper.selectList(queryWrapper);
+        if (notes != null && !notes.isEmpty()) {
+            notes.forEach(note -> {
+                note.setFeatured(featured);
+                note.setUpdatedAt(now);
+            });
+            noteSyncMQSender.sendNoteSyncMessage(notes);
+        }
+
+        return R.ok("设置成功");
+    }
+
+    @Override
+    public R<List<NoteTag.DictItem>> getNoteTags() {
+        return R.ok(NoteTag.getDictItems());
+    }
+
+    /**
+     * 格式化 tags，如果为空则设置默认标签 TENNIS_COMMUNITY
+     * 返回分号分隔的字符串
+     */
+    private String formatTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            // 如果为空，默认添加 TENNIS_COMMUNITY
+            return NoteTag.TENNIS_COMMUNITY.getCode();
+        }
+
+        // 添加默认标签（如果不存在）
+        List<String> finalTags = new ArrayList<>(tags);
+        if (!finalTags.contains(NoteTag.TENNIS_COMMUNITY.getCode())) {
+            finalTags.add(NoteTag.TENNIS_COMMUNITY.getCode());
+        }
+
+        // 验证所有标签是否有效
+        finalTags.forEach(tag -> {
+                    if (NoteTag.fromCode(tag) == null) {
+                        throw new GloboxApplicationException(SocialCode.INVALID_TAG_CODE.getCode(), "无效的标签代码: " + tag);
+                    }
+                });
+
+        // 转换为分号分隔的字符串
+        return String.join(TAGS_DELIMITER, finalTags);
+    }
+
+    /**
+     * 解析 tags 字符串为列表
+     * 如果为空或null，返回空列表
+     */
+    private List<String> parseTags(String tags) {
+        if (!StringUtils.hasText(tags)) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(tags.split(TAGS_DELIMITER))
+                .filter(StringUtils::hasText)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 点赞状态信息
+     */
+    @Data
+    @AllArgsConstructor
+    @NoArgsConstructor
+    private static class LikeStatus {
+        /** 是否已点赞 */
+        private boolean alreadyLiked;
+        /** 记录在数据库中是否存在 */
+        private Boolean existsInDb;
+        /** 记录在数据库中是否被软删除 */
+        private Boolean isDeletedInDb;
+    }
+
+    /**
+     * 获取当前点赞状态（包括数据库和 Redis 未消费事件）
+     */
+    private LikeStatus getCurrentLikeStatus(Long userId, Long noteId) {
+        // 1. 从数据库检查
+        LambdaQueryWrapper<SocialNoteLike> dbQuery = new LambdaQueryWrapper<>();
+        dbQuery.eq(SocialNoteLike::getUserId, userId)
+                .eq(SocialNoteLike::getNoteId, noteId);
+        SocialNoteLike dbLike = socialNoteLikeMapper.selectOne(dbQuery);
+
+        // 2. 从 Redis Set 未消费事件检查（最终状态）
+        NoteLikeEvent pendingEvent = noteLikeSyncService.getPendingLikeEventFromSet(userId, noteId);
+
+        // 3. 综合两个来源判断最终状态
+        if (pendingEvent != null) {
+            // 有未消费事件，根据事件 action 推算同步后的数据库状态
+            boolean liked = pendingEvent.getAction() == NoteLikeEvent.LikeAction.LIKE;
+            if (liked) {
+                // pending 是 LIKE，同步后记录会存在且未删除 → 下一个 UNLIKE 应该是 UNLIKE:true:false
+                return new LikeStatus(true, true, false);
+            } else {
+                // pending 是 UNLIKE，同步后记录会存在且已软删除 → 下一个 LIKE 应该是 LIKE:true:true
+                return new LikeStatus(false, true, true);
+            }
+        } else if (dbLike != null) {
+            // 数据库中存在且未软删除
+            boolean liked = !dbLike.getDeleted();
+            return new LikeStatus(liked, true, dbLike.getDeleted());
+        } else {
+            // 数据库中不存在
+            return new LikeStatus(false, false, false);
+        }
     }
 
 }

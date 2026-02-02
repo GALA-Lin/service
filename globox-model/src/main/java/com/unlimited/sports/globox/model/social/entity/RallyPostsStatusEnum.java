@@ -1,29 +1,26 @@
 package com.unlimited.sports.globox.model.social.entity;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
+@Getter
+@AllArgsConstructor
 public enum RallyPostsStatusEnum {
     PUBLISHED(0, "已发布"),
     FULL(1, "已满员"),
-    CANCELLED(2, "已取消");
+    CANCELLED(2, "已取消"),
+    COMPLETED(3, "已完成"); // 新增：已完成/已过期
 
     private final int code;
     private final String description;
 
-    RallyPostsStatusEnum(int code, String description) {
-        this.code = code;
-        this.description = description;
-    }
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
+    /**
+     * 根据状态码获取状态枚举
+     * @param code 状态码
+     * @return 状态枚举
+     */
     public static RallyPostsStatusEnum fromCode(int code) {
         for (RallyPostsStatusEnum status : RallyPostsStatusEnum.values()) {
             if (status.getCode() == code) {
@@ -34,7 +31,9 @@ public enum RallyPostsStatusEnum {
     }
 
     /**
-     * 获取状态描述
+     * 根据状态码获取状态描述
+     * @param code 状态码
+     * @return 状态描述
      */
     public static String getDescriptionByCode(int code) {
         try {

@@ -5,6 +5,7 @@ import lombok.Data;
 
 import javax.validation.Valid;
 import javax.validation.constraints.Pattern;
+import javax.validation.constraints.Size;
 import java.util.List;
 
 /**
@@ -18,6 +19,7 @@ public class SaveDraftRequest {
     private Long noteId;
 
     @Schema(description = "标题", example = "今天打球收获分享")
+    @Size(max = 20, message = "草稿标题最多20个字符")
     private String title;
 
     @Schema(description = "正文", example = "今天练习了发球和截击，感觉有提升。")
@@ -33,5 +35,8 @@ public class SaveDraftRequest {
     @Valid
     @Schema(description = "媒体列表")
     private List<NoteMediaRequest> mediaList;
+
+    @Schema(description = "笔记标签列表（如果为空，默认添加 TENNIS_COMMUNITY）")
+    private List<String> tags;
 }
 

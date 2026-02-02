@@ -14,6 +14,7 @@ import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.order.constants.RedisConsts;
 import com.unlimited.sports.globox.order.mapper.OrderActivitiesMapper;
 import com.unlimited.sports.globox.order.mapper.OrdersMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
 /**
  * 订单服务对支付服务提供 rpc 接口
  */
+@Slf4j
 @Component
 @DubboService(group = "rpc")
 public class OrderForPaymentDubboServiceImpl implements OrderForPaymentDubboService {
@@ -57,9 +59,9 @@ public class OrderForPaymentDubboServiceImpl implements OrderForPaymentDubboServ
 
         StringBuilder subjectBuilder = new StringBuilder();
         if (orders.getSellerType().equals(SellerTypeEnum.VENUE)) {
-            subjectBuilder.append("用户订场：");
+            subjectBuilder.append("订场：");
         } else if (orders.getSellerType().equals(SellerTypeEnum.COACH)) {
-            subjectBuilder.append("用户预约教练：");
+            subjectBuilder.append("预约教练：");
         }
         subjectBuilder.append(orders.getSellerName());
 

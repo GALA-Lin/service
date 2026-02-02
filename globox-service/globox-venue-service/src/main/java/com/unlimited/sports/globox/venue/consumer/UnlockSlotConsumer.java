@@ -6,15 +6,27 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.unlimited.sports.globox.common.aop.RabbitRetryable;
 import com.unlimited.sports.globox.common.constants.OrderMQConstants;
 import com.unlimited.sports.globox.common.enums.governance.MQBizTypeEnum;
+import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipantStatusEnum;
+import com.unlimited.sports.globox.common.result.VenueCode;
+import com.unlimited.sports.globox.model.merchant.entity.Court;
+import com.unlimited.sports.globox.model.merchant.entity.Venue;
+import com.unlimited.sports.globox.model.merchant.enums.VenueTypeEnum;
+import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
+import com.unlimited.sports.globox.model.venue.entity.venues.*;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRecord;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
-import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivityParticipant;
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
+import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapter;
+import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapterFactory;
+import com.unlimited.sports.globox.venue.adapter.dto.SlotLockRequest;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityMapper;
+import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotTemplateMapper;
+import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
+import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
+import com.unlimited.sports.globox.venue.mapper.VenueThirdPartyConfigMapper;
+import com.unlimited.sports.globox.venue.mapper.ThirdPartyPlatformMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitHandler;
@@ -25,6 +37,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -44,6 +58,24 @@ public class UnlockSlotConsumer {
 
     @Autowired
     private VenueActivityMapper venueActivityMapper;
+
+    @Autowired
+    private VenueBookingSlotTemplateMapper slotTemplateMapper;
+
+    @Autowired
+    private CourtMapper courtMapper;
+
+    @Autowired
+    private VenueMapper venueMapper;
+
+    @Autowired
+    private VenueThirdPartyConfigMapper venueThirdPartyConfigMapper;
+
+    @Autowired
+    private ThirdPartyPlatformMapper thirdPartyPlatformMapper;
+
+    @Autowired
+    private ThirdPartyPlatformAdapterFactory adapterFactory;
 
     /**
      * 处理解锁槽位消息
@@ -121,6 +153,121 @@ public class UnlockSlotConsumer {
 
         log.info("[槽位解锁] 解锁成功 - userId={}, 总槽位数={}, 解锁数={}, 更新数={}",
                 userId, recordIds.size(), lockedRecordIds.size(), updatedCount);
+
+        Long venueId = records.get(0).getVenueId();
+        Venue venue = venueMapper.selectById(venueId);
+        if(venue == null) {
+            log.error("检查away获取到的场馆信息为空,消息{},venueId{}",message,venueId);
+            return;
+        }
+        if(VenueTypeEnum.AWAY.getCode().equals(venue.getVenueType())) {
+            // 处理Away球场的解锁
+            handleAwayUnlock(records,venue);
+        }
+    }
+
+    /**
+     * 处理Away球场的解锁
+     * 1. 检查所有records是否都有thirdPartyBookingId（必须全有或全无）
+     * 2. 如果都有，说明是Away订单，调用第三方平台解锁
+     *
+     * @param records 槽位记录列表
+     */
+    private void handleAwayUnlock(List<VenueBookingSlotRecord> records,Venue venue) {
+        // 统计有thirdPartyBookingId的记录数量
+        long recordsWithThirdPartyIdCount = records.stream()
+                .filter(record -> record.getThirdPartyBookingId() != null
+                        && !record.getThirdPartyBookingId().isEmpty())
+                .count();
+
+        // 检查一致性：要么全有，要么全无
+        if (recordsWithThirdPartyIdCount == 0 ||  recordsWithThirdPartyIdCount < records.size()) {
+            log.error("[Away解锁] 数据不一致：部分记录有thirdPartyBookingId，部分没有 - 总数: {}, 有thirdPartyId: {},需要人工干预解锁",
+                    records.size(), recordsWithThirdPartyIdCount);
+            // todo 人工干预解锁.如发邮件/插入记录表
+            throw new GloboxApplicationException(VenueCode.VENUE_CAN_NOT_UNLOCK);
+        }
+        Long venueId = venue.getVenueId();
+        List<Long> templateIds = records.stream()
+                .map(VenueBookingSlotRecord::getSlotTemplateId)
+                .toList();
+        List<VenueBookingSlotTemplate> templates = slotTemplateMapper.selectBatchIds(templateIds);
+        List<Long> courtIds = templates.stream().map(VenueBookingSlotTemplate::getCourtId).toList();
+        List<Court> courts = courtMapper.selectByIds(courtIds);
+        // 查询第三方平台配置
+        VenueThirdPartyConfig config = venueThirdPartyConfigMapper.selectOne(
+                new LambdaQueryWrapper<VenueThirdPartyConfig>()
+                        .eq(VenueThirdPartyConfig::getVenueId, venueId)
+        );
+        if (config == null) {
+            log.error("[Away解锁] Away球场未配置第三方平台 - venueId: {}", venueId);
+            throw new GloboxApplicationException("Away解锁失败：未配置第三方平台");
+        }
+        // 查询平台信息，获取platformCode
+        ThirdPartyPlatform platform = thirdPartyPlatformMapper.selectById(config.getThirdPartyPlatformId());
+        if (platform == null) {
+            log.error("[Away解锁] 第三方平台不存在 - platformId: {}", config.getThirdPartyPlatformId());
+            throw new RuntimeException("Away解锁失败：第三方平台不存在");
+        }
+
+        String platformCode = platform.getPlatformCode();
+        log.info("[Away解锁] 平台信息 - venueId: {}, platformCode: {}", venueId, platformCode);
+
+        // 构建场地ID映射表（courtId -> Court）
+        Map<Long, Court> courtMap = courts.stream()
+                .collect(Collectors.toMap(Court::getCourtId, court -> court));
+
+        // 构建模板映射表（templateId -> template）
+        Map<Long, VenueBookingSlotTemplate> templateMap = templates.stream()
+                .collect(Collectors.toMap(VenueBookingSlotTemplate::getBookingSlotTemplateId, template -> template));
+
+        // 获取预订日期（假设所有record的日期相同）
+        LocalDate bookingDate = records.get(0).getBookingDate().toLocalDate();
+
+        // 构建解锁请求列表（包含第三方预订ID用于解锁）
+        List<SlotLockRequest> unlockRequests = records.stream()
+                .map(record -> {
+                    VenueBookingSlotTemplate template = templateMap.get(record.getSlotTemplateId());
+                    if (template == null) {
+                        log.error("[Away解锁] 未找到模板 - templateId: {}", record.getSlotTemplateId());
+                        return null;
+                    }
+                    Court court = courtMap.get(template.getCourtId());
+                    if (court == null || court.getThirdPartyCourtId() == null) {
+                        log.error("[Away解锁] 场地未配置第三方ID - courtId: {}", template.getCourtId());
+                        return null;
+                    }
+                    return SlotLockRequest.builder()
+                            .thirdPartyCourtId(court.getThirdPartyCourtId())
+                            .startTime(template.getStartTime().toString())
+                            .endTime(template.getEndTime().toString())
+                            .date(bookingDate)
+                            .thirdPartyBookingId(record.getThirdPartyBookingId())
+                            .build();
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+
+        if (unlockRequests.isEmpty()) {
+            log.error("[Away解锁] 无有效的解锁请求");
+            throw new GloboxApplicationException("Away解锁失败：无有效的解锁请求");
+        }
+
+        // 根据platformCode获取适配器并调用解锁接口
+        ThirdPartyPlatformAdapter adapter = adapterFactory.getAdapter(platformCode);
+        log.info("[Away解锁] 开始调用第三方平台解锁 - venueId: {}, 槽位数: {}",
+                venueId, unlockRequests.size());
+
+        boolean unlockResult = adapter.unlockSlots(config, unlockRequests);
+
+        if (!unlockResult) {
+            log.error("[Away解锁] 第三方平台解锁失败 - venueId: {}, platformCode: {}, 解锁槽位数: {}",
+                    venueId, platformCode, unlockRequests.size());
+            throw new RuntimeException("Away解锁失败：第三方平台解锁返回失败");
+        }
+
+        log.info("[Away解锁] 第三方平台解锁成功 - venueId: {}, platformCode: {}, 解锁槽位数: {}",
+                venueId, platformCode, unlockRequests.size());
     }
 
     /**

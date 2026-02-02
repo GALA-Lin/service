@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.user.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
@@ -9,12 +10,13 @@ import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.ClientType;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
+import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusDto;
 import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
+import com.unlimited.sports.globox.model.auth.dto.SetUsernameRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserRacketRequest;
@@ -25,6 +27,7 @@ import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.entity.UserRacket;
 import com.unlimited.sports.globox.model.auth.entity.UserStyleTag;
 import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
+import com.unlimited.sports.globox.model.auth.vo.SetUsernameResultVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
@@ -32,6 +35,8 @@ import com.unlimited.sports.globox.model.auth.vo.RacketDictNodeVo;
 import com.unlimited.sports.globox.model.auth.vo.StyleTagVo;
 import com.unlimited.sports.globox.model.auth.vo.UserProfileVo;
 import com.unlimited.sports.globox.model.auth.vo.UserRacketVo;
+import com.unlimited.sports.globox.model.auth.vo.UserSearchItemVo;
+import com.unlimited.sports.globox.model.auth.vo.UserSearchResultVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.user.mapper.RacketDictMapper;
 import com.unlimited.sports.globox.user.mapper.StyleTagMapper;
@@ -48,6 +53,7 @@ import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -60,9 +66,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
 import java.time.Year;
 
 /**
@@ -110,6 +118,9 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @DubboReference(group = "rpc")
     private RegionDubboService regionDubboService;
+
+    @Value("${user.username.cooldown-seconds:5184000}")
+    private long usernameCooldownSeconds;
 
     @Override
     public UserProfile getUserProfileById(Long userId) {
@@ -270,7 +281,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         vo.setIsMutual(false);
         vo.setHomeDistrictName(getRegionNameByCode(profile.getHomeDistrict()));
         if (!StringUtils.hasText(vo.getAvatarUrl())) {
-            String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+            String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
             String defaultAvatarUrl = resolveDefaultAvatarUrl(clientType);
             if (StringUtils.hasText(defaultAvatarUrl)) {
                 vo.setAvatarUrl(defaultAvatarUrl);
@@ -982,7 +993,13 @@ public class UserProfileServiceImpl implements UserProfileService {
     }
 
     private Integer convertYearsToStartYear(Integer years) {
-        if (years == null || years <= 0) {
+        if (years == null) {
+            return null;
+        }
+        if (years == 0) {
+            return 0;
+        }
+        if (years < 0) {
             return null;
         }
         int currentYear = Year.now().getValue();
@@ -1081,6 +1098,147 @@ public class UserProfileServiceImpl implements UserProfileService {
             log.error("头像上传异常", e);
             return R.<FileUploadVo>error(UserAuthCode.UPLOAD_FILE_FAILED).message("头像上传失败");
         }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public R<SetUsernameResultVo> setUsername(Long userId, SetUsernameRequest request) {
+        if (userId == null) {
+            return R.error(UserAuthCode.USER_NOT_EXIST);
+        }
+        if (request == null || !StringUtils.hasText(request.getUsername())) {
+            return R.error(UserAuthCode.INVALID_PARAM);
+        }
+
+        String username = request.getUsername().trim();
+        String usernameLower = username.toLowerCase(Locale.ROOT);
+
+        if (!username.matches("^[A-Za-z0-9]{4,20}$")) {
+            return R.error(UserAuthCode.USERNAME_INVALID_FORMAT);
+        }
+
+        UserProfile profile = getUserProfileById(userId);
+        if (profile == null) {
+            return R.error(UserAuthCode.USER_NOT_EXIST);
+        }
+
+        String existingUsername = profile.getUsername();
+        String existingUsernameLower = profile.getUsernameLower();
+        LocalDateTime lastChanged = profile.getLastUsernameChangedAt();
+        boolean isFirstTime = !StringUtils.hasText(existingUsername);
+
+        if (!isFirstTime) {
+            boolean sameNameIgnoreCase = existingUsername.equalsIgnoreCase(username);
+            if (sameNameIgnoreCase || (StringUtils.hasText(existingUsernameLower)
+                    && existingUsernameLower.equals(usernameLower))) {
+                if (sameNameIgnoreCase && !StringUtils.hasText(existingUsernameLower)) {
+                    try {
+                        profile.setUsernameLower(usernameLower);
+                        userProfileMapper.updateById(profile);
+                    } catch (DuplicateKeyException e) {
+                        log.warn("球盒号已被占用：userId={}, username={}, usernameLower={}",
+                                userId, username, usernameLower);
+                        return R.error(UserAuthCode.USERNAME_ALREADY_TAKEN);
+                    }
+                }
+                LocalDateTime cooldownUntil = lastChanged != null
+                        ? lastChanged.plusSeconds(usernameCooldownSeconds)
+                        : null;
+                return R.ok(SetUsernameResultVo.builder()
+                        .username(existingUsername)
+                        .cooldownUntil(cooldownUntil)
+                        .build());
+            }
+        }
+
+        if (!isFirstTime && lastChanged != null) {
+            LocalDateTime cooldownExpire = lastChanged.plusSeconds(usernameCooldownSeconds);
+            if (LocalDateTime.now().isBefore(cooldownExpire)) {
+                log.warn("球盒号修改冷却期未到：userId={}, lastChanged={}, cooldownExpire={}",
+                        userId, lastChanged, cooldownExpire);
+                SetUsernameResultVo result = SetUsernameResultVo.builder()
+                        .username(profile.getUsername())
+                        .cooldownUntil(cooldownExpire)
+                        .build();
+                return R.<SetUsernameResultVo>error(UserAuthCode.USERNAME_COOLDOWN_NOT_EXPIRED)
+                        .message("球盒号修改冷却期未到，请稍后再试")
+                        .data(result);
+            }
+        }
+
+        try {
+            // Pre-check uniqueness for clearer error feedback (exclude self)
+            LambdaQueryWrapper<UserProfile> uniqueCheck = new LambdaQueryWrapper<>();
+            uniqueCheck.eq(UserProfile::getUsernameLower, usernameLower)
+                    .ne(UserProfile::getUserId, userId);
+            Long exists = userProfileMapper.selectCount(uniqueCheck);
+            if (exists != null && exists > 0) {
+                log.warn("球盒号已被占用：userId={}, username={}, usernameLower={}",
+                        userId, username, usernameLower);
+                return R.error(UserAuthCode.USERNAME_ALREADY_TAKEN);
+            }
+
+            profile.setUsername(username);
+            profile.setUsernameLower(usernameLower);
+            profile.setLastUsernameChangedAt(LocalDateTime.now());
+            userProfileMapper.updateById(profile);
+
+            LocalDateTime cooldownUntil = profile.getLastUsernameChangedAt()
+                    .plusSeconds(usernameCooldownSeconds);
+            return R.ok(SetUsernameResultVo.builder()
+                    .username(username)
+                    .cooldownUntil(cooldownUntil)
+                    .build());
+        } catch (DuplicateKeyException e) {
+            log.warn("球盒号已被占用：userId={}, username={}, usernameLower={}",
+                    userId, username, usernameLower);
+            return R.error(UserAuthCode.USERNAME_ALREADY_TAKEN);
+        }
+    }
+
+    @Override
+    public R<UserSearchResultVo> searchUsersByUsername(String keyword, Integer page, Integer pageSize) {
+        if (!StringUtils.hasText(keyword)) {
+            return R.ok(UserSearchResultVo.builder()
+                    .users(Collections.emptyList())
+                    .total(0L)
+                    .page(page != null ? page : 1)
+                    .pageSize(pageSize != null ? pageSize : 20)
+                    .build());
+        }
+
+        String keywordLower = keyword.trim().toLowerCase(Locale.ROOT);
+        String keywordLowerEscaped = keywordLower.replace("'", "''");
+        int currentPage = (page != null && page > 0) ? page : 1;
+        int size = (pageSize != null && pageSize > 0 && pageSize <= 100) ? pageSize : 20;
+
+        Page<UserProfile> profilePage = new Page<>(currentPage, size);
+        LambdaQueryWrapper<UserProfile> query = new LambdaQueryWrapper<>();
+        query.and(wrapper -> wrapper
+                .eq(UserProfile::getUsernameLower, keywordLower)
+                .or()
+                .likeRight(UserProfile::getUsernameLower, keywordLower)
+        );
+        query.isNotNull(UserProfile::getUsername);
+        query.eq(UserProfile::getCancelled, false);
+        query.last("ORDER BY CASE WHEN username_lower = '" + keywordLowerEscaped + "' THEN 0 ELSE 1 END, user_id ASC");
+
+        Page<UserProfile> result = userProfileMapper.selectPage(profilePage, query);
+        List<UserSearchItemVo> items = result.getRecords().stream()
+                .map(profileItem -> UserSearchItemVo.builder()
+                        .userId(profileItem.getUserId())
+                        .username(profileItem.getUsername())
+                        .nickName(profileItem.getNickName())
+                        .avatarUrl(profileItem.getAvatarUrl())
+                        .build())
+                .collect(Collectors.toList());
+
+        return R.ok(UserSearchResultVo.builder()
+                .users(items)
+                .total(result.getTotal())
+                .page(currentPage)
+                .pageSize(size)
+                .build());
     }
 
     @Override

@@ -139,14 +139,16 @@
 
     <update id="decrementRemainingPeopleIfAvailable">
         UPDATE rally_posts
-        SET rally_remaining_people = rally_remaining_people - 1,
-            rally_updated_at = NOW(),
+        SET
+            -- 先判断：如果当前是1，这次减完就是0，直接设为满员(1)
             rally_status = CASE
-                WHEN rally_remaining_people - 1 = 0 THEN 1
-                ELSE rally_status
-            END
+                               WHEN rally_remaining_people = 1 THEN 1
+                               ELSE rally_status
+                END,
+            rally_remaining_people = rally_remaining_people - 1,
+            rally_updated_at = NOW()
         WHERE rally_post_id = #{postId}
-          AND rally_status = 0
-          AND rally_remaining_people > 0
+          AND rally_status = 0          -- 必须是报名中
+          AND rally_remaining_people > 0 -- 必须还有名额
     </update>
 </mapper>

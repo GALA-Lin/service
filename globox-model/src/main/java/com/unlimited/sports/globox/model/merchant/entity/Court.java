@@ -68,6 +68,12 @@ public class Court implements Serializable {
     private String thirdPartyCourtId;
 
     /**
+     * 绑定的价格模板ID
+     */
+    @TableField("template_id")
+    private Long templateId;
+
+    /**
      * 创建时间
      */
     @TableField(value = "created_at", fill = FieldFill.INSERT)

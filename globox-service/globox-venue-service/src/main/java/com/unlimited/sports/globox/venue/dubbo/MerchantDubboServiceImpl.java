@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.venue.dubbo;
 
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.MerchantErrorCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
@@ -88,12 +89,6 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
             // 验证并准备预订上下文- 第一次验证（获取锁前）
             SlotBookingContext context =
                     bookingService.validateAndPrepareBookingContext(dto.getSlotIds(), dto.getBookingDate(), dto.getUserId());
-
-            // 提取上下文数据
-            List<VenueBookingSlotTemplate> templates = context.getTemplates();
-            Venue venue = context.getVenue();
-            Map<Long, String> courtNameMap = context.getCourtNameMap();
-
             List<String> lockKeys = dto.getSlotIds().stream()
                     .map(slotId -> buildLockKey(slotId, dto.getBookingDate()))
                     .collect(Collectors.toList());
@@ -120,9 +115,7 @@ public class MerchantDubboServiceImpl implements MerchantDubboService {
 
                 PricingResultDto result = bookingService.executeBookingInTransaction(
                         dto,
-                        templates,
-                        venue,
-                        courtNameMap,
+                        context,
                         userName);
 
                 return RpcResult.ok(result);

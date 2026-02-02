@@ -73,12 +73,14 @@ public class SocialRelationDubboServiceImpl implements SocialRelationDubboServic
             Set<Long> viewerFollowedTargets = socialUserFollowMapper.selectList(
                     new LambdaQueryWrapper<SocialUserFollow>()
                             .eq(SocialUserFollow::getUserId, viewerId)
+                            .eq(SocialUserFollow::getDeleted, false)
                             .in(SocialUserFollow::getFollowUserId, distinctTargets)
             ).stream().map(SocialUserFollow::getFollowUserId).collect(Collectors.toSet());
 
             Set<Long> targetsFollowViewer = socialUserFollowMapper.selectList(
                     new LambdaQueryWrapper<SocialUserFollow>()
                             .eq(SocialUserFollow::getFollowUserId, viewerId)
+                            .eq(SocialUserFollow::getDeleted, false)
                             .in(SocialUserFollow::getUserId, distinctTargets)
             ).stream().map(SocialUserFollow::getUserId).collect(Collectors.toSet());
 

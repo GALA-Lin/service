@@ -21,6 +21,10 @@ public enum VenueCode implements ResultCode {
     SLOT_NOT_AVAILABLE(7004, "部分时段已不可用或已被占用，请重新选择可用时段"),
     SLOT_OCCUPIED(7005, "该时段已被其他用户预订，请重新选择"),
     SLOT_DIFFERENT_VENUE(7006, "暂不支持跨场馆预订，请确保所选场次均来自同一场馆"),
+    VENUE_CAN_NOT_BOOKING(7007,"该场馆暂时不可预订,请联系商家或者尝试预定其他场馆"),
+    VENUE_CAN_NOT_UNLOCK(7008,"无法解锁,请联系商家手动解锁"),
+    VENUE_PRICE_NOT_CONFIGURED(7009, "该场地价格未配置,请联系商家或预定其他场地"),
+    VENUE_TIME_SLOT_BOOKING_NOT_ALLOWED(7010, "不允许时段预定"),
 
     // 活动相关 7021-7040
     ACTIVITY_PARAM_INVALID(7021, "活动信息加载失败，请尝试重新进入页面"),
@@ -36,7 +40,6 @@ public enum VenueCode implements ResultCode {
     // 场馆场地相关 7041-7060
     VENUE_NOT_EXIST(7041, "未找到该场馆信息，请返回列表重新进入"),
     COURT_NOT_EXIST(7042, "场地信息已变更，请刷新页面后再试"),
-    VENUE_PRICE_NOT_CONFIGURED(7043, "该场地暂未配置价格，请咨询商家或预订其他场地"),
 
 
     // 兜底错误

@@ -27,10 +27,4 @@ public class MerchantRefundApplyDetailsRequestDto implements Serializable {
 
     @NotNull(message = "场馆ID不能为空")
     private Long venueId;
-
-    /**
-     * 是否返回时间线（order_status_logs）
-     */
-    @Builder.Default
-    private boolean includeTimeline = true;
 }

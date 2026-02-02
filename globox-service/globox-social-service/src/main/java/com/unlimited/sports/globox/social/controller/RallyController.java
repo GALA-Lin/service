@@ -13,7 +13,6 @@ import com.unlimited.sports.globox.model.social.vo.RallyPostsDetailsVo;
 import com.unlimited.sports.globox.model.social.vo.RallyPostsVo;
 import com.unlimited.sports.globox.model.social.vo.RallyQueryVo;
 import com.unlimited.sports.globox.social.service.RallyService;
-import com.unlimited.sports.globox.social.service.impl.RallyServiceImpl;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -26,7 +25,6 @@ import org.springframework.web.bind.annotation.*;
 
 
 import javax.validation.Valid;
-import java.util.List;
 
 import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
 import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIRED;
@@ -57,7 +55,7 @@ public class RallyController {
     public R<RallyQueryVo> getRallyList(
             @Parameter(description = "约球查询条件", required = true)
             @Valid RallyQueryDto rallyQueryDto) {
-        log.info("获取筛选条件：-------------{}",rallyQueryDto);
+        log.info("获取筛选条件：{}",rallyQueryDto);
         RallyQueryVo rallyPostsVoPaginationResult = rallyService.getRallyPostsList(rallyQueryDto);
         return R.ok(rallyPostsVoPaginationResult);
     }
@@ -100,7 +98,7 @@ public class RallyController {
             @ApiResponse(responseCode = "200", description = "创建成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R createRally(
+    public R<RallyPosts> createRally(
             @Parameter(description = "约球活动数据", required = true)
             @RequestBody @Valid RallyPostsDto rallyPostsDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
@@ -126,7 +124,7 @@ public class RallyController {
             @ApiResponse(responseCode = "200", description = "取消成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R cancelRally(
+    public R<String> cancelRally(
             @Parameter(description = "约球帖子ID", required = true)
             @RequestBody PostIdDto postIdDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
@@ -155,7 +153,7 @@ public class RallyController {
             @ApiResponse(responseCode = "200", description = "申请成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R joinRally(
+    public R<String> joinRally(
             @Parameter(description = "约球帖子ID", required = true)
             @RequestBody PostIdDto postIdDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
@@ -184,7 +182,7 @@ public class RallyController {
             @ApiResponse(responseCode = "200", description = "取消成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R cancelJoinRally(
+    public R<String> cancelJoinRally(
             @Parameter(description = "约球帖子ID", required = true)
             @RequestBody PostIdDto postIdDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
@@ -213,7 +211,7 @@ public class RallyController {
             @ApiResponse(responseCode = "200", description = "审核成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R inspectRally(
+    public R<String> inspectRally(
             @Parameter(description = "审核数据", required = true)
             @RequestBody InspectDto inspectDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
@@ -240,7 +238,7 @@ public class RallyController {
             @ApiResponse(responseCode = "200", description = "更新成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R updateRally(
+    public R<String> updateRally(
             @Parameter(description = "更新数据", required = true)
             @RequestBody UpdateRallyDto updateRallyDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)

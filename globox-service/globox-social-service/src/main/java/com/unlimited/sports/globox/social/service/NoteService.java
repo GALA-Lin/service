@@ -6,11 +6,14 @@ import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
 import com.unlimited.sports.globox.model.social.dto.UpdateNoteRequest;
+import com.unlimited.sports.globox.model.social.enums.NoteTag;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
 import com.unlimited.sports.globox.model.social.vo.NoteDetailVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
+
+import java.util.List;
 
 /**
  * 笔记服务接口
@@ -52,7 +55,7 @@ public interface NoteService {
     /**
      * 获取最新一条草稿
      */
-    R<DraftNoteVo> getDraft(Long userId);
+    R<DraftNoteVo> getDraft(Long userId, Long noteId);
 
     /**
      * 获取最新流笔记列表（游标分页）
@@ -152,4 +155,20 @@ public interface NoteService {
      * @return 游标分页结果
      */
     R<CursorPaginationResult<NoteItemVo>> getHomeNotes(String cursor, Integer size, Long userId);
+
+    /**
+     * 获取所有可用的笔记标签
+     *
+     * @return 标签字典列表
+     */
+    R<List<NoteTag.DictItem>> getNoteTags();
+
+    /**
+     * 批量设置笔记精选状态
+     *
+     * @param noteIds  笔记ID列表
+     * @param featured 是否精选
+     * @return 操作结果
+     */
+    R<String> setNotesFeatured(List<Long> noteIds, Boolean featured);
 }

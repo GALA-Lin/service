@@ -9,6 +9,7 @@ import com.unlimited.sports.globox.model.social.vo.RallyPostsVo;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -107,4 +108,46 @@ public interface RallyPostsMapper extends BaseMapper<RallyPosts> {
      * @return 影响行数
      */
     int decrementRemainingPeopleIfAvailable(@Param("postId") Long postId);
+    /**
+     * 更新剩余人数（基于数据库实时计算）
+     * 使用子查询确保数据一致性
+     *
+     * @param postId 帖子ID
+     * @param totalPeople 总人数
+     * @return 影响行数
+     */
+    @Update("UPDATE rally_posts " +
+            "SET rally_remaining_people = #{totalPeople} - " +
+            "    (SELECT COUNT(*) FROM rally_participant " +
+            "     WHERE rally_post_id = #{postId} AND is_initiator = 0), " +
+            "    rally_total_people = #{totalPeople}, " +
+            "    rally_updated_at = NOW() " +
+            "WHERE rally_post_id = #{postId}")
+    int updateRemainingPeopleByCalculation(@Param("postId") Long postId,
+                                           @Param("totalPeople") Integer totalPeople);
+
+    /**
+     * 同步剩余人数（不修改总人数，仅重新计算剩余人数）
+     * 用于数据修复或定时同步
+     *
+     * @param postId 帖子ID
+     * @return 影响行数
+     */
+    @Update("UPDATE rally_posts " +
+            "SET rally_remaining_people = rally_total_people - " +
+            "    (SELECT COUNT(*) FROM rally_participant " +
+            "     WHERE rally_post_id = #{postId}), " +
+            "    rally_updated_at = NOW() " +
+            "WHERE rally_post_id = #{postId}")
+    int syncRemainingPeople(@Param("postId") Long postId);
+
+    /**
+     * 原子增加剩余人数，并根据需要自动恢复活动状态
+     */
+    @Update("UPDATE rally_posts " +
+            "SET rally_remaining_people = rally_remaining_people + 1, " +
+            "    rally_status = CASE WHEN rally_status = 2 THEN 1 ELSE rally_status END, " +
+            "    rally_updated_at = NOW() " +
+            "WHERE rally_post_id = #{postId}")
+    int incrementRemainingPeople(@Param("postId") Long postId);
 }

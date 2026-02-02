@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 笔记列表项视图
@@ -52,6 +53,12 @@ public class NoteItemVo {
 
     @Schema(description = "创建时间", example = "2025-12-26T10:00:00")
     private LocalDateTime createdAt;
+
+    @Schema(description = "标签代码列表", example = "[\"TENNIS_COMMUNITY\", \"EQUIPMENT_REVIEW\"]")
+    private List<String> tags;
+
+    @Schema(description = "标签描述列表", example = "[\"网球社区\", \"装备测评\"]")
+    private List<String> tagsDesc;
 
     @Schema(description = "当前用户是否已点赞", example = "true")
     private Boolean liked;

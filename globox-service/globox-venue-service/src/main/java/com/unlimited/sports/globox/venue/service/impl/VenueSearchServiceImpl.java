@@ -64,6 +64,9 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
     @Autowired
     private VenuePriceTemplatePeriodMapper venuePriceTemplatePeriodMapper;
 
+    @Autowired
+    private AwayVenueSearchService awayVenueSearchService;
+
     @Override
     public PaginationResult<VenueItemVo> searchVenues(GetVenueListDto dto) {
         log.info("查询条件{}",dto);
@@ -71,7 +74,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         Set<Long> facilityVenueIds = null;
         if (CollectionUtils.isNotEmpty(dto.getFacilities())) {
             List<Long> venueIdsList = venueFacilityRelationMapper.selectList(new LambdaQueryWrapper<VenueFacilityRelation>()
-                    .in(VenueFacilityRelation::getFacilityId, dto.getFacilities()))
+                            .in(VenueFacilityRelation::getFacilityId, dto.getFacilities()))
                     .stream().map(VenueFacilityRelation::getVenueId).toList();
             facilityVenueIds = new HashSet<>(venueIdsList);
             if (facilityVenueIds.isEmpty()) {
@@ -84,9 +87,9 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         if (CollectionUtils.isNotEmpty(dto.getCourtTypes()) ||
                 CollectionUtils.isNotEmpty(dto.getGroundTypes())) {
             courtTypeVenueIds = courtMapper.selectList(new LambdaQueryWrapper<Court>()
-                    .select(Court::getVenueId)
-                    .in(CollectionUtils.isNotEmpty(dto.getCourtTypes()), Court::getCourtType, dto.getCourtTypes())
-                    .in(CollectionUtils.isNotEmpty(dto.getGroundTypes()), Court::getGroundType, dto.getGroundTypes()))
+                            .select(Court::getVenueId)
+                            .in(CollectionUtils.isNotEmpty(dto.getCourtTypes()), Court::getCourtType, dto.getCourtTypes())
+                            .in(CollectionUtils.isNotEmpty(dto.getGroundTypes()), Court::getGroundType, dto.getGroundTypes()))
                     .stream()
                     .map(Court::getVenueId)
                     .collect(Collectors.toSet());
@@ -116,20 +119,35 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 log.info("营业时间规则过滤的不可预订场馆数量：{}", businessHoursUnavailable.size());
             }
 
-            // 3. 基于已预订槽位过滤不可预订的场馆
+            // 3. 基于已预订槽位过滤不可预订的HOME场馆
             List<Long> slotUnavailable = venueBookingSlotRecordMapper.selectUnavailableVenueIds(
                     null,
                     dto.getBookingDate(),
                     dto.getStartTime(),
                     dto.getEndTime()
             );
-            log.info("时间筛选后不可预定的{}", JSON.toJSONString(slotUnavailable));
+            log.info("HOME场馆时间筛选后不可预定的{}", JSON.toJSONString(slotUnavailable));
             if (slotUnavailable != null && !slotUnavailable.isEmpty()) {
                 unavailableVenueIds.addAll(slotUnavailable);
-                log.info("已预订槽位过滤的不可预订场馆数量：{}", slotUnavailable.size());
+                log.info("HOME场馆已预订槽位过滤的不可预订场馆数量：{}", slotUnavailable.size());
             }
 
-            log.info("总计不可预订的场馆数量：{}", unavailableVenueIds.size());
+            // 4. 基于AWAY球场实时槽位过滤不可预订的场馆
+            try {
+                Set<Long> awayUnavailable = awayVenueSearchService.getUnavailableAwayVenueIds(
+                        dto.getBookingDate(),
+                        dto.getStartTime(),
+                        dto.getEndTime()
+                );
+                if (awayUnavailable != null && !awayUnavailable.isEmpty()) {
+                    unavailableVenueIds.addAll(awayUnavailable);
+                    log.info("AWAY场馆槽位过滤的不可预订场馆数量：{}", awayUnavailable.size());
+                }
+            } catch (Exception e) {
+                log.error("查询AWAY场馆槽位异常，跳过AWAY场馆过滤", e);
+            }
+
+            log.info("总计不可预订的场馆数量（HOME+AWAY）：{}", unavailableVenueIds.size());
         }
 
         // 预处理：查询符合价格范围的场馆ID列表

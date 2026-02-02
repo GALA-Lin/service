@@ -30,6 +30,22 @@
             <version>1.0</version>
         </dependency>
 
+        <dependency>
+            <groupId>com.unlimited.sports.globox</groupId>
+            <artifactId>globox-common-utils</artifactId>
+            <version>1.0</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-apache-dubbo-adapter</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.csp</groupId>
+            <artifactId>sentinel-parameter-flow-control</artifactId>
+        </dependency>
+
         <!-- Validation API (javax) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

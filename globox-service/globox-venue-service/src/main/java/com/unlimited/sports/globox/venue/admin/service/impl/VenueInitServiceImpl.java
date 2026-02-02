@@ -301,6 +301,7 @@ public class VenueInitServiceImpl implements IVenueInitService {
                 .username(configDto.getUsername())
                 .password(configDto.getPassword())
                 .apiUrl(configDto.getApiUrl())
+                .extraConfig(configDto.getExtraConfig())  // 保存额外配置
                 .status(1)  // 启用
                 .build();
 

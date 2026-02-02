@@ -55,7 +55,7 @@ public class UserDubboServiceImpl implements UserDubboService {
         BeanUtils.copyProperties(profile, vo);
         // 手动映射枚举和字段名不一致的字段
         vo.setGender(profile.getGender());
-        vo.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : null);
+        vo.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : 0.0);
         vo.setCancelled(Boolean.TRUE.equals(profile.getCancelled()));
         if (!StringUtils.hasText(vo.getAvatarUrl())) {
             String defaultAvatarUrl = resolveDefaultAvatarUrl();
@@ -97,7 +97,7 @@ public class UserDubboServiceImpl implements UserDubboService {
                     BeanUtils.copyProperties(profile, dto);
                     // 手动映射枚举和字段名不一致的字段
                     dto.setGender(profile.getGender());
-                    dto.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : null);
+                    dto.setUserNtrpLevel(profile.getNtrp() != null ? profile.getNtrp().doubleValue() : 0.0);
                     dto.setCancelled(Boolean.TRUE.equals(profile.getCancelled()));
                     if (!StringUtils.hasText(dto.getAvatarUrl())) {
                         String defaultAvatarUrl = resolveDefaultAvatarUrl();
@@ -126,7 +126,7 @@ public class UserDubboServiceImpl implements UserDubboService {
                         .eq(AuthIdentity::getCancelled, false)
         );
         if (identity == null) {
-            return RpcResult.ok(null);
+            return RpcResult.error(UserAuthCode.USER_PHONE_NOT_BOUND);
         }
         return RpcResult.ok(UserPhoneDto.builder()
                 .userId(userId)
@@ -171,7 +171,40 @@ public class UserDubboServiceImpl implements UserDubboService {
      */
     @Override
     public RpcResult<CoachInfoForProfitSharing> getCoachInfoForProfitSharing(Long coachId) {
-        return RpcResult.ok();
+        if (coachId == null) {
+            return RpcResult.error(UserAuthCode.INVALID_PARAM);
+        }
+
+        UserProfile profile = userProfileService.getUserProfileById(coachId);
+        if (profile == null) {
+            return RpcResult.error(UserAuthCode.QUERY_NOT_EXIST);
+        }
+
+        AuthIdentity phoneIdentity = authIdentityMapper.selectOne(
+                com.baomidou.mybatisplus.core.toolkit.Wrappers.<AuthIdentity>lambdaQuery()
+                        .eq(AuthIdentity::getUserId, coachId)
+                        .eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.PHONE)
+                        .eq(AuthIdentity::getVerified, true)
+                        .eq(AuthIdentity::getCancelled, false)
+        );
+        String openId = phoneIdentity != null ? phoneIdentity.getCredential() : null;
+        if (!StringUtils.hasText(openId)) {
+            log.warn("profit sharing coach info missing openid: coachId={}", coachId);
+            return RpcResult.error(UserAuthCode.QUERY_NOT_EXIST);
+        }
+
+        if (!StringUtils.hasText(profile.getRealName())) {
+            log.warn("profit sharing coach info missing realName: coachId={}", coachId);
+            return RpcResult.error(UserAuthCode.USER_REALNAME_REQUIRED);
+        }
+        String realName = profile.getRealName();
+
+        CoachInfoForProfitSharing result = CoachInfoForProfitSharing.builder()
+                .coachId(coachId)
+                .account(openId)
+                .realName(realName)
+                .build();
+        return RpcResult.ok(result);
     }
 
     private String resolveDefaultAvatarUrl() {

@@ -1,10 +1,7 @@
 package com.unlimited.sports.globox.search.service.impl;
 
-import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.RpcResult;
-import com.unlimited.sports.globox.common.vo.SearchDocumentDto;
-import com.unlimited.sports.globox.common.vo.SearchResultItem;
 import com.unlimited.sports.globox.model.search.enums.SearchDocTypeEnum;
 import com.unlimited.sports.globox.model.search.enums.SortOrderEnum;
 import com.unlimited.sports.globox.model.venue.dto.GetVenueListDto;
@@ -17,9 +14,11 @@ import com.unlimited.sports.globox.model.venue.vo.VenueItemVo;
 import com.unlimited.sports.globox.model.venue.vo.VenueListResponse;
 import com.unlimited.sports.globox.search.constants.VenueSearchConstants;
 import com.unlimited.sports.globox.dubbo.venue.IVenueSearchDataService;
+import com.unlimited.sports.globox.search.document.VenueSearchDocument;
 import com.unlimited.sports.globox.search.document.UnifiedSearchDocument;
 import com.unlimited.sports.globox.model.venue.vo.VenueSyncVO;
 import com.unlimited.sports.globox.search.service.IVenueSearchService;
+import com.unlimited.sports.globox.search.service.IUnifiedSearchService;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +32,7 @@ import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -64,6 +64,10 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
     private IVenueSearchDataService venueSearchDataService;
 
 
+    @Lazy
+    @Autowired
+    private IUnifiedSearchService unifiedSearchService;
+
     @Value("${default_image.venue_list_cover:https://globox-dev-1386561970.cos.ap-chengdu.myqcloud.com/venue-review/venue-detail/2026-01-10/e743ec4475964ac7be237579c320f87b.jpg}")
     private String defaultVenueListCoverImage;
     /**
@@ -83,9 +87,8 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 dto.getPageSize() != null ? dto.getPageSize() : VenueSearchConstants.DEFAULT_PAGE_SIZE
         );
 
-        // 构建基础查询（公共字段）
+        // 构建基础查询
         BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
-        boolQuery.filter(QueryBuilders.termQuery("dataType", SearchDocTypeEnum.VENUE.getValue()));
         boolQuery = buildCommonQuery(boolQuery, dto.getKeyword());
 
         //构建通用过滤条件
@@ -127,19 +130,19 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         assert nativeSearchQuery.getQuery() != null;
         log.info("完整ES查询JSON: {}", nativeSearchQuery.getQuery().toString());
 
-        SearchHits<UnifiedSearchDocument> searchHits = elasticsearchOperations.search(
+        SearchHits<VenueSearchDocument> searchHits = elasticsearchOperations.search(
                 nativeSearchQuery,
-                UnifiedSearchDocument.class
+                VenueSearchDocument.class
         );
 
         log.info("场馆搜索: keyword={}, 命中数={}, 总数={}", dto.getKeyword(), searchHits.getSearchHits().size(), searchHits.getTotalHits());
 
         // 8. 转换搜索结果
         final int distanceSortIndex = sortResult.getDistanceSortIndex();
-        List<SearchResultItem<VenueItemVo>> resultItems = searchHits.getSearchHits().stream()
+        List<VenueItemVo> venueList = searchHits.getSearchHits().stream()
                 .map(hit -> {
                     try {
-                        UnifiedSearchDocument doc = hit.getContent();
+                        VenueSearchDocument doc = hit.getContent();
                         BigDecimal hitDistance = null;
 
                         // 从ES排序结果中提取距离值
@@ -150,50 +153,15 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                             }
                         }
 
-                        // 从Point中提取经纬度
-                        Double lat = null;
-                        Double lon = null;
-                        if (doc.getLocation() != null) {
-                            lat = doc.getLocation().getY();  // 纬度
-                            lon = doc.getLocation().getX();  // 经度
-                        }
-
-                        // 创建SearchDocumentDto
-                        SearchDocumentDto searchDocDto = SearchDocumentDto.builder()
-                                .businessId(doc.getBusinessId())
-                                .dataType(doc.getDataType())
-                                .title(doc.getTitle())
-                                .region(doc.getRegion())
-                                .coverUrl(doc.getCoverUrl() != null ? doc.getCoverUrl() : defaultVenueListCoverImage)
-                                .rating(doc.getRating())
-                                .ratingCount(doc.getRatingCount())
-                                .priceMin(doc.getPriceMin())
-                                .venueCourtTypes(doc.getVenueCourtTypes())
-                                .venueGroundTypes(doc.getVenueGroundTypes())
-                                .venueFacilities(doc.getVenueFacilities())
-                                .venueCourtCount(doc.getVenueCourtCount())
-                                .latitude(lat)
-                                .longitude(lon)
-                                .distance(hitDistance)
-                                .build();
-                        // 使用VenueItemVo的转换方法
-                        return VenueItemVo.fromSearchDocument(searchDocDto);
-                    } catch (GloboxApplicationException e) {
-                        log.error("场馆搜索文档转换失败: docId={}", hit.getContent().getId(), e);
-                        return null;
+                        // 使用toListItemVo转换
+                        return toListItemVo(doc, hitDistance);
                     } catch (Exception e) {
-                        log.error("场馆搜索文档转换异常: docId={}", hit.getContent().getId(), e);
+                        log.error("场馆搜索文档转换失败: docId={}", hit.getContent().getId(), e);
                         return null;
                     }
                 })
                 .filter(Objects::nonNull)
                 .toList();
-
-        // 转换搜索结果为VenueItemVo列表
-        List<VenueItemVo> venueList = resultItems.stream()
-                .filter(item -> item.getData() != null)
-                .map(SearchResultItem::getData)
-                .collect(Collectors.toList());
 
         // 创建PaginationResult
         PaginationResult<VenueItemVo> paginationResult = PaginationResult.build(
@@ -236,8 +204,8 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         if (keyword != null && !keyword.isEmpty()) {
             boolQuery.must(
                 QueryBuilders.multiMatchQuery(keyword)
-                    .field("title", 2.0f)       // IK分词字段，权重x2
-                    .field("title.char", 1.0f)  // 单字符字段，权重x1
+                    .field("name", 2.0f)        // IK分词字段，权重x2
+                    .field("name.char", 1.0f)   // 单字符字段，权重x1
                     .type(org.elasticsearch.index.query.MultiMatchQueryBuilder.Type.BEST_FIELDS)
             );
         }
@@ -298,7 +266,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         if (courtTypes != null && !courtTypes.isEmpty()) {
             BoolQueryBuilder courtTypeQuery = QueryBuilders.boolQuery();
             courtTypes.forEach(type -> courtTypeQuery.should(
-                    QueryBuilders.termQuery("venueCourtTypes", type)
+                    QueryBuilders.termQuery("courtTypes", type)
             ));
             boolQuery.filter(courtTypeQuery);
         }
@@ -307,7 +275,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         if (groundTypes != null && !groundTypes.isEmpty()) {
             BoolQueryBuilder groundTypeQuery = QueryBuilders.boolQuery();
             groundTypes.forEach(type -> groundTypeQuery.should(
-                    QueryBuilders.termQuery("venueGroundTypes", type)
+                    QueryBuilders.termQuery("groundTypes", type)
             ));
             boolQuery.filter(groundTypeQuery);
         }
@@ -316,7 +284,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         if (facilities != null && !facilities.isEmpty()) {
             BoolQueryBuilder facilitiesQuery = QueryBuilders.boolQuery();
             facilities.forEach(facilityCode -> facilitiesQuery.should(
-                    QueryBuilders.termQuery("venueFacilities", facilityCode)
+                    QueryBuilders.termQuery("facilities", facilityCode)
             ));
             boolQuery.filter(facilitiesQuery);
         }
@@ -325,15 +293,15 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         if (courtCountFilter != null && courtCountFilter > 0) {
             CourtCountFilter filter = CourtCountFilter.fromValue(courtCountFilter);
             if (filter != null) {
-                boolQuery.filter(QueryBuilders.rangeQuery("venueCourtCount")
+                boolQuery.filter(QueryBuilders.rangeQuery("courtCount")
                         .gte(filter.getMinCount())
                         .lte(filter.getMaxCount()));
             }
         }
 
-        // 过滤不可用的场馆（从文档ID中提取场馆ID）
+        // 过滤不可用的场馆
         if (unavailableVenueIds != null && !unavailableVenueIds.isEmpty()) {
-            boolQuery.mustNot(QueryBuilders.termsQuery("businessId", unavailableVenueIds));
+            boolQuery.mustNot(QueryBuilders.termsQuery("venueId", unavailableVenueIds));
             log.info("过滤不可用场馆文档: {}", unavailableVenueIds);
         }
 
@@ -436,7 +404,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
     public List<SortBuilder<?>> buildCourtCountSorts(SortOrder order, GeoPoint userLocation) {
         List<SortBuilder<?>> sorts = new ArrayList<>();
         // 按球场数量排序
-        sorts.add(SortBuilders.fieldSort("venueCourtCount").order(order));
+        sorts.add(SortBuilders.fieldSort("courtCount").order(order));
         // 添加距离排序以获取距离值
         sorts.add(SortBuilders.geoDistanceSort("location", userLocation.lat(), userLocation.lon())
                 .order(SortOrder.ASC)
@@ -476,15 +444,14 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
             List<VenueSyncVO> venueSyncVOs = result.getData();
             log.info("获取到场馆数据: 数量={}", venueSyncVOs.size());
 
-            // 打印第一条数据的时间字段看看
             if (!venueSyncVOs.isEmpty()) {
                 VenueSyncVO firstVo = venueSyncVOs.get(0);
                 log.info("第一条数据: id={}, createdAt={}, updatedAt={}",
                     firstVo.getVenueId(), firstVo.getCreatedAt(), firstVo.getUpdatedAt());
             }
 
-            // 转换为UnifiedSearchDocument并保存到ES
-            List<UnifiedSearchDocument> documents = venueSyncVOs.stream()
+            // 转换为VenueSearchDocument并保存到ES
+            List<VenueSearchDocument> documents = venueSyncVOs.stream()
                     .map(this::convertVenueSyncVOToDocument)
                     .filter(Objects::nonNull)
                     .toList();
@@ -495,6 +462,27 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
             }
             elasticsearchOperations.save(documents);
             log.info("场馆数据同步完成: 成功条数={}", documents.size());
+
+            // 同步到统一索引
+            List<UnifiedSearchDocument> unifiedDocs = documents.stream()
+                    .map(venue -> UnifiedSearchDocument.builder()
+                            .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.VENUE, venue.getVenueId()))
+                            .businessId(venue.getVenueId())
+                            .dataType(SearchDocTypeEnum.VENUE.getValue())
+                            .title(venue.getName())
+                            .content(venue.getDescription())
+                            .tags(venue.getCourtTypes() != null ?
+                                    venue.getCourtTypes().stream().map(String::valueOf).collect(Collectors.toList()) : null)
+                            .location(venue.getLocation())
+                            .region(venue.getRegion())
+                            .coverUrl(venue.getCoverUrl())
+                            .score(venue.getRating() != null ? venue.getRating().doubleValue() : 0.0)
+                            .createdAt(venue.getCreatedAt())
+                            .updatedAt(venue.getUpdatedAt())
+                            .build())
+                    .collect(Collectors.toList());
+            unifiedSearchService.saveOrUpdateToUnified(unifiedDocs);
+
             return documents.size();
 
         } catch (Exception e) {
@@ -504,12 +492,12 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
     }
 
     /**
-     * 将VenueSyncVO转换为UnifiedSearchDocument
+     * 将VenueSyncVO转换为VenueSearchDocument
      *
      * @param vo 场馆同步VO
-     * @return UnifiedSearchDocument文档
+     * @return VenueSearchDocument文档
      */
-    private UnifiedSearchDocument convertVenueSyncVOToDocument(VenueSyncVO vo) {
+    private VenueSearchDocument convertVenueSyncVOToDocument(VenueSyncVO vo) {
         try {
             if (vo == null || vo.getVenueId() == null) {
                 return null;
@@ -523,12 +511,11 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 );
             }
 
-            return UnifiedSearchDocument.builder()
-                    .id(SearchDocTypeEnum.VENUE.getIdPrefix() + vo.getVenueId())
-                    .businessId(vo.getVenueId())
-                    .dataType(SearchDocTypeEnum.VENUE.getValue())
-                    .title(vo.getVenueName())
-                    .content(vo.getVenueDescription())
+            return VenueSearchDocument.builder()
+                    .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.VENUE,vo.getVenueId()))
+                    .venueId(vo.getVenueId())
+                    .name(vo.getVenueName())
+                    .description(vo.getVenueDescription())
                     .region(vo.getRegion())
                     .priceMin(vo.getPriceMin() != null ? vo.getPriceMin().doubleValue() : null)
                     .priceMax(vo.getPriceMax() != null ? vo.getPriceMax().doubleValue() : null)
@@ -540,15 +527,59 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                     .updatedAt(vo.getUpdatedAt())
                     .location(location)
                     .venueType(vo.getVenueType())
-                    .venueCourtCount(vo.getCourtCount())
-                    .venueCourtTypes(vo.getCourtTypes())
-                    .venueGroundTypes(vo.getGroundTypes())
-                    .venueFacilities(vo.getFacilities())
+                    .courtCount(vo.getCourtCount())
+                    .courtTypes(vo.getCourtTypes())
+                    .groundTypes(vo.getGroundTypes())
+                    .facilities(vo.getFacilities())
                     .build();
 
         } catch (Exception e) {
             log.error("转换VenueSyncVO为Document失败: venueId={}", vo.getVenueId(), e);
             return null;
         }
+    }
+
+    @Override
+    public VenueItemVo toListItemVo(VenueSearchDocument document, BigDecimal distance) {
+        if (document == null) {
+            return null;
+        }
+
+        // 从Point中提取经纬度
+        Double lat = null;
+        Double lon = null;
+        if (document.getLocation() != null) {
+            lat = document.getLocation().getY();  // 纬度
+            lon = document.getLocation().getX();  // 经度
+        }
+
+        // 转换球场类型描述
+        List<String> courtTypesDesc = CourtType.getDescriptionsByValues(document.getCourtTypes());
+
+        // 转换地面类型描述
+        List<String> groundTypesDesc = GroundType.getDescriptionsByValues(document.getGroundTypes());
+
+        // 转换设施代码为设施描述
+        List<String> facilitiesDesc = FacilityType.getDescriptionsByValues(document.getFacilities());
+
+        // 构建VenueItemVo
+        return VenueItemVo.builder()
+                .venueId(document.getVenueId())
+                .name(document.getName())
+                .region(document.getRegion())
+                .distance(distance)
+                .coverImage(document.getCoverUrl() != null ? document.getCoverUrl() : defaultVenueListCoverImage)
+                .avgRating(document.getRating() != null ? BigDecimal.valueOf(document.getRating()) : BigDecimal.ZERO)
+                .ratingCount(document.getRatingCount() != null ? document.getRatingCount() : 0)
+                .minPrice(document.getPriceMin() != null ? BigDecimal.valueOf(document.getPriceMin()) : BigDecimal.ZERO)
+                .courtTypes(document.getCourtTypes() != null ? document.getCourtTypes() : new ArrayList<>())
+                .courtTypesDesc(courtTypesDesc)
+                .groundTypes(document.getGroundTypes() != null ? document.getGroundTypes() : new ArrayList<>())
+                .groundTypesDesc(groundTypesDesc)
+                .facilities(facilitiesDesc)
+                .courtCount(document.getCourtCount() != null ? document.getCourtCount() : 0)
+                .latitude(lat != null ? BigDecimal.valueOf(lat) : BigDecimal.ZERO)
+                .longitude(lon != null ? BigDecimal.valueOf(lon) : BigDecimal.ZERO)
+                .build();
     }
 }

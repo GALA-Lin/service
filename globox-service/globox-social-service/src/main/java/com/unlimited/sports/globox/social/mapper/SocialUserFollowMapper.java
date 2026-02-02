@@ -18,6 +18,7 @@ public interface SocialUserFollowMapper extends BaseMapper<SocialUserFollow> {
         LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserFollow::getUserId, userId)
                 .eq(SocialUserFollow::getFollowUserId, targetUserId)
+                .eq(SocialUserFollow::getDeleted, false)
                 .last("LIMIT 1");
         return this.selectOne(query) != null;
     }
@@ -28,6 +29,7 @@ public interface SocialUserFollowMapper extends BaseMapper<SocialUserFollow> {
     default Page<SocialUserFollow> selectFollowingPage(Long userId, Page<SocialUserFollow> page) {
         LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserFollow::getUserId, userId)
+                .eq(SocialUserFollow::getDeleted, false)
                 .orderByDesc(SocialUserFollow::getCreatedAt);
         return this.selectPage(page, query);
     }
@@ -38,6 +40,7 @@ public interface SocialUserFollowMapper extends BaseMapper<SocialUserFollow> {
     default Page<SocialUserFollow> selectFansPage(Long userId, Page<SocialUserFollow> page) {
         LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
         query.eq(SocialUserFollow::getFollowUserId, userId)
+                .eq(SocialUserFollow::getDeleted, false)
                 .orderByDesc(SocialUserFollow::getCreatedAt);
         return this.selectPage(page, query);
     }
@@ -47,7 +50,8 @@ public interface SocialUserFollowMapper extends BaseMapper<SocialUserFollow> {
      */
     default List<SocialUserFollow> selectMutualBase(Long userId) {
         LambdaQueryWrapper<SocialUserFollow> query = new LambdaQueryWrapper<>();
-        query.eq(SocialUserFollow::getUserId, userId);
+        query.eq(SocialUserFollow::getUserId, userId)
+                .eq(SocialUserFollow::getDeleted, false);
         return this.selectList(query);
     }
 }

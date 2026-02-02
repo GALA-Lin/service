@@ -45,6 +45,16 @@ public interface SocialNoteCommentMapper extends BaseMapper<SocialNoteComment> {
      * @return 回复列表
      */
     List<SocialNoteComment> selectRepliesByParentId(@Param("parentId") Long parentId);
+
+    /**
+     * 原子递增评论点赞数
+     */
+    int incrementLikeCount(@Param("commentId") Long commentId);
+
+    /**
+     * 原子递减评论点赞数（不会小于0）
+     */
+    int decrementLikeCount(@Param("commentId") Long commentId);
 }
 
 

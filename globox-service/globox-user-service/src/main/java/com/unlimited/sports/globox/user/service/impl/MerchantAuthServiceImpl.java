@@ -162,7 +162,7 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", merchantAccount.getRole().name());
         claims.put("employee_id", employeeId);
-        claims.put("merchant_id", accountId);
+        claims.put("merchant_id", merchantAccount.getMerchantId());
 
         String newAccessToken = JwtUtil.generateToken(
                 String.valueOf(accountId),

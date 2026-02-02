@@ -56,6 +56,12 @@ public class SocialNoteMedia {
     private LocalDateTime createdAt;
 
     /**
+     * 是否已删除：0-否，1-是
+     */
+    @TableField("deleted")
+    private Boolean deleted;
+
+    /**
      * 媒体类型枚举
      */
     public enum MediaType {

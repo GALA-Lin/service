@@ -4,10 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import javax.validation.Valid;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.validation.constraints.Pattern;
+import javax.validation.constraints.*;
 import java.util.List;
 
 /**
@@ -18,6 +15,7 @@ import java.util.List;
 public class DirectPublishNoteRequest {
 
     @Schema(description = "标题", example = "今天打球收获分享")
+    @Size(max = 20, message = "笔记标题最多20个字符")
     private String title;
 
     @NotBlank(message = "正文不能为空")
@@ -37,4 +35,7 @@ public class DirectPublishNoteRequest {
     @Valid
     @Schema(description = "媒体列表", required = true)
     private List<NoteMediaRequest> mediaList;
+
+    @Schema(description = "笔记标签列表（如果为空，默认添加 TENNIS_COMMUNITY）")
+    private List<String> tags;
 }

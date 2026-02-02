@@ -43,6 +43,28 @@ public class UserProfile {
      * 用户昵称
      */
     private String nickName;
+
+    /**
+     * 真实姓名
+     */
+    @TableField("real_name")
+    private String realName;
+    
+    /**
+     * 球盒号（保留用户输入大小写）
+     */
+    @TableField("username")
+    private String userName;
+    
+    /**
+     * 球盒号小写（用于唯一索引和搜索）
+     */
+    private String usernameLower;
+    
+    /**
+     * 上次球盒号修改时间
+     */
+    private LocalDateTime lastUsernameChangedAt;
     
     /**
      * 个性签名
@@ -121,6 +143,14 @@ public class UserProfile {
      * 更新时间
      */
     private LocalDateTime updatedAt;
+
+    public String getUsername() {
+        return userName;
+    }
+
+    public void setUsername(String username) {
+        this.userName = username;
+    }
 
     @Deprecated
     public enum Gender {

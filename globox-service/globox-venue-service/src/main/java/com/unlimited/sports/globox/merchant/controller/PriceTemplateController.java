@@ -1,9 +1,7 @@
 package com.unlimited.sports.globox.merchant.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
-import com.unlimited.sports.globox.merchant.mapper.VenueStaffMapper;
 import com.unlimited.sports.globox.merchant.service.PriceTemplateService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
@@ -11,7 +9,7 @@ import com.unlimited.sports.globox.model.merchant.dto.BindPriceTemplateDto;
 import com.unlimited.sports.globox.model.merchant.dto.CreatePriceTemplateDto;
 import com.unlimited.sports.globox.model.merchant.dto.QueryPriceTemplateDto;
 import com.unlimited.sports.globox.model.merchant.dto.UpdatePriceTemplateDto;
-import com.unlimited.sports.globox.model.merchant.entity.VenueStaff;
+import com.unlimited.sports.globox.model.merchant.vo.BindPriceTemplateResultVo;
 import com.unlimited.sports.globox.model.merchant.vo.PriceTemplateSimpleVo;
 import com.unlimited.sports.globox.model.merchant.vo.PriceTemplateVo;
 import lombok.extern.slf4j.Slf4j;
@@ -20,8 +18,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
-import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
-import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIRED;
 import static com.unlimited.sports.globox.merchant.util.MerchantConstants.*;
 
 /**
@@ -48,7 +44,7 @@ public class PriceTemplateController {
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Validated CreatePriceTemplateDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         PriceTemplateVo result = priceTemplateService.createPriceTemplate(context.getMerchantId(), dto);
         return R.ok(result);
@@ -64,8 +60,7 @@ public class PriceTemplateController {
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Validated UpdatePriceTemplateDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
-
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         PriceTemplateVo result = priceTemplateService.updatePriceTemplate(context.getMerchantId(), dto);
         return R.ok(result);
@@ -81,7 +76,7 @@ public class PriceTemplateController {
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long templateId) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         priceTemplateService.deletePriceTemplate(context.getMerchantId(), templateId);
         return R.ok(templateId);
@@ -97,7 +92,7 @@ public class PriceTemplateController {
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long templateId) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         PriceTemplateVo result = priceTemplateService.getPriceTemplate(context.getMerchantId(), templateId);
         return R.ok(result);
@@ -113,29 +108,29 @@ public class PriceTemplateController {
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @Validated QueryPriceTemplateDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         Page<PriceTemplateSimpleVo> result = priceTemplateService.queryPriceTemplates(context.getMerchantId(), dto);
         return R.ok(result);
     }
 
     /**
-     * 绑定价格模板到场馆
+     * 绑定价格模板到场地（批量）
      */
     @PostMapping("/bind")
-    public R<Void> bindPriceTemplate(
+    public R<BindPriceTemplateResultVo> bindPriceTemplate(
             @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
             @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @RequestBody @Validated BindPriceTemplateDto dto) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        // 验证场馆访问权限
-        merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+        // 验证场地访问权限（批量）
+        merchantAuthUtil.validateCourtListAccess(context, dto.getCourtIds());
 
-        priceTemplateService.bindPriceTemplate(context.getMerchantId(), dto);
-        return R.ok();
+        BindPriceTemplateResultVo result = priceTemplateService.bindPriceTemplate(context.getMerchantId(), dto);
+        return R.ok(result);
     }
 
     /**
@@ -148,11 +143,9 @@ public class PriceTemplateController {
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
             @PathVariable Long templateId) {
 
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId,merchantId, roleStr);
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
         priceTemplateService.setDefaultTemplate(context.getMerchantId(), templateId);
         return R.ok();
     }
-
-
 }

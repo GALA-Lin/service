@@ -20,27 +20,13 @@ public class AlipayController {
     @Autowired
     private AlipayService alipayService;
 
-    @Autowired
-    private JsonUtils jsonUtils;
-
-    /**
-     * 支付成功后的接口调用
-     * 重定向到网页中
-     */
-    @RequestMapping("/callback/return")
-    public String callback() {
-        log.info("支付成功回调触发");
-        return "https://www.baidu.com";
-    }
-
-
     /**
      * 支付宝异步回调方法
      */
     @RequestMapping("/callback/notify")
     @ResponseBody
     public String notifyCallback(@RequestParam Map<String, String> paramsMap) {
-        log.info("异步回调触发：{}", jsonUtils.objectToJson(paramsMap));
+        log.info("支付宝异步回调触发：{}", paramsMap);
         return alipayService.checkCallback(paramsMap);
     }
 

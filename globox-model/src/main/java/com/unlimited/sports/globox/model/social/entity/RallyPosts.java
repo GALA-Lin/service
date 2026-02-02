@@ -10,6 +10,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
@@ -81,12 +82,14 @@ public class RallyPosts implements Serializable {
       * 时间-开始
      */
     @TableField("rally_start_time")
+    @DateTimeFormat(pattern = "HH:mm:ss")
     private LocalTime rallyStartTime;
 
     /**
      * 时间-结束
      */
     @TableField("rally_end_time")
+    @DateTimeFormat(pattern = "HH:mm:ss")
     private LocalTime rallyEndTime;
 
     /**
@@ -144,7 +147,7 @@ public class RallyPosts implements Serializable {
     private String rallyNotes;
 
     /**
-     * 状态: 0=已发布 1=已满员 2=已取消
+     * 状态: 0=已发布 1=已满员 2=已取消 3=已完成
      */
     @TableField("rally_status")
     private int rallyStatus = RallyPostsStatusEnum.PUBLISHED.getCode();

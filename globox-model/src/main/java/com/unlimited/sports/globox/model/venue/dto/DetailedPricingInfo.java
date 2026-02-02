@@ -1,4 +1,4 @@
-package com.unlimited.sports.globox.venue.dto;
+package com.unlimited.sports.globox.model.venue.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -12,22 +12,29 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 价格计算结果
- * 只包含价格相关信息，不包含任何业务记录相关的内容
+ * 详细价格信息 - 支持按场地分组的价格配置
+ * 用于替代简单的时间->价格映射，支持不同场地在同一时间有不同价格的场景
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PricingInfo {
+public class DetailedPricingInfo {
 
     /**
-     * 槽位时间 -> 价格的映射（根据日期类型计算）
+     * 按场地ID分组的槽位价格映射
+     * Key1: courtId (本地场地ID)
+     * Key2: startTime (槽位开始时间)
+     * Value: 价格
+     *
+     * 例如：
+     * courtId=1: {10:00->100, 14:00->150}
+     * courtId=2: {10:00->120, 14:00->180}
      */
-    private Map<LocalTime, BigDecimal> slotPrices;
+    private Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId;
 
     /**
-     * 基础价格总和（所有槽位的价格总和）
+     * 基础价格总和（所有场地所有槽位的价格之和）
      */
     private BigDecimal basePrice;
 
@@ -51,6 +58,13 @@ public class PricingInfo {
      * 总价格（基础价格 + 订单级额外费用 + 订单项级额外费用）
      */
     private BigDecimal totalPrice;
+
+    /**
+     * 每个场地的价格模板ID映射
+     * 记录每个场地实际使用的价格模板ID，便于调试和审计
+     */
+    private Map<Long, Long> courtIdToTemplateIdMap;
+
 
     /**
      * 订单级额外费用信息
@@ -85,6 +99,8 @@ public class PricingInfo {
          */
         private BigDecimal amount;
     }
+
+
 
     /**
      * 订单项级额外费用信息

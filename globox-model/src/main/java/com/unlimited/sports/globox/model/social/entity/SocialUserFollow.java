@@ -40,6 +40,11 @@ public class SocialUserFollow {
      * 关注时间
      */
     private LocalDateTime createdAt;
+
+    /**
+     * 是否已删除
+     */
+    private Boolean deleted;
 }
 
 

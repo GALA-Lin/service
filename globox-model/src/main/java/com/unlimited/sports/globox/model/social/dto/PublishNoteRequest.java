@@ -41,5 +41,8 @@ public class PublishNoteRequest {
     @Valid
     @Schema(description = "媒体列表", required = true)
     private List<NoteMediaRequest> mediaList;
+
+    @Schema(description = "笔记标签列表（如果为空，默认添加 TENNIS_COMMUNITY）")
+    private List<String> tags;
 }
 

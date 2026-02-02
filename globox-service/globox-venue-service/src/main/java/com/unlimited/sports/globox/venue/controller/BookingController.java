@@ -5,7 +5,7 @@ import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.R;
 
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
+import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.common.utils.ServletUtils;
 import com.unlimited.sports.globox.model.venue.dto.*;
 import com.unlimited.sports.globox.model.venue.vo.CourtSlotVo;
@@ -54,7 +54,7 @@ public class BookingController {
     @PostMapping("/preview/general")
     public R<BookingPreviewResponseVo> previewGeneralBooking(@Valid @RequestBody GeneralBookingPreviewRequestDto dto) {
         // 从token中获取用户ID
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         if (userId == null) {
             log.warn("未获取到用户ID，无法预览订单");
             throw new GloboxApplicationException("未获取到用户ID，无法预览订单");
@@ -75,7 +75,7 @@ public class BookingController {
      */
     @PostMapping("/preview/activity")
     public R<BookingPreviewResponseVo> previewActivityBooking(@Valid @RequestBody ActivityBookingPreviewRequestDto dto) {
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         if (userId == null) {
             log.warn("未获取到用户ID，无法预览订单");
             throw new GloboxApplicationException("未获取到用户ID，无法预览订单");

@@ -16,6 +16,7 @@ import com.unlimited.sports.globox.order.mapper.*;
 import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderRefundActionService;
 import io.seata.spring.annotation.GlobalTransactional;
+import io.seata.tm.api.transaction.Propagation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -58,9 +59,6 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
     @Autowired
     private MQService mqService;
-
-    @Autowired
-    private ExecutorService businessExecutorService;
 
     /**
      * 服务提供方取消未支付订单
@@ -156,23 +154,25 @@ public class OrderDubboServiceImpl implements OrderDubboService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
+                        .orderNo(orderNo)
+                        .userId(order.getBuyerId())
+                        .recordIds(recordIds)
+                        .isActivity(order.getActivity())
+                        .bookingDate(bookingDate)
+                        .build();
                 if (SellerTypeEnum.VENUE.equals(sellerType)) {
-                    UnlockSlotMessage unlockMsg = UnlockSlotMessage.builder()
-                            .orderNo(orderNo)
-                            .userId(order.getBuyerId())
-                            .operatorType(OperatorTypeEnum.MERCHANT)
-                            .recordIds(recordIds)
-                            .isActivity(order.getActivity())
-                            .bookingDate(bookingDate)
-                            .build();
-
+                    unlockMsg.setOperatorType(OperatorTypeEnum.MERCHANT);
                     mqService.send(
                             OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_SLOT,
                             OrderMQConstants.ROUTING_ORDER_UNLOCK_SLOT,
                             unlockMsg);
                 } else if (SellerTypeEnum.COACH.equals(sellerType)) {
-                    // TODO 教练取消
-
+                    unlockMsg.setOperatorType(OperatorTypeEnum.COACH);
+                    mqService.send(
+                            OrderMQConstants.EXCHANGE_TOPIC_ORDER_UNLOCK_COACH_SLOT,
+                            OrderMQConstants.ROUTING_ORDER_UNLOCK_COACH_SLOT,
+                            unlockMsg);
                 }
             }
         });
@@ -202,12 +202,15 @@ public class OrderDubboServiceImpl implements OrderDubboService {
     @Override
     @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
-    public RpcResult<SellerConfirmResultDto> sellerConfirm(Long orderNo, boolean autoConfirm, Long operatorId, SellerTypeEnum sellerType) {
+    public RpcResult<SellerConfirmResultDto> sellerConfirm(Long orderNo, boolean autoConfirm, Long operatorId, SellerTypeEnum sellerType, Long sellerId) {
         LocalDateTime now = LocalDateTime.now();
         // 1) 查询订单
         Orders orders = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()
-                        .eq(Orders::getOrderNo, orderNo));
+                        .eq(Orders::getOrderNo, orderNo)
+                        .eq(Orders::getSellerType, sellerType)
+                        .eq(Orders::getSellerId, sellerId)
+        );
 
         if (ObjectUtils.isEmpty(orders)) {
             return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
@@ -256,17 +259,31 @@ public class OrderDubboServiceImpl implements OrderDubboService {
 
 
     /**
-     * 商家批准退款申请。
+     * 服务提供方批准退款申请。
      *
      * @param orderNo          订单号
      * @param sellerId         商家ID
      * @param refundApplyId    退款申请ID
      * @param sellerType       商家类型
      * @param refundPercentage 退款百分比
-     * @return 返回一个RpcResult对象，包含商家批准退款的结果信息，包括订单状态、退款申请状态等
+     * @return 返回一个RpcResult对象，包含服务提供方批准退款的结果信息，包括订单状态、退款申请状态等
      */
     @Override
     @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
+    @GlobalTransactional(
+            // 当前全局事务的名称
+            name = "seller-approve-refund",
+            // 回滚异常
+            rollbackFor = Exception.class,
+            // 全局锁重试间隔
+            lockRetryInterval = 5000,
+            // 全局锁重试次数
+            lockRetryTimes = 5,
+            // 超时时间
+            timeoutMills = 30000,
+            //事务传播
+            propagation = Propagation.REQUIRES_NEW
+    )
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerApproveRefundResultDto> sellerApproveRefund(Long orderNo, Long sellerId, Long refundApplyId, SellerTypeEnum sellerType, BigDecimal refundPercentage) {
         LocalDateTime now = LocalDateTime.now();
@@ -561,7 +578,20 @@ public class OrderDubboServiceImpl implements OrderDubboService {
      */
     @Override
     @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
-    @GlobalTransactional
+    @GlobalTransactional(
+            // 当前全局事务的名称
+            name = "seller-refund",
+            // 回滚异常
+            rollbackFor = Exception.class,
+            // 全局锁重试间隔
+            lockRetryInterval = 5000,
+            // 全局锁重试次数
+            lockRetryTimes = 5,
+            // 超时时间
+            timeoutMills = 30000,
+            //事务传播
+            propagation = Propagation.REQUIRES_NEW
+    )
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerRefundResultDto> refund(Long orderNo, Long SellerId, Long operatorId, List<Long> reqItemIds, SellerTypeEnum sellerType, String remark) {
         LocalDateTime now = LocalDateTime.now();

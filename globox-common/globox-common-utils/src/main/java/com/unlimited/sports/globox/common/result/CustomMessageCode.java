@@ -17,4 +17,8 @@ public class CustomMessageCode implements ResultCode {
         return new CustomMessageCode(code.getCode(), message);
     }
 
+    @Override
+    public String name() {
+        return "custom code";
+    }
 }

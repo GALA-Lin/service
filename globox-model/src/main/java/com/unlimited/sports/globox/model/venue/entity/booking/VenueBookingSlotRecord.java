@@ -36,6 +36,11 @@ public class VenueBookingSlotRecord {
 
 
     /**
+     * 冗余场馆id 用于解锁的时候快速判断是否是away球场的订单
+     */
+    private Long venueId;
+
+    /**
      * 预订日期
      */
     private LocalDateTime bookingDate;

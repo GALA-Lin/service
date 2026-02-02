@@ -130,7 +130,6 @@ public class WechatPayMoonCourtJsapiServiceImpl implements WechatPayMoonCourtJsa
         amount.setRefund(AmountUtils.toLong(refundAmount));
         amount.setCurrency("CNY");
         request.setAmount(amount);
-        request.setNotifyUrl(wechatPayMoonCourtProperties.getNotifyPaymentUrl());
         request.setOutTradeNo(payments.getOutTradeNo());
         request.setOutRefundNo(payments.getOutRequestNo());
         request.setReason(refundReason);

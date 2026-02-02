@@ -94,6 +94,7 @@ public class VenuePaymentSuccessConsumer {
                     .isAutoConfirm(true) // 当前业务：全自动确认
                     // 注意：可以从 message 或先查一遍订单获取真正的 merchantId
                     .merchantId(getMerchantId(message.getVenueId()))
+                    .venueId(message.getVenueId())
                     .build();
             // 2. 调用远程服务执行确认逻辑
             RpcResult<SellerConfirmResultDto> result = orderDubboService.confirm(requestDto);

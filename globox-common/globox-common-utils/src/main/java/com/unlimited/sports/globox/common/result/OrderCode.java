@@ -34,6 +34,8 @@ public enum OrderCode implements ResultCode {
     PARAM_ERROR(1023, "参数错误"),
     ORDER_SELLER_TYPE_NOT_EXIST(1024, "订单类型不存在"),
     ORDER_STATUS_NOT_EXIST(1025, "订单状态不存在"),
+    EXIST_UNFINISHED_ORDER(1026, "当前存在未完成的订单"),
+    ORDER_PAYMENT_AMOUNT_INCONSISTENT(1027, "当前订单支付金额不正确"),
     ;
     private final Integer code;
     private final String message;

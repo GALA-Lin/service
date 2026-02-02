@@ -39,8 +39,8 @@ public class PaymentRefundSuccessConsumer {
             PaymentRefundMessage message,
             Channel channel,
             Message amqpMessage) {
-
+        log.info("[订单取消时支付退款] 订单退款成功，orderNo:{}", message.getOrderNo());
         orderRefundActionService.refundSuccessMQHandler(message);
-
+        log.info("[订单取消时支付退款] 订单状态更新完成，orderNo:{}", message.getOrderNo());
     }
 }

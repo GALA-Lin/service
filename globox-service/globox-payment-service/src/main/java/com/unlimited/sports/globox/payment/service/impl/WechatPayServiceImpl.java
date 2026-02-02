@@ -129,11 +129,11 @@ public class WechatPayServiceImpl implements WechatPayService {
             }
             notify = sb.toString();
         } catch (IOException e) {
-            log.error("解析付款通知出错：{}", e.getMessage(), e);
+            log.error("[微信支付通知回调] 解析付款通知出错：{}", e.getMessage(), e);
             return WechatPayNotifyVo.fail();
         }
         Map<String, Object> bodyMap = jsonUtils.jsonToMap(notify);
-        log.info("微信支付通知: {}", bodyMap);
+        log.info("[微信支付通知回调] 异步回调触发： {}", bodyMap);
         RequestParam requestParam = buildByHeaderRequestParam(request, notify);
         // 验证签名并解析请求体
         NotificationParser notificationParser = new NotificationParser(notificationConfig);
@@ -149,10 +149,10 @@ public class WechatPayServiceImpl implements WechatPayService {
             transaction = notificationParser.parse(requestParam, Transaction.class);
 
         } catch (Exception e) {
-            throw new GloboxApplicationException("微信支付：支付通知回调，验签、解密失败--->" + e.getMessage());
+            log.error("[微信支付通知回调] 验签、解密失败:{}", e.getMessage(), e);
+            return WechatPayNotifyVo.fail();
         }
-        log.info("Transaction:===>>>>支付CallBack状态" + transaction.getTradeState());
-        log.info("Transaction:===>>>>" + transaction);
+        log.info("[微信支付通知回调] 当前支付状态：{} ,transaction： {}", transaction.getTradeState(), transaction);
 
         String notifyId = bodyMap.get("id").toString();
 
@@ -284,7 +284,6 @@ public class WechatPayServiceImpl implements WechatPayService {
         amount.setRefund(AmountUtils.toLong(refundAmount));
         amount.setCurrency("CNY");
         request.setAmount(amount);
-        request.setNotifyUrl(wechatPayProperties.getNotifyPaymentUrl());
         request.setOutTradeNo(payments.getOutTradeNo());
         request.setOutRefundNo(payments.getOutRequestNo());
         request.setReason(refundReason);

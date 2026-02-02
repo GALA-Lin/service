@@ -26,10 +26,14 @@ public class MerchantConfirmRequestDto implements Serializable {
     @NotNull
     private boolean isAutoConfirm;
 
-
     /**
-     * 如果不是自动确认，传入商家 id
+     * 商家 id
      */
     private Long merchantId;
+
+    /**
+     * 场馆 id
+     */
+    private Long venueId;
 
 }

@@ -116,8 +116,9 @@ public class PaymentSuccessConsumer {
                         .last("FOR UPDATE"));
 
         if (order == null) {
-            // 订单不存在：通常属于数据不一致/乱序消息（你也可以选择直接 return 当成消费成功）
-            throw new IllegalStateException("[支付成功回调] 订单不存在 orderNo=" + orderNo);
+            // 订单不存在：通常属于数据不一致/乱序消息
+            log.error("[支付成功回调] 订单不存在 orderNo:{}", orderNo);
+            throw new GloboxApplicationException(OrderCode.ORDER_NOT_EXIST);
         }
 
         // 3) 幂等：已经支付成功就直接忽略（ACK 由 AOP 做）
@@ -163,8 +164,8 @@ public class PaymentSuccessConsumer {
         // 5) 金额校验
         BigDecimal expected = order.getPayAmount();
         if (expected != null && message.getTotalAmount().compareTo(expected) != 0) {
-            throw new IllegalStateException("[支付成功回调] 金额不一致 orderNo=" + orderNo
-                    + ", expected=" + expected + ", actual=" + message.getTotalAmount());
+            log.error("[支付成功回调] 金额不一致 orderNo:{}, 需要支付的金额:{}元, 实际支付的金额:{}元", orderNo, expected, message.getTotalAmount());
+            throw new GloboxApplicationException(OrderCode.ORDER_PAYMENT_AMOUNT_INCONSISTENT);
         }
 
         // 6) 更新订单支付信息

@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.GovernanceCode;
 import com.unlimited.sports.globox.common.result.R;
@@ -31,6 +32,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -112,7 +114,7 @@ public class CommentServiceImpl implements CommentService {
             }
         }
 
-        // 5. 查询评论列表（查询 size+1 条以判断是否有更多）
+        // 5. 查询评论列表（查询size+1条以判断是否有更多）
         List<SocialNoteComment> comments = commentMapper.selectCommentListWithCursor(
                 noteId, cursorTime, cursorCommentId, size + 1);
 
@@ -338,23 +340,49 @@ public class CommentServiceImpl implements CommentService {
             throw new GloboxApplicationException(SocialCode.COMMENT_NOT_FOUND);
         }
 
-        // 4. 检查是否已点赞（幂等性）
-        LambdaQueryWrapper<SocialNoteCommentLike> query = new LambdaQueryWrapper<>();
-        query.eq(SocialNoteCommentLike::getUserId, userId)
-                .eq(SocialNoteCommentLike::getCommentId, commentId);
-        SocialNoteCommentLike existingLike = commentLikeMapper.selectOne(query);
+        // Soft-delete safety: check the unique key first to avoid duplicate key exceptions.
+        LambdaQueryWrapper<SocialNoteCommentLike> existingQuery = new LambdaQueryWrapper<>();
+        existingQuery.eq(SocialNoteCommentLike::getUserId, userId)
+                .eq(SocialNoteCommentLike::getCommentId, commentId)
+                .last("LIMIT 1");
+        SocialNoteCommentLike existing = commentLikeMapper.selectOne(existingQuery);
+        if (existing != null) {
+            if (Boolean.TRUE.equals(existing.getDeleted())) {
+                existing.setDeleted(false);
+                existing.setCreatedAt(LocalDateTime.now());
+                commentLikeMapper.updateById(existing);
 
-        if (existingLike == null) {
-            // 5. 插入点赞记录
+                // Only increment when state changes from deleted -> active.
+                commentMapper.incrementLikeCount(commentId);
+
+                Map<String, Object> customData = new HashMap<>();
+                customData.put("noteId", noteId);
+                customData.put("commentId", commentId);
+                notificationSender.sendNotification(
+                        comment.getUserId(),
+                        NotificationEventEnum.SOCIAL_COMMENT_LIKED,
+                        noteId,
+                        customData,
+                        NotificationEntityTypeEnum.USER,
+                        userId
+                );
+
+                log.info("Revived comment like: userId={}, commentId={}", userId, commentId);
+            }
+            return R.ok("点赞成功");
+        }
+
+        // No existing row; insert with a concurrency-safe fallback.
+        try {
             SocialNoteCommentLike like = new SocialNoteCommentLike();
             like.setCommentId(commentId);
             like.setUserId(userId);
             like.setCreatedAt(LocalDateTime.now());
+            like.setDeleted(false);
             commentLikeMapper.insert(like);
 
-            // 6. 原子更新评论点赞数
-            comment.setLikeCount(comment.getLikeCount() + 1);
-            commentMapper.updateById(comment);
+            // 插入成功，执行计数（原子）
+            commentMapper.incrementLikeCount(commentId);
 
             // 7. 发送评论被点赞通知给评论作者（点赞者不是评论作者时才发送）
             if (!comment.getUserId().equals(userId)) {
@@ -371,6 +399,9 @@ public class CommentServiceImpl implements CommentService {
                         userId
                 );
             }
+        } catch (DuplicateKeyException e) {
+            // 并发插入冲突，按幂等成功处理（不重复加计数）
+            log.info("并发评论点赞冲突，幂等处理：userId={}, commentId={}", userId, commentId);
         }
 
         return R.ok("点赞成功");
@@ -395,20 +426,19 @@ public class CommentServiceImpl implements CommentService {
             throw new GloboxApplicationException(SocialCode.COMMENT_NOT_FOUND);
         }
 
-        // 4. 查询点赞记录
-        LambdaQueryWrapper<SocialNoteCommentLike> query = new LambdaQueryWrapper<>();
-        query.eq(SocialNoteCommentLike::getUserId, userId)
-                .eq(SocialNoteCommentLike::getCommentId, commentId);
-        SocialNoteCommentLike existingLike = commentLikeMapper.selectOne(query);
+        // 4. 直接软删点赞记录（只影响 deleted=false 的行）
+        LambdaUpdateWrapper<SocialNoteCommentLike> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(SocialNoteCommentLike::getUserId, userId)
+                .eq(SocialNoteCommentLike::getCommentId, commentId)
+                .eq(SocialNoteCommentLike::getDeleted, false)
+                .set(SocialNoteCommentLike::getDeleted, true);
 
-        if (existingLike != null) {
-            // 5. 删除点赞记录
-            commentLikeMapper.deleteById(existingLike.getLikeId());
+        int updatedRows = commentLikeMapper.update(null, updateWrapper);
+        log.info("取消评论点赞软删除结果: userId={}, commentId={}, updatedRows={}", userId, commentId, updatedRows);
 
-            // 6. 原子更新评论点赞数（确保不为负数）
-            int newLikeCount = Math.max(comment.getLikeCount() - 1, 0);
-            comment.setLikeCount(newLikeCount);
-            commentMapper.updateById(comment);
+        // 5. 只有状态发生变化时才更新计数（false->true）
+        if (updatedRows > 0) {
+            commentMapper.decrementLikeCount(commentId);
         }
 
         return R.ok("取消点赞成功");
@@ -501,4 +531,3 @@ public class CommentServiceImpl implements CommentService {
         return voList;
     }
 }
-

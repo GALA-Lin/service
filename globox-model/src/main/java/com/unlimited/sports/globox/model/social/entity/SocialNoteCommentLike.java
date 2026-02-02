@@ -38,6 +38,11 @@ public class SocialNoteCommentLike {
      */
     @TableField("created_at")
     private LocalDateTime createdAt;
+
+    /**
+     * 是否已删除
+     */
+    private Boolean deleted;
 }
 
 

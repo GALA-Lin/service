@@ -1,7 +1,14 @@
 package com.unlimited.sports.globox.common.handler;
 
+import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.alibaba.csp.sentinel.slots.block.authority.AuthorityException;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeException;
+import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
+import com.alibaba.csp.sentinel.slots.block.flow.param.ParamFlowException;
+import com.alibaba.csp.sentinel.slots.system.SystemBlockException;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.ApplicationCode;
+import com.unlimited.sports.globox.common.result.CustomMessageCode;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.ValidCode;
 import lombok.extern.log4j.Log4j2;
@@ -9,9 +16,7 @@ import org.springframework.validation.BindException;
 import org.springframework.validation.ObjectError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -19,13 +24,11 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.ConstraintViolation;
 import javax.validation.ConstraintViolationException;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.util.stream.Collectors;
 
 /**
  * 统一异常处理
- *
- * @author dk
- * @since 2025/12/17 22:03
  */
 @Log4j2
 @RestControllerAdvice
@@ -104,8 +107,6 @@ public class GloboxGlobalExceptionHandler {
         logError(req, ApplicationCode.FAIL.getCode(), ex.getMessage(), ex);
         return R.error(ApplicationCode.FAIL);
     }
-
-    // ------------------- logging helpers -------------------
 
 
     private void logInfo(HttpServletRequest req, int code, String msg) {

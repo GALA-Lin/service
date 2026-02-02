@@ -66,4 +66,9 @@ public class CoachScheduleVo {
      * 自定义日程ID
      */
     private Long customScheduleId;
+    
+    /**
+     * 锁定该时段的用户ID（平台课程时）
+     */
+    private Long lockedByUserId;
 }

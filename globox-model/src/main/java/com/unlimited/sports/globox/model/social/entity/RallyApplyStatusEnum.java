@@ -1,8 +1,13 @@
 package com.unlimited.sports.globox.model.social.entity;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+
 /**
  * 约球申请状态枚举
  */
+@Getter
+@AllArgsConstructor
 public enum RallyApplyStatusEnum {
     PENDING(0, "待审核"),
     ACCEPTED(1, "已接受"),
@@ -13,18 +18,6 @@ public enum RallyApplyStatusEnum {
     private final int code;
     private final String description;
 
-    RallyApplyStatusEnum(int code, String description) {
-        this.code = code;
-        this.description = description;
-    }
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getDescription() {
-        return description;
-    }
 
     public static RallyApplyStatusEnum fromCode(int code) {
         for (RallyApplyStatusEnum status : RallyApplyStatusEnum.values()) {

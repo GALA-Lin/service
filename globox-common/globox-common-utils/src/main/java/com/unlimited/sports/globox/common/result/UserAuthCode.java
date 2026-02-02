@@ -35,6 +35,7 @@ public enum UserAuthCode implements ResultCode {
     // RPC查询相关 2030-2039
     BATCH_QUERY_TOO_LARGE(2030, "批量查询数量超过限制，最多50个"),
     QUERY_NOT_EXIST(2031, "查询的用户信息不存在"),
+    USER_PHONE_NOT_BOUND(2032, "手机号未绑定"),
 
     // 微信登录相关 2033-2039
     WECHAT_AUTH_FAILED(2033, "微信授权失败"),
@@ -55,6 +56,8 @@ public enum UserAuthCode implements ResultCode {
     INVALID_RACKET_LEVEL(2047, "球拍层级无效，必须为MODEL"),
     INACTIVE_RACKET_MODEL(2048, "球拍型号已下架或不可用"),
     INVALID_REGION(2057, "地区无效或不存在"),
+    USERNAME_INVALID_FORMAT(2058, "球盒号格式不正确，仅支持4-20位字母和数字"),
+    USERNAME_ALREADY_TAKEN(2059, "球盒号已被占用，请换一个试试"),
 
     MISSING_USER_ID_HEADER(2049, "缺少用户ID请求头"),
     MISSING_UPLOAD_FILE(2050, "缺少上传文件"),
@@ -63,6 +66,7 @@ public enum UserAuthCode implements ResultCode {
     UPLOAD_FILE_FAILED(2053, "文件上传失败"),
     MEDIA_URL_REQUIRED(2054, "媒体地址不能为空"),
     VIDEO_COVER_REQUIRED(2055, "视频封面不能为空"),
+    SYNC_USER_PROFILE_ERROR(2056,"同步用户数据失败"),
 
     // 球星卡肖像抠图相关 2056-2059
     PORTRAIT_MATTING_FAILED(2056, "球星卡肖像处理失败，请稍后重试"),
@@ -76,6 +80,8 @@ public enum UserAuthCode implements ResultCode {
     USER_ACCOUNT_DISABLED(2063, "账号已被禁用，请联系管理员"),
     USER_ACCOUNT_CANCELLED(2064, "账号已注销，请重新注册"),
     CANCEL_CONFIRM_EXPIRED(2065, "注销确认已过期，请重新验证"),
+    USER_REALNAME_REQUIRED(2066, "未实名"),
+    USERNAME_COOLDOWN_NOT_EXPIRED(2067, "球盒号修改冷却期未到，请稍后再试"),
     ;
 
     private final Integer code;

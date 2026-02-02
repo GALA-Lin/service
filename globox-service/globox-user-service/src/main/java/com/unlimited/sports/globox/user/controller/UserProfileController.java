@@ -5,15 +5,18 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountRequest;
+import com.unlimited.sports.globox.model.auth.dto.SetUsernameRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
+import com.unlimited.sports.globox.model.auth.vo.SetUsernameResultVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.StyleTagVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.UserProfileVo;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
+import com.unlimited.sports.globox.model.auth.vo.UserSearchResultVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import com.unlimited.sports.globox.user.service.UserProfileService;
@@ -93,6 +96,7 @@ public class UserProfileController {
             @PathVariable Long userId) {
         return userProfileService.getUserProfile(userId, viewerId);
     }
+
 
     @PutMapping
     @Operation(summary = "更新用户资料", description = "更新当前用户的资料，只更新非空字段。球拍/标签列表采用完全替换策略（传入空列表会清空）。球拍列表最多一个主力拍")
@@ -339,6 +343,53 @@ public class UserProfileController {
             return R.error(UserAuthCode.INVALID_PARAM);
         }
         return R.ok(regionDubboService.listDistrictsByCity(cityEnum).getData());
+    }
+
+    @PostMapping("/username")
+    @Operation(summary = "设置/修改球盒号", 
+            description = "设置或修改当前用户的球盒号。规则：\n" +
+                    "1. 格式：4-20位字母或数字（大小写不敏感）\n" +
+                    "2. 全局唯一（不区分大小写）\n" +
+                    "3. 冷却期：距上次修改需满60天（首次设置无限制）\n" +
+                    "4. 自动校验可用性并提交")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "设置成功"),
+            @ApiResponse(responseCode = "2010", description = "用户不存在"),
+            @ApiResponse(responseCode = "2040", description = "参数无效"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token"),
+            @ApiResponse(responseCode = "2058", description = "球盒号格式不正确，仅支持4-20位字母和数字"),
+            @ApiResponse(responseCode = "2059", description = "球盒号已被占用，请换一个试试"),
+            @ApiResponse(responseCode = "2067", description = "球盒号修改冷却期未到，请稍后再试")
+    })
+    public R<SetUsernameResultVo> setUsername(
+            @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @Parameter(description = "设置球盒号请求", required = true)
+            @Validated @RequestBody SetUsernameRequest request) {
+        return userProfileService.setUsername(userId, request);
+    }
+
+    @GetMapping("/search")
+    @Operation(summary = "按球盒号搜索用户", 
+            description = "根据球盒号搜索用户列表。搜索规则：\n" +
+                    "1. 不区分大小写\n" +
+                    "2. 精确匹配优先置顶\n" +
+                    "3. 前缀匹配其次\n" +
+                    "4. 支持分页\n" +
+                    "5. 排除已注销用户")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "搜索成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token")
+    })
+    public R<UserSearchResultVo> searchUsersByUsername(
+            @Parameter(description = "搜索关键词（球盒号）", required = true, example = "globox")
+            @RequestParam("keyword") String keyword,
+            @Parameter(description = "页码（从1开始）", example = "1")
+            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
+            @Parameter(description = "每页大小（最大100）", example = "20")
+            @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize) {
+        return userProfileService.searchUsersByUsername(keyword, page, pageSize);
     }
 
     private RegionCityEnum toEnum(Integer code) {

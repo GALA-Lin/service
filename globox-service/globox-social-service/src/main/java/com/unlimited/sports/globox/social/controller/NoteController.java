@@ -6,7 +6,9 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.social.dto.DirectPublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.PublishNoteRequest;
 import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
+import com.unlimited.sports.globox.model.social.dto.SetNoteFeaturedRequest;
 import com.unlimited.sports.globox.model.social.dto.UpdateNoteRequest;
+import com.unlimited.sports.globox.model.social.enums.NoteTag;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
@@ -83,6 +85,25 @@ public class NoteController {
         return noteService.getHomeNotes(cursor, size, userId);
     }
 
+    @GetMapping("/tags")
+    @Operation(summary = "获取笔记标签列表", description = "获取所有可用的笔记标签")
+    @ApiResponse(responseCode = "200", description = "查询成功")
+    public R<java.util.List<NoteTag.DictItem>> getNoteTags() {
+        return noteService.getNoteTags();
+    }
+
+    @PostMapping("/featured")
+    @Operation(summary = "批量设置精选状态", description = "批量设置笔记是否为精选")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "设置成功"),
+            @ApiResponse(responseCode = "3029", description = "笔记ID不能为空")
+    })
+    public R<String> setNotesFeatured(
+            @Parameter(description = "批量设置精选请求", required = true)
+            @Validated @RequestBody SetNoteFeaturedRequest request) {
+        return noteService.setNotesFeatured(request.getNoteIds(), request.getFeatured());
+    }
+
     @GetMapping("/{noteId}")
     @Operation(summary = "获取笔记详情", description = "获取笔记完整信息（包含媒体列表）。草稿仅作者可见")
     @ApiResponses({
@@ -133,16 +154,17 @@ public class NoteController {
         return noteService.getUserNotes(targetUserId, page, pageSize, viewerId);
     }
 
-    @GetMapping("/draft")
-    @Operation(summary = "获取我的草稿（兼容接口）", description = "获取当前用户的最新一条草稿（兼容），草稿箱入口请使用 /social/notes/drafts")
+    @GetMapping("/draft/{noteId}")
+    @Operation(summary = "根据noteId 查询草稿详情")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "查询成功（无草稿时返回null）"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
     public R<DraftNoteVo> getDraft(
             @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
-            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
-        return noteService.getDraft(userId);
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
+            @PathVariable Long noteId) {
+        return noteService.getDraft(userId, noteId);
     }
 
     @PostMapping("/draft")

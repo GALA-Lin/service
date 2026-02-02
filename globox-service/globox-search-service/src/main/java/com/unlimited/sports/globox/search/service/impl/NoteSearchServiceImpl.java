@@ -3,29 +3,31 @@ package com.unlimited.sports.globox.search.service.impl;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.common.vo.SearchDocumentDto;
-import com.unlimited.sports.globox.common.vo.SearchResultItem;
-import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.search.constants.NoteSearchConstants;
 import com.unlimited.sports.globox.model.search.enums.NoteSortTypeEnum;
 import com.unlimited.sports.globox.model.search.enums.SearchDocTypeEnum;
+import com.unlimited.sports.globox.model.social.dto.NoteStatisticsDto;
 import com.unlimited.sports.globox.model.social.entity.SocialNote;
 import com.unlimited.sports.globox.model.social.vo.NoteSyncVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
-import com.unlimited.sports.globox.dubbo.user.UserDubboService;
-import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
-import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.dubbo.social.INoteSearchDataService;
+import com.unlimited.sports.globox.search.document.NoteSearchDocument;
 import com.unlimited.sports.globox.search.document.UnifiedSearchDocument;
+import com.unlimited.sports.globox.search.document.UserSearchDocument;
 import com.unlimited.sports.globox.search.service.INoteSearchService;
+import com.unlimited.sports.globox.search.service.IUnifiedSearchService;
+import com.unlimited.sports.globox.search.service.IUserSearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
+import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
@@ -34,7 +36,7 @@ import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.data.elasticsearch.core.query.NativeSearchQuery;
 import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
+import org.elasticsearch.index.query.IdsQueryBuilder;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -55,19 +57,25 @@ public class NoteSearchServiceImpl implements INoteSearchService {
     @DubboReference(group = "rpc")
     private INoteSearchDataService noteSearchDataService;
 
-    @DubboReference(group = "rpc")
-    private UserDubboService userDubboService;
+    @Autowired
+    private IUserSearchService userSearchService;
+
+    @Lazy
+    @Autowired
+    private IUnifiedSearchService unifiedSearchService;
 
     /**
      * 搜索笔记 - 支持关键词、标签、排序
      *
      * @param keyword 搜索关键词 (会匹配 title 和 content)
+     * @param tag 标签过滤
      * @param sortBy 排序方式: latest / hottest / selected
      * @param page 分页页码 (从1开始)
      * @param pageSize 每页大小
+     * @param userId 当前登录用户ID (用于查询点赞状态)，可为null
      */
     @Override
-    public PaginationResult<NoteItemVo> searchNotes(String keyword, String tag, String sortBy, Integer page, Integer pageSize) {
+    public PaginationResult<NoteItemVo> searchNotes(String keyword, String tag, String sortBy, Integer page, Integer pageSize, Long userId) {
         try {
             log.info("开始搜索笔记: keyword={}, tag={}, sortBy={}, page={}, pageSize={}",
                     keyword, tag, sortBy, page, pageSize);
@@ -79,10 +87,11 @@ public class NoteSearchServiceImpl implements INoteSearchService {
 
             // 2. 构建查询条件
             BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
-            boolQuery.filter(QueryBuilders.termQuery("dataType", SearchDocTypeEnum.NOTE.getValue()));
-
             boolQuery = buildCommonQuery(boolQuery, keyword);
             boolQuery = buildNoteSpecificQuery(boolQuery, tag);
+            if (NoteSortTypeEnum.SELECTED.equals(sortType)) {
+                boolQuery.filter(QueryBuilders.termQuery("featured", true));
+            }
 
             // 3. 构建排序
             List<SortBuilder<?>> sorts = buildSortBuilders(sortType.getCode());
@@ -99,74 +108,65 @@ public class NoteSearchServiceImpl implements INoteSearchService {
 
             // 6. 执行查询
             NativeSearchQuery nativeSearchQuery = queryBuilder.build();
-            SearchHits<UnifiedSearchDocument> searchHits = elasticsearchOperations.search(
+            SearchHits<NoteSearchDocument> searchHits = elasticsearchOperations.search(
                     nativeSearchQuery,
-                    UnifiedSearchDocument.class
+                    NoteSearchDocument.class
             );
 
             log.info("笔记搜索结果: 命中数={}, 总数={}", searchHits.getSearchHits().size(), searchHits.getTotalHits());
 
             // 7. 提取查询结果
-            List<UnifiedSearchDocument> docs = searchHits.getSearchHits().stream()
+            List<NoteSearchDocument> docs = searchHits.getSearchHits().stream()
                     .map(SearchHit::getContent)
                     .toList();
 
-            // 8. 提取所有userId，批量获取用户信息
-            Set<Long> userIds = docs.stream()
-                    .map(doc -> Long.parseLong(doc.getCreatorId()))
-                    .collect(Collectors.toSet());
+            // 8. 提取所有userId，从本地ES批量获取用户信息
+            List<Long> userIds = docs.stream()
+                    .map(NoteSearchDocument::getUserId)
+                    .distinct()
+                    .toList();
 
-            BatchUserInfoRequest request = new BatchUserInfoRequest();
-            request.setUserIds(new ArrayList<>(userIds));
-            RpcResult<BatchUserInfoResponse> result = userDubboService.batchGetUserInfo(request);
-            Assert.rpcResultOk(result);
-            Map<Long, UserInfoVo> userInfoMap;
-            if(result.getData() != null && !CollectionUtils.isEmpty(result.getData().getUsers())) {
-                userInfoMap = result.getData().getUsers().stream().collect(Collectors.toMap(UserInfoVo::getUserId,userInfoVo ->  userInfoVo));
-            }else {
-                userInfoMap = new HashMap<>();
+            Map<Long, UserSearchDocument> userMap = userSearchService.getUsersByIds(userIds);
+
+            // 9. 查询笔记统计信息
+            List<Long> noteIds = docs.stream()
+                    .map(NoteSearchDocument::getNoteId)
+                    .toList();
+
+            Map<Long, NoteStatisticsDto> statisticsMap = Collections.emptyMap();
+            try {
+                RpcResult<Map<Long, NoteStatisticsDto>> statsResult = noteSearchDataService.queryNotesStatistics(noteIds, userId);
+                if (statsResult.isSuccess() && statsResult.getData() != null) {
+                    statisticsMap = statsResult.getData();
+                    log.info("查询笔记统计信息完成: {} 条", statisticsMap.size());
+                }
+            } catch (Exception e) {
+                log.warn("查询笔记统计信息异常: userId={}", userId, e);
             }
-            // 9. 转换为NoteItemVo并填充用户信息
-            List<SearchResultItem<NoteItemVo>> resultItems = docs.stream()
+
+            // 10. 转换为NoteItemVo并填充用户信息和统计数据
+            final Map<Long, NoteStatisticsDto> finalStatisticsMap = statisticsMap;
+            List<NoteItemVo> noteItems = docs.stream()
                     .map(doc -> {
                         try {
-                            Long userId = Long.parseLong(doc.getCreatorId());
-                            UserInfoVo userInfo = userInfoMap.getOrDefault(userId, null);
-
-                            // 创建SearchDocumentDto
-                            SearchDocumentDto searchDocDto = SearchDocumentDto.builder()
-                                    .businessId(doc.getBusinessId())
-                                    .dataType(doc.getDataType())
-                                    .creatorId(doc.getCreatorId())
-                                    .title(doc.getTitle())
-                                    .content(doc.getContent())
-                                    .coverUrl(doc.getCoverUrl())
-                                    .likes(doc.getLikes())
-                                    .comments(doc.getComments())
-                                    .saves(doc.getSaves())
-                                    .noteMediaType(doc.getNoteMediaType())
-                                    .noteAllowComment(doc.getNoteAllowComment())
-                                    .status(doc.getStatus() != null ? String.valueOf(doc.getStatus()) : null)
-                                    .createdAt(doc.getCreatedAt())
-                                    .build();
-
-                            // 使用NoteItemVo的转换方法
-                            return NoteItemVo.fromSearchDocument(searchDocDto, userInfo);
+                            UserSearchDocument userDoc = userMap.get(doc.getUserId());
+                            NoteStatisticsDto stats = finalStatisticsMap.getOrDefault(doc.getNoteId(),
+                                    NoteStatisticsDto.builder()
+                                            .noteId(doc.getNoteId())
+                                            .likeCount(doc.getLikes() != null ? doc.getLikes() : 0)
+                                            .commentCount(doc.getComments() != null ? doc.getComments() : 0)
+                                            .isLiked(false)
+                                            .build());
+                            return toListItemVo(doc, userDoc, stats);
                         } catch (Exception e) {
-                            log.error("笔记转换失败: noteId={}", doc.getBusinessId(), e);
+                            log.error("笔记转换失败: noteId={}", doc.getNoteId(), e);
                             return null;
                         }
                     })
                     .filter(Objects::nonNull)
                     .toList();
 
-            // 转换搜索结果为NoteItemVo列表
-            List<NoteItemVo> noteItems = resultItems.stream()
-                    .filter(item -> item.getData() != null)
-                    .map(SearchResultItem::getData)
-                    .collect(Collectors.toList());
-
-            // 10. 返回分页结果
+            // 11. 返回分页结果
             return PaginationResult.build(noteItems, searchHits.getTotalHits(), page, pageSize);
 
         } catch (Exception e) {
@@ -223,7 +223,7 @@ public class NoteSearchServiceImpl implements INoteSearchService {
     public List<SortBuilder<?>> buildLatestSorts() {
         List<SortBuilder<?>> sorts = new ArrayList<>();
         sorts.add(SortBuilders.fieldSort("createdAt").order(SortOrder.DESC));
-        sorts.add(SortBuilders.fieldSort("businessId").order(SortOrder.DESC));
+        sorts.add(SortBuilders.fieldSort("noteId").order(SortOrder.DESC));
         return sorts;
     }
 
@@ -235,7 +235,7 @@ public class NoteSearchServiceImpl implements INoteSearchService {
         List<SortBuilder<?>> sorts = new ArrayList<>();
         sorts.add(SortBuilders.fieldSort("hotScore").order(SortOrder.DESC));
         sorts.add(SortBuilders.fieldSort("createdAt").order(SortOrder.DESC));
-        sorts.add(SortBuilders.fieldSort("businessId").order(SortOrder.DESC));
+        sorts.add(SortBuilders.fieldSort("noteId").order(SortOrder.DESC));
         return sorts;
     }
 
@@ -244,11 +244,7 @@ public class NoteSearchServiceImpl implements INoteSearchService {
      */
     @Override
     public List<SortBuilder<?>> buildSelectedSorts() {
-        List<SortBuilder<?>> sorts = new ArrayList<>();
-        sorts.add(SortBuilders.fieldSort("qualityScore").order(SortOrder.DESC));
-        sorts.add(SortBuilders.fieldSort("createdAt").order(SortOrder.DESC));
-        sorts.add(SortBuilders.fieldSort("businessId").order(SortOrder.DESC));
-        return sorts;
+        return buildHottestSorts();
     }
 
     /**
@@ -282,7 +278,7 @@ public class NoteSearchServiceImpl implements INoteSearchService {
 
             // 保存/修改PUBLISHED状态的笔记到ES
             if (!publishedNotes.isEmpty()) {
-                List<UnifiedSearchDocument> documents = publishedNotes.stream()
+                List<NoteSearchDocument> documents = publishedNotes.stream()
                         .map(this::convertNoteSyncVOToDocument)
                         .filter(Objects::nonNull)
                         .toList();
@@ -291,20 +287,44 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                     elasticsearchOperations.save(documents);
                     log.info("保存笔记到ES: 成功条数={}", documents.size());
                     syncCount += documents.size();
+
+                    // 同步到统一索引
+                    List<UnifiedSearchDocument> unifiedDocs = documents.stream()
+                            .map(note -> UnifiedSearchDocument.builder()
+                                    .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.NOTE, note.getNoteId()))
+                                    .businessId(note.getNoteId())
+                                    .dataType(SearchDocTypeEnum.NOTE.getValue())
+                                    .title(note.getTitle())
+                                    .content(note.getContent())
+                                    .tags(note.getTags())
+                                    .location(null)
+                                    .region(null)
+                                    .coverUrl(note.getCoverUrl())
+                                    .score(note.getHotScore() != null ? note.getHotScore() : 0.0)
+                                    .createdAt(note.getCreatedAt())
+                                    .updatedAt(note.getUpdatedAt())
+                                    .build())
+                            .collect(Collectors.toList());
+                    unifiedSearchService.saveOrUpdateToUnified(unifiedDocs);
                 }
             }
 
             // 从ES删除非PUBLISHED状态的笔记
             if (!unpublishedNotes.isEmpty()) {
-                unpublishedNotes.forEach(vo -> {
-                    try {
-                        String docId = SearchDocTypeEnum.NOTE.getIdPrefix() + vo.getNoteId();
-                        elasticsearchOperations.delete(docId, UnifiedSearchDocument.class);
-                        log.info("从ES删除笔记: noteId={}, status={}", vo.getNoteId(), vo.getStatus());
-                    } catch (Exception e) {
-                        log.error("删除ES文档失败: noteId={}", vo.getNoteId(), e);
-                    }
-                });
+                List<String> docIds = unpublishedNotes.stream()
+                        .map(vo -> SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.NOTE, vo.getNoteId()))
+                        .collect(Collectors.toList());
+
+                // 批量删除笔记索引中的文档（基于查询的批量删除）
+                IdsQueryBuilder idsQuery = new IdsQueryBuilder().addIds(docIds.toArray(new String[0]));
+                NativeSearchQuery deleteQuery = new NativeSearchQueryBuilder()
+                        .withQuery(idsQuery)
+                        .build();
+                elasticsearchOperations.delete(deleteQuery, NoteSearchDocument.class);
+                log.info("从ES笔记索引删除笔记: 删除数={}", unpublishedNotes.size());
+
+                // 从统一索引删除
+                unifiedSearchService.deleteFromUnified(docIds);
             }
 
             log.info("笔记数据同步完成: 保存数={}, 删除数={}", syncCount, unpublishedNotes.size());
@@ -317,9 +337,9 @@ public class NoteSearchServiceImpl implements INoteSearchService {
     }
 
     /**
-     * 将NoteSyncVO转换为UnifiedSearchDocument
+     * 将NoteSyncVO转换为NoteSearchDocument
      */
-    private UnifiedSearchDocument convertNoteSyncVOToDocument(NoteSyncVo vo) {
+    private NoteSearchDocument convertNoteSyncVOToDocument(NoteSyncVo vo) {
         try {
             if (vo == null || vo.getNoteId() == null) {
                 return null;
@@ -333,14 +353,13 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                     vo.getCreatedAt()
             );
 
-            return UnifiedSearchDocument.builder()
-                    .id(SearchDocTypeEnum.NOTE.getIdPrefix() + vo.getNoteId())
-                    .businessId(vo.getNoteId())
-                    .dataType(SearchDocTypeEnum.NOTE.getValue())
+            return NoteSearchDocument.builder()
+                    .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.NOTE,vo.getNoteId()))
+                    .noteId(vo.getNoteId())
                     .title(vo.getTitle())
                     .content(vo.getContent())
                     .tags(vo.getTags())
-                    .creatorId(String.valueOf(vo.getUserId()))
+                    .userId(vo.getUserId())
                     .coverUrl(vo.getCoverUrl())
                     .likes(vo.getLikeCount())
                     .comments(vo.getCommentCount())
@@ -349,7 +368,8 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                     .updatedAt(vo.getUpdatedAt())
                     .hotScore(hotScore)
                     .qualityScore(NoteSearchConstants.INITIAL_QUALITY_SCORE)
-                    .noteMediaType(vo.getMediaType())
+                    .mediaType(vo.getMediaType())
+                    .featured(vo.getFeatured() != null ? vo.getFeatured() : false)
                     .build();
 
         } catch (Exception e) {
@@ -382,4 +402,147 @@ public class NoteSearchServiceImpl implements INoteSearchService {
         return baseScore;
     }
 
+    /**
+     * 获取精选笔记 - 支持随机排序和分页
+     */
+    @Override
+    public PaginationResult<NoteItemVo> getFeaturedNotes(Integer page, Integer pageSize, Long seed, Long userId) {
+        try {
+            log.info("开始获取精选笔记: page={}, pageSize={}, seed={}, userId={}", page, pageSize, seed, userId);
+
+            // 1. 参数验证和默认值设置
+            page = (page == null || page <= 0) ? 1 : page;
+            pageSize = (pageSize == null || pageSize <= 0) ? 10 : pageSize;
+            seed = (seed == null) ? System.currentTimeMillis() : seed;
+
+            // 2. 构建基础过滤条件
+            BoolQueryBuilder filterQuery = QueryBuilders.boolQuery()
+                    .filter(QueryBuilders.termQuery("featured", true));
+
+            // 3. 使用 function_score 实现基于 seed 的随机排序
+            FunctionScoreQueryBuilder functionScoreQuery =
+                QueryBuilders.functionScoreQuery(filterQuery,
+                    new FunctionScoreQueryBuilder.FilterFunctionBuilder[] {
+                        new org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder.FilterFunctionBuilder(
+                            ScoreFunctionBuilders.randomFunction()
+                                .seed(seed)
+                                .setField("_seq_no")
+                        )
+                    });
+
+            // 4. 构建排序 - 按 score 降序（随机分数）
+            List<SortBuilder<?>> sorts = new ArrayList<>();
+            sorts.add(SortBuilders.scoreSort().order(SortOrder.DESC));
+            sorts.add(SortBuilders.fieldSort("noteId").order(SortOrder.DESC));
+
+            // 5. 构建分页对象
+            Pageable pageable = PageRequest.of(page - 1, pageSize);
+
+            // 6. 构建查询对象
+            NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder()
+                    .withQuery(functionScoreQuery);
+
+            sorts.forEach(queryBuilder::withSorts);
+            queryBuilder.withPageable(pageable);
+
+            // 7. 执行查询
+            NativeSearchQuery nativeSearchQuery = queryBuilder.build();
+            SearchHits<NoteSearchDocument> searchHits = elasticsearchOperations.search(
+                    nativeSearchQuery,
+                    NoteSearchDocument.class
+            );
+
+            log.info("精选笔记查询结果: 命中数={}, 总数={}", searchHits.getSearchHits().size(), searchHits.getTotalHits());
+
+            // 8. 提取查询结果
+            List<NoteSearchDocument> docs = searchHits.getSearchHits().stream()
+                    .map(SearchHit::getContent)
+                    .toList();
+
+            // 9. 提取所有userId，从本地ES批量获取用户信息
+            List<Long> userIds = docs.stream()
+                    .map(NoteSearchDocument::getUserId)
+                    .distinct()
+                    .toList();
+
+            Map<Long, UserSearchDocument> userMap = userSearchService.getUsersByIds(userIds);
+
+            // 10. 查询笔记统计信息
+            List<Long> noteIds = docs.stream()
+                    .map(NoteSearchDocument::getNoteId)
+                    .toList();
+
+            Map<Long, NoteStatisticsDto> statisticsMap = Collections.emptyMap();
+            try {
+                RpcResult<Map<Long, NoteStatisticsDto>> statsResult = noteSearchDataService.queryNotesStatistics(noteIds, userId);
+                if (statsResult.isSuccess() && statsResult.getData() != null) {
+                    statisticsMap = statsResult.getData();
+                    log.info("查询笔记统计信息完成: {} 条", statisticsMap.size());
+                }
+            } catch (Exception e) {
+                log.warn("查询笔记统计信息异常: userId={}", userId, e);
+            }
+
+            // 11. 转换为NoteItemVo并填充用户信息和统计数据
+            final Map<Long, NoteStatisticsDto> finalStatisticsMap = statisticsMap;
+            List<NoteItemVo> noteItems = docs.stream()
+                    .map(doc -> {
+                        try {
+                            UserSearchDocument userDoc = userMap.get(doc.getUserId());
+                            NoteStatisticsDto stats = finalStatisticsMap.getOrDefault(doc.getNoteId(),
+                                    NoteStatisticsDto.builder()
+                                            .noteId(doc.getNoteId())
+                                            .likeCount(doc.getLikes() != null ? doc.getLikes() : 0)
+                                            .commentCount(doc.getComments() != null ? doc.getComments() : 0)
+                                            .isLiked(false)
+                                            .build());
+                            return toListItemVo(doc, userDoc, stats);
+                        } catch (Exception e) {
+                            log.error("笔记转换失败: noteId={}", doc.getNoteId(), e);
+                            return null;
+                        }
+                    })
+                    .filter(Objects::nonNull)
+                    .toList();
+
+            // 12. 返回分页结果
+            return PaginationResult.build(noteItems, searchHits.getTotalHits(), page, pageSize);
+
+        } catch (Exception e) {
+            log.error("获取精选笔记异常", e);
+            return PaginationResult.build(Collections.emptyList(), 0, page == null ? 1 : page, pageSize == null ? 10 : pageSize);
+        }
+    }
+
+    /**
+     * 将 NoteSearchDocument 转换为 NoteItemVo
+     *
+     * @param doc NoteSearchDocument
+     * @param userDoc UserSearchDocument
+     * @param stats NoteStatisticsDto
+     */
+    @Override
+    public NoteItemVo toListItemVo(NoteSearchDocument doc, UserSearchDocument userDoc, NoteStatisticsDto stats) {
+        NoteItemVo noteItem = new NoteItemVo();
+        noteItem.setNoteId(doc.getNoteId());
+        noteItem.setUserId(doc.getUserId());
+        noteItem.setNickName(userDoc != null ? userDoc.getNickName() : null);
+        noteItem.setAvatarUrl(userDoc != null ? userDoc.getAvatarUrl() : null);
+        noteItem.setTitle(doc.getTitle());
+
+        String content = doc.getContent();
+        if (content != null && content.length() > 150) {
+            content = content.substring(0, 150) + "...";
+        }
+        noteItem.setContent(content);
+
+        noteItem.setCoverUrl(doc.getCoverUrl());
+        noteItem.setMediaType(doc.getMediaType() != null ? doc.getMediaType() : "IMAGE");
+        noteItem.setLikeCount(stats.getLikeCount());
+        noteItem.setCommentCount(stats.getCommentCount());
+        noteItem.setStatus(doc.getStatus() != null ? String.valueOf(doc.getStatus()) : "PUBLISHED");
+        noteItem.setCreatedAt(doc.getCreatedAt());
+        noteItem.setLiked(stats.getIsLiked());
+        return noteItem;
+    }
 }

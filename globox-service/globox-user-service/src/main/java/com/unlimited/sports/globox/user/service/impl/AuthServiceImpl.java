@@ -9,9 +9,10 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
+import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.common.utils.HttpRequestUtils;
 import com.unlimited.sports.globox.common.utils.JwtUtil;
+import com.unlimited.sports.globox.dubbo.order.OrderForUserDubboService;
 import com.unlimited.sports.globox.dubbo.social.ChatDubboService;
 import com.unlimited.sports.globox.model.auth.dto.AppleLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
@@ -69,8 +70,10 @@ import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 /**
  * 认证服务实现
  *
@@ -124,6 +127,9 @@ public class AuthServiceImpl implements AuthService {
     @DubboReference(group = "rpc")
     private ChatDubboService chatDubboService;
 
+    @DubboReference(group = "rpc")
+    private OrderForUserDubboService orderForUserDubboService;
+
     @Autowired
     private UserProfileDefaultProperties userProfileDefaultProperties;
 
@@ -158,6 +164,10 @@ public class AuthServiceImpl implements AuthService {
     private static final int DEFAULT_STAMINA = 5;
     private static final int DEFAULT_MENTAL = 5;
     private static final String DEFAULT_HOME_DISTRICT = "510000";
+    private static final String DEFAULT_USERNAME_PREFIX = "globox";
+    private static final int DEFAULT_USERNAME_RANDOM_MIN_LEN = 6;
+    private static final int DEFAULT_USERNAME_RANDOM_MAX_LEN = 8;
+    private static final int DEFAULT_USERNAME_RETRY = 5;
     private static final String WHITELIST_LOGIN_PASSWORD = "970824"; // 白名单免验证码固定密码
     private static final String WHITELIST_CANCEL_PASSWORD = "970824"; // 白名单注销固定密码
 
@@ -212,19 +222,27 @@ public class AuthServiceImpl implements AuthService {
         boolean inWhitelist = whitelist != null
                 && whitelist.getStatus() == InternalTestWhitelist.WhitelistStatus.ACTIVE;
 
-        // 3. 白名单用户使用固定密码登录，不走验证码
+        // 3. 白名单用户可用固定密码或短信验证码
         if (inWhitelist) {
-            // 3a. 验证错误次数检查
             long errorCount = redisService.getSmsErrorCount(phone);
             Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
 
-            if (!WHITELIST_LOGIN_PASSWORD.equals(code)) {
-                redisService.incrementSmsError(phone);
-                recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
-                throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            String inputCode = code.trim();
+            if (WHITELIST_LOGIN_PASSWORD.equals(inputCode)) {
+                redisService.clearSmsError(phone);
+            } else {
+                String savedCode = redisService.getSmsCode(phone);
+                Assert.isNotEmpty(savedCode, UserAuthCode.INVALID_CAPTCHA);
+
+                if (!inputCode.equals(savedCode.trim())) {
+                    redisService.incrementSmsError(phone);
+                    recordLoginLog(null, phone, AuthIdentity.IdentityType.PHONE, false, UserAuthCode.INVALID_CAPTCHA.getMessage());
+                    throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+                }
+
+                redisService.clearSmsError(phone);
+                redisService.deleteSmsCode(phone);
             }
-            // 固定密码正确，清除错误计数
-            redisService.clearSmsError(phone);
         } else {
             // 3b. 正常验证码登录流程
             long errorCount = redisService.getSmsErrorCount(phone);
@@ -255,7 +273,7 @@ public class AuthServiceImpl implements AuthService {
         boolean isNewUser = created || reactivated;
 
         // 7. 生成JWT Token
-        String clientTypeHeader = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientTypeHeader = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         String clientType = resolveClientTypeForAppLogin(clientTypeHeader);
         log.info("手机号登录客户端类型: clientType={}, headerPresent={}", clientType, StringUtils.hasText(clientTypeHeader));
         Map<String, Object> claims = new HashMap<>();
@@ -304,7 +322,7 @@ public class AuthServiceImpl implements AuthService {
         String code = request.getCode();
 
         // 1. 获取客户端类型
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         if (!StringUtils.hasText(clientType)) {
             log.error("【微信登录】缺少X-Client-Type请求头，期望值：app 或 third-party-jsapi");
             throw new GloboxApplicationException(UserAuthCode.CLIENT_TYPE_UNSUPPORTED);
@@ -734,7 +752,7 @@ public class AuthServiceImpl implements AuthService {
         String avatarUrl = request.getAvatarUrl();
 
         // 1. 获取客户端类型
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         log.info("wechat phone login start: clientType={}, hasWxCode={}, hasPhoneCode={}, profiles={}",
                 clientType, StringUtils.hasText(wxCode), StringUtils.hasText(phoneCode),
                 Arrays.toString(environment.getActiveProfiles()));
@@ -883,12 +901,12 @@ public class AuthServiceImpl implements AuthService {
         String confirmPassword = request.getConfirmPassword();
 
         // 1. 从请求头提取Token
-        String authHeader = AuthContextHolder.getHeader("Authorization");
+        String authHeader = RequestContextHolder.getHeader("Authorization");
         String token = JwtUtil.extractTokenFromHeader(authHeader);
         Assert.isNotEmpty(token, UserAuthCode.TOKEN_INVALID);
 
         // 2. 验证Token有效性
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         Assert.isTrue(JwtUtil.validateToken(token, jwtSecret), UserAuthCode.TOKEN_INVALID);
         assertAppAccessTokenActive(token, clientType, jwtSecret);
         // 3. 从Token中提取userId
@@ -983,7 +1001,7 @@ public class AuthServiceImpl implements AuthService {
 
         // 8. 查询用户信息（并处理注销重用）
         AuthUser authUser = ensureUserActiveForLogin(identity, buildDefaultNicknameForPhone(phone)).authUser();
-        String clientTypeHeader = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientTypeHeader = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         String clientType = resolveClientTypeForAppLogin(clientTypeHeader);
         log.info("密码登录客户端类型: clientType={}, headerPresent={}", clientType, StringUtils.hasText(clientTypeHeader));
         // 9. 生成JWT双Token（完全复用phoneLogin的逻辑）
@@ -1096,7 +1114,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public R<String> verifyCancelAccount(CancelAccountRequest request) {
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.MISSING_USER_ID_HEADER);
 
         String phone = request.getPhone();
@@ -1105,17 +1123,29 @@ public class AuthServiceImpl implements AuthService {
         // 1. 验证手机号格式
         Assert.isTrue(PhoneUtils.isValidPhone(phone), UserAuthCode.INVALID_PHONE);
 
-        boolean inWhitelist = whitelistService.isInWhitelist(phone);
+        InternalTestWhitelist whitelist = whitelistService.getWhitelistByPhone(phone);
+        boolean inWhitelist = whitelist != null
+                && whitelist.getStatus() == InternalTestWhitelist.WhitelistStatus.ACTIVE;
         if (inWhitelist) {
             long errorCount = redisService.getSmsErrorCount(phone);
             Assert.isTrue(errorCount < MAX_SMS_ERROR_COUNT, UserAuthCode.CAPTCHA_ERROR_TOO_MANY);
-            if (!WHITELIST_CANCEL_PASSWORD.equals(code)) {
-                redisService.incrementSmsError(phone);
-                recordLoginLog(userId, phone, AuthIdentity.IdentityType.PHONE, false,
-                        UserAuthCode.INVALID_CAPTCHA.getMessage());
-                throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+            String inputCode = code.trim();
+            if (WHITELIST_CANCEL_PASSWORD.equals(inputCode)) {
+                redisService.clearSmsError(phone);
+            } else {
+                String savedCode = redisService.getSmsCode(phone);
+                Assert.isNotEmpty(savedCode, UserAuthCode.INVALID_CAPTCHA);
+
+                if (!inputCode.equals(savedCode.trim())) {
+                    redisService.incrementSmsError(phone);
+                    recordLoginLog(userId, phone, AuthIdentity.IdentityType.PHONE, false,
+                            UserAuthCode.INVALID_CAPTCHA.getMessage());
+                    throw new GloboxApplicationException(UserAuthCode.INVALID_CAPTCHA);
+                }
+
+                redisService.clearSmsError(phone);
+                redisService.deleteSmsCode(phone);
             }
-            redisService.clearSmsError(phone);
         } else {
             // 2. 验证码校验（沿用 resetPassword 逻辑）
             long errorCount = redisService.getSmsErrorCount(phone);
@@ -1124,7 +1154,8 @@ public class AuthServiceImpl implements AuthService {
             String savedCode = redisService.getSmsCode(phone);
             Assert.isNotEmpty(savedCode, UserAuthCode.INVALID_CAPTCHA);
 
-            if (!code.equals(savedCode)) {
+            String inputCode = code.trim();
+            if (!inputCode.equals(savedCode.trim())) {
                 redisService.incrementSmsError(phone);
                 recordLoginLog(userId, phone, AuthIdentity.IdentityType.PHONE, false,
                         UserAuthCode.INVALID_CAPTCHA.getMessage());
@@ -1160,7 +1191,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public R<String> confirmCancelAccount(CancelAccountConfirmRequest request) {
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.MISSING_USER_ID_HEADER);
 
         String cancelToken = request.getCancelToken();
@@ -1182,7 +1213,8 @@ public class AuthServiceImpl implements AuthService {
         }
         assertUserActive(authUser);
 
-        // TODO 校验订单是否处于完成状态（待接入订单服务）
+        RpcResult<Void> orderCheckResult = orderForUserDubboService.checkOrderStatusBeforeUserCancel(userId);
+        Assert.rpcResultOk(orderCheckResult);
 
         // 标记账号注销
         authUserMapper.update(null, new LambdaUpdateWrapper<AuthUser>()
@@ -1211,13 +1243,13 @@ public class AuthServiceImpl implements AuthService {
         String confirmPassword = request.getConfirmPassword();
 
         // 1. 从请求头提取Token
-        String authHeader = AuthContextHolder.getHeader("Authorization");
+        String authHeader = RequestContextHolder.getHeader("Authorization");
         String token = JwtUtil.extractTokenFromHeader(authHeader);
         Assert.isNotEmpty(token, UserAuthCode.TOKEN_INVALID);
 
         // 2. 验证Token有效性
         String clientType = resolveClientTypeForAppLogin(
-                AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
+                RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
         Assert.isTrue(JwtUtil.validateToken(token, jwtSecret), UserAuthCode.TOKEN_INVALID);
         assertAppAccessTokenActive(token, clientType, jwtSecret);
 
@@ -1272,7 +1304,7 @@ public class AuthServiceImpl implements AuthService {
     public R<LoginResponse> refreshToken(TokenRefreshRequest request) {
         String refreshToken = request.getRefreshToken();
         // 客户端类型优先取请求头，缺失时用 refreshToken 中的 claim 回填
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
 
         // 1. 校验 JWT 签名和过期时间
         if (!JwtUtil.validateToken(refreshToken, jwtSecret)) {
@@ -1342,8 +1374,8 @@ public class AuthServiceImpl implements AuthService {
      */
     @Override
     public R<Void> logout() {
-        String userIdHeader = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_USER_ID);
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String userIdHeader = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_USER_ID);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         Assert.isNotEmpty(userIdHeader, UserAuthCode.MISSING_USER_ID_HEADER);
         Long userId = Long.parseLong(userIdHeader);
         // 仅 App 端执行单端登出，避免影响其他端
@@ -1881,6 +1913,13 @@ public class AuthServiceImpl implements AuthService {
         if (profile.getCancelled() == null) {
             profile.setCancelled(false);
         }
+        if (!StringUtils.hasText(profile.getUsername())) {
+            String generated = generateDefaultUsername(profile.getUserId());
+            profile.setUsername(generated);
+            profile.setUsernameLower(generated.toLowerCase(Locale.ROOT));
+        } else if (!StringUtils.hasText(profile.getUsernameLower())) {
+            profile.setUsernameLower(profile.getUsername().toLowerCase(Locale.ROOT));
+        }
         if (!StringUtils.hasText(profile.getSignature())) {
             profile.setSignature(DEFAULT_SIGNATURE);
         }
@@ -1919,6 +1958,38 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    private String generateDefaultUsername(Long userId) {
+        for (int i = 0; i < DEFAULT_USERNAME_RETRY; i++) {
+            int randomLen = DEFAULT_USERNAME_RANDOM_MIN_LEN
+                    + (i % (DEFAULT_USERNAME_RANDOM_MAX_LEN - DEFAULT_USERNAME_RANDOM_MIN_LEN + 1));
+            String candidate = DEFAULT_USERNAME_PREFIX + randomBase36(randomLen);
+            String candidateLower = candidate.toLowerCase(Locale.ROOT);
+
+            LambdaQueryWrapper<UserProfile> query = new LambdaQueryWrapper<>();
+            query.eq(UserProfile::getUsernameLower, candidateLower);
+            Long count = userProfileMapper.selectCount(query);
+            if (count == null || count == 0) {
+                return candidate;
+            }
+        }
+
+        String fallback = DEFAULT_USERNAME_PREFIX
+                + Long.toString(userId != null ? userId : System.currentTimeMillis(), 36);
+        if (fallback.length() > 20) {
+            fallback = fallback.substring(0, 20);
+        }
+        return fallback;
+    }
+
+    private String randomBase36(int length) {
+        StringBuilder builder = new StringBuilder(length);
+        while (builder.length() < length) {
+            String part = Long.toString(ThreadLocalRandom.current().nextLong(Long.MAX_VALUE), 36);
+            builder.append(part);
+        }
+        return builder.substring(0, length);
+    }
+
     private String buildDefaultNicknameForPhone(String phone) {
         if (!StringUtils.hasText(phone) || phone.length() < 4) {
             return null;
@@ -1934,12 +2005,12 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private boolean isThirdPartyClient() {
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         return clientType != null && clientType.equalsIgnoreCase(ClientType.THIRD_PARTY_JSAPI.getValue());
     }
 
     private boolean isAppClient() {
-        String clientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+        String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         return clientType != null && clientType.equalsIgnoreCase(ClientType.APP.getValue());
     }
     // 仅用于 App 固定登录入口：缺省视为 app，确保 token 有状态
@@ -2035,7 +2106,7 @@ public class AuthServiceImpl implements AuthService {
         }
         String resolvedClientType = clientType;
         if (!StringUtils.hasText(resolvedClientType)) {
-            resolvedClientType = AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
+            resolvedClientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         }
         return resolveDefaultAvatarUrl(resolvedClientType);
     }
@@ -2067,7 +2138,7 @@ public class AuthServiceImpl implements AuthService {
     public R<LoginResponse> appleLogin(AppleLoginRequest request) {
         String identityToken = request.getIdentityToken();
         String clientType = resolveClientTypeForAppLogin(
-                AuthContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
+                RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
         // 1. 验证 identityToken 不为空
         Assert.isNotEmpty(identityToken, UserAuthCode.INVALID_PARAM);
         

@@ -1,11 +1,6 @@
 package com.unlimited.sports.globox.model.social.dto;
 
-
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
 import com.unlimited.sports.globox.model.social.entity.RallyActivityTypeEnum;
-import com.unlimited.sports.globox.model.social.entity.RallyCostBearerEnum;
 import com.unlimited.sports.globox.model.social.entity.RallyGenderLimitEnum;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 
+import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
@@ -29,7 +25,8 @@ public class RallyPostsDto {
     /**
      * 约球宣言
      */
-
+    @NotNull(message = "约球宣言不能为空")
+    @Size(max = 20, message = "约球宣言最多20个字符")
     private String rallyTitle;
 
     /**
@@ -41,7 +38,6 @@ public class RallyPostsDto {
     /**
      * 球馆名称(可空)
      */
-
     private String rallyVenueName;
 
     /**
@@ -65,7 +61,6 @@ public class RallyPostsDto {
     /**
      * 时间-开始
      */
-
     private LocalTime rallyStartTime;
 
     /**
@@ -88,13 +83,15 @@ public class RallyPostsDto {
     /**
      * 活动类型: 0=不限 1=单打 2=双打
      */
-    @Min(value = 0, message = "数据不合法")
+    @Min(value = 0, message = "合法类型枚举值为0-2")
+    @Max(value = 2, message = "合法类型枚举值为0-2")
     private int rallyActivityType = RallyActivityTypeEnum.UNLIMITED.getCode();
 
     /**
      * 性别限制: 0=不限 1=仅男生 2=仅女生
      */
-    @Min(value = 0, message = "数据不合法")
+    @Min(value = 0, message = "合法类型枚举值为0-2")
+    @Max(value = 2, message = "合法类型枚举值为0-2")
     private int rallyGenderLimit = RallyGenderLimitEnum.NO_LIMIT.getCode();
 
     /**

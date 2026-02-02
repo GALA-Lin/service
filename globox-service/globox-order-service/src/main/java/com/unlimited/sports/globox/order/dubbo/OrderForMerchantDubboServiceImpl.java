@@ -37,12 +37,6 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
     private OrderItemsMapper orderItemsMapper;
 
     @Autowired
-    private OrderStatusLogsMapper orderStatusLogsMapper;
-
-    @Autowired
-    private MQService mqService;
-
-    @Autowired
     private OrderActivitiesMapper orderActivitiesMapper;
 
     @Autowired
@@ -260,7 +254,17 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
     @Override
     public RpcResult<SellerCancelOrderResultDto> cancelUnpaidOrder(
             MerchantCancelOrderRequestDto dto) {
-        return orderDubboService.sellerCancelUnpaidOrder(dto.getOrderNo(), dto.getMerchantId(), dto.getMerchantId(), SellerTypeEnum.VENUE);
+        log.info("[商家取消未支付订单] start merchantId:{} venueId:{} orderNo:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo());
+        RpcResult<SellerCancelOrderResultDto> rpcResult = orderDubboService.sellerCancelUnpaidOrder(dto.getOrderNo(),
+                dto.getMerchantId(),
+                dto.getMerchantId(),
+                SellerTypeEnum.VENUE);
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[商家取消未支付订单] 商家取消未支付订单失败 merchantId:{} venueId:{} orderNo:{} message:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
     /**
@@ -271,7 +275,17 @@ public class OrderForMerchantDubboServiceImpl implements OrderForMerchantDubboSe
      */
     @Override
     public RpcResult<SellerConfirmResultDto> confirm(MerchantConfirmRequestDto dto) {
-        return orderDubboService.sellerConfirm(dto.getOrderNo(), dto.isAutoConfirm(), dto.getMerchantId(), SellerTypeEnum.VENUE);
+        log.info("[商家确认订单] start merchantId:{} venueId:{} orderNo:{} autoConfirm:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), dto.isAutoConfirm());
+        RpcResult<SellerConfirmResultDto> rpcResult = orderDubboService.sellerConfirm(dto.getOrderNo(),
+                dto.isAutoConfirm(),
+                dto.getMerchantId(),
+                SellerTypeEnum.VENUE,
+                dto.getVenueId());
+        if (!rpcResult.isSuccess()) {
+            log.error("[商家确认订单] 商家取消未支付订单失败 merchantId:{} venueId:{} orderNo:{} message:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
 

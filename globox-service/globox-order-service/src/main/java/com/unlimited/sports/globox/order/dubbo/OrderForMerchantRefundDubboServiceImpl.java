@@ -40,12 +40,6 @@ import java.util.stream.Collectors;
 public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantRefundDubboService {
 
     @Autowired
-    private OrderRefundService orderRefundService;
-
-    @Autowired
-    private OrderRefundActionService orderRefundActionService;
-
-    @Autowired
     private OrdersMapper ordersMapper;
 
     @Autowired
@@ -70,11 +64,6 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
     private OrderRefundApplyItemsMapper orderRefundApplyItemsMapper;
 
     @Autowired
-    private OrderStatusLogsMapper orderStatusLogsMapper;
-
-    @Autowired
-    private MQService mqService;
-    @Autowired
     private OrderDubboService orderDubboService;
 
 
@@ -88,128 +77,53 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
     public RpcResult<SellerApproveRefundResultDto> approveRefund(MerchantApproveRefundRequestDto dto) {
-
-        Long orderNo = dto.getOrderNo();
-        Long refundApplyId = dto.getRefundApplyId();
-        Long venueId = dto.getVenueId();
-        Long merchantId = dto.getMerchantId();
-        LocalDateTime now = LocalDateTime.now();
-
-        // 1) 锁订单（防并发取消/支付/重复审批）
-        Orders order = ordersMapper.selectOne(
-                Wrappers.<Orders>lambdaQuery()
-                        .eq(Orders::getOrderNo, orderNo)
-                        .eq(Orders::getSellerId, venueId)
-                        .last("FOR UPDATE"));
-        if (ObjectUtils.isEmpty(order)) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
-        }
-        if (!order.getOrderStatus().equals(OrderStatusEnum.REFUND_APPLYING)) {
-            return RpcResult.error(OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
-        }
-        // 商家只能取消场地订单和场地活动订单
-        if (order.getSellerType() != SellerTypeEnum.VENUE) {
-            return RpcResult.error(OrderCode.ORDER_NOT_EXIST);
+        log.info("[商家同意用户退款] start merchantId:{} venueId:{} orderNo:{} refundApplyId:{} refundPercentage:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), dto.getRefundApplyId(), dto.getRefundPercentage());
+        RpcResult<SellerApproveRefundResultDto> rpcResult = orderDubboService.sellerApproveRefund(
+                dto.getOrderNo(),
+                dto.getVenueId(),
+                dto.getRefundApplyId(),
+                SellerTypeEnum.VENUE,
+                dto.getRefundPercentage()
+        );
+        if (!rpcResult.isSuccess()) {
+            log.error("[商家同意用户退款] 商家同意用户退款失败 merchantId:{} venueId:{} orderNo:{} refundApplyId:{} refundPercentage:{} message:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), dto.getRefundApplyId(), dto.getRefundPercentage(), rpcResult.getResultCode().getMessage());
         }
 
-        // 2) 锁退款申请（必须属于该订单）
-        OrderRefundApply apply = orderRefundApplyMapper.selectOne(
-                Wrappers.<OrderRefundApply>lambdaQuery()
-                        .eq(OrderRefundApply::getId, refundApplyId)
-                        .eq(OrderRefundApply::getOrderNo, orderNo)
-                        .last("FOR UPDATE"));
-        if (ObjectUtils.isEmpty(apply)) {
-            return RpcResult.error(OrderCode.ORDER_REFUND_APPLY_NOT_EXIST);
-        }
-
-        // 3) 幂等：已同意直接返回
-        if (apply.getApplyStatus() == ApplyRefundStatusEnum.APPROVED) {
-            SellerApproveRefundResultDto resultDto = SellerApproveRefundResultDto.builder()
-                    .orderNo(orderNo)
-                    .refundApplyId(refundApplyId)
-                    .applyStatus(apply.getApplyStatus())
-                    .reviewedAt(apply.getReviewedAt())
-                    .orderStatus(order.getOrderStatus())
-                    .orderStatusName(order.getOrderStatus().getDescription())
-                    .approvedItemCount(0)
-                    .build();
-            return RpcResult.ok(resultDto);
-        }
-
-        // 只允许 PENDING -> APPROVED
-        if (apply.getApplyStatus() != ApplyRefundStatusEnum.PENDING) {
-            return RpcResult.error(OrderCode.ORDER_REFUND_APPLY_STATUS_NOT_ALLOW);
-        }
-
-        // 4) 取出本次申请的 itemId（用 apply_items 精确绑定）
-        List<OrderRefundApplyItems> applyItems = orderRefundApplyItemsMapper.selectList(
-                Wrappers.<OrderRefundApplyItems>lambdaQuery()
-                        .eq(OrderRefundApplyItems::getRefundApplyId, refundApplyId)
-                        .eq(OrderRefundApplyItems::getOrderNo, orderNo)
-                        .orderByAsc(OrderRefundApplyItems::getId));
-        if (ObjectUtils.isEmpty(applyItems)) {
-            return RpcResult.error(OrderCode.ORDER_ITEM_NOT_EXIST);
-        }
-
-        List<Long> applyItemIds = applyItems.stream()
-                .map(OrderRefundApplyItems::getOrderItemId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        if (ObjectUtils.isEmpty(applyItemIds)) {
-            return RpcResult.error(OrderCode.ORDER_ITEM_NOT_EXIST);
-        }
-
-        // 5) 查订单项并校验：必须属于该订单，且状态只能是 WAIT_APPROVING 或 APPROVED（幂等/重试安全）
-        List<OrderItems> items = orderItemsMapper.selectList(
-                Wrappers.<OrderItems>lambdaQuery()
-                        .eq(OrderItems::getOrderNo, orderNo)
-                        .in(OrderItems::getId, applyItemIds)
-                        .orderByAsc(OrderItems::getId));
-        if (items.size() != applyItemIds.size()) {
-            return RpcResult.error(OrderCode.ORDER_ITEM_NOT_EXIST);
-        }
-
-        for (OrderItems it : items) {
-            RefundStatusEnum st = it.getRefundStatus();
-            if (ObjectUtils.isEmpty(st)) {
-                return RpcResult.error(OrderCode.ORDER_ITEM_REFUND_STATUS_INVALID);
-            }
-            if (st != RefundStatusEnum.WAIT_APPROVING && st != RefundStatusEnum.APPROVED) {
-                return RpcResult.error(OrderCode.ORDER_ITEM_REFUND_STATUS_INVALID);
-            }
-        }
-
-        int itemCount = orderRefundActionService.refundAction(orderNo,
-                refundApplyId,
-                false,
-                merchantId,
-                OperatorTypeEnum.USER,
-                SellerTypeEnum.VENUE);
-
-        SellerApproveRefundResultDto resultDto = SellerApproveRefundResultDto.builder()
-                .orderNo(orderNo)
-                .refundApplyId(refundApplyId)
-                .applyStatus(ApplyRefundStatusEnum.APPROVED)
-                .reviewedAt(now)
-                .orderStatus(OrderStatusEnum.REFUNDING)
-                .orderStatusName(OrderStatusEnum.REFUNDING.getDescription())
-                .approvedItemCount(itemCount)
-                .build();
-        return RpcResult.ok(resultDto);
+        return rpcResult;
     }
 
 
+    /**
+     * 商家拒绝退款的处理方法。
+     *
+     * @param dto 包含订单号、退款申请ID、场馆ID和商家ID等信息的请求参数
+     * @return 返回商家拒绝退款的结果，包括订单状态、退款申请状态等信息
+     */
     @Override
     public RpcResult<SellerRejectRefundResultDto> rejectRefund(MerchantRejectRefundRequestDto dto) {
-        return orderDubboService.rejectRefund(dto.getOrderNo(),
+        log.info("[商家拒绝用户退款] start merchantId:{} venueId:{} orderNo:{} refundApplyId:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), dto.getRefundApplyId());
+
+        RpcResult<SellerRejectRefundResultDto> rpcResult = orderDubboService.rejectRefund(dto.getOrderNo(),
                 dto.getRefundApplyId(),
                 dto.getVenueId(),
                 dto.getMerchantId(),
                 SellerTypeEnum.VENUE,
                 dto.getRemark());
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[商家拒绝用户退款] 商家拒绝用户退款失败 merchantId:{} venueId:{} orderNo:{} refundApplyId:{} message:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), dto.getRefundApplyId(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
+
+    /**
+     * 分页查询商家退款申请信息。
+     *
+     * @param dto 商家分页查询退款申请请求参数，包含商家ID、场馆ID列表、可选的退款申请状态、订单号、用户ID、申请时间范围、页码和每页大小
+     * @return 返回分页后的退款申请信息列表，每个退款申请信息包括退款申请ID、订单号、用户ID、场馆ID、订单状态、退款申请状态、退款原因代码及详情、申请时间和审核时间、本次申请包含的退款项数量以及应退总额
+     */
     @Override
     public RpcResult<IPage<MerchantRefundApplyPageResultDto>> getRefundApplyPage(
             MerchantRefundApplyPageRequestDto dto) {
@@ -384,38 +298,37 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
      * @return 返回商家退款的结果，包括订单状态、退款申请状态等信息
      */
     @Override
-    @GlobalTransactional(
-            // 当前全局事务的名称
-            name = "merchant-refund",
-            // 回滚异常
-            rollbackFor = Exception.class,
-            // 全局锁重试间隔
-            lockRetryInterval = 5000,
-            // 全局锁重试次数
-            lockRetryTimes = 5,
-            // 超时时间
-            timeoutMills = 30000,
-            //事务传播
-            propagation = Propagation.REQUIRES_NEW
-    )
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     public RpcResult<SellerRefundResultDto> refund(MerchantRefundRequestDto dto) {
+        log.info("[商家申请用户订单退款] start merchantId:{} venueId:{} orderNo:{}", dto.getMerchantId(), dto.getVenueId(), dto.getOrderNo());
         List<Long> itemList = orderItemsMapper.selectList(
                 Wrappers.<OrderItems>lambdaQuery()
                         .eq(OrderItems::getOrderNo, dto.getOrderNo())
                         .eq(OrderItems::getRefundStatus, RefundStatusEnum.NONE)
         ).stream().map(OrderItems::getId).toList();
-        return orderDubboService.refund(dto.getOrderNo(),
+        RpcResult<SellerRefundResultDto> rpcResult = orderDubboService.refund(dto.getOrderNo(),
                 dto.getVenueId(),
                 dto.getMerchantId(),
                 itemList,
                 SellerTypeEnum.VENUE,
                 dto.getRemark());
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[商家申请用户订单退款] 商家申请用户订单退款失败 merchantId:{} venueId:{} orderNo:{} message:{}", dto.getMerchantId(),dto.getVenueId(), dto.getOrderNo(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
 
+    /**
+     * 商家退款申请详情（含items、extraCharges，可选timeline）
+     *
+     * @param dto 包含退款申请ID、订单号、商家ID以及场馆ID等信息的请求参数
+     * @return 返回退款申请的详细信息，包括订单基本信息、退款申请状态、退款金额及与订单相关的项目和额外费用的退款明细
+     */
     @Override
-    @Transactional(readOnly = true)
+    @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     public RpcResult<MerchantRefundApplyDetailsResultDto> getRefundApplyDetails(MerchantRefundApplyDetailsRequestDto dto) {
 
         Long refundApplyId = dto.getRefundApplyId();
@@ -565,7 +478,7 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
                     .build());
         }
 
-        // 订单级 extra（如果你希望展示在 total 里）：
+        // 订单级 extra
         // 这里我把它加到 totalRefundAmount，但 refunded/refunding 是否加，看订单状态/退款时间判断
         totalRefundAmount = totalRefundAmount.add(orderLevelExtraSum);
 
@@ -577,33 +490,7 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
             }
         }
 
-        // 8) 时间线（可选）
-        List<RefundTimelineVo> timeline = List.of();
-        if (dto.isIncludeTimeline()) {
-            List<OrderStatusLogs> logs = orderStatusLogsMapper.selectList(
-                    Wrappers.<OrderStatusLogs>lambdaQuery()
-                            .eq(OrderStatusLogs::getOrderNo, orderNo)
-                            .eq(OrderStatusLogs::getRefundApplyId, refundApplyId)
-                            .in(OrderStatusLogs::getAction,
-                                    OrderActionEnum.REFUND_APPLY,
-                                    OrderActionEnum.REFUND_APPROVE,
-                                    OrderActionEnum.REFUND_REJECT,
-                                    OrderActionEnum.REFUND_COMPLETE
-                            )
-                            .orderByAsc(OrderStatusLogs::getCreatedAt));
-
-            timeline = logs.stream().map(statusLogs -> RefundTimelineVo.builder()
-                    .action(statusLogs.getAction())
-                    .actionName(statusLogs.getAction().getDescription())
-                    .at(statusLogs.getCreatedAt())
-                    .remark(statusLogs.getRemark())
-                    .operatorType(statusLogs.getOperatorType())
-                    .operatorId(statusLogs.getOperatorId())
-                    .operatorName(statusLogs.getOperatorName())
-                    .build()).toList();
-        }
-
-        // 9) 组装返回
+        // 8) 组装返回
         MerchantRefundApplyDetailsResultDto resultDto = MerchantRefundApplyDetailsResultDto.builder()
                 .orderNo(orderNo)
                 .refundApplyId(refundApplyId)
@@ -625,10 +512,7 @@ public class OrderForMerchantRefundDubboServiceImpl implements OrderForMerchantR
                 .refundingAmount(refundingAmount)
                 .items(itemDtos)
                 .extraCharges(extraChargeDtos)
-                .timeline(timeline)
                 .build();
         return RpcResult.ok(resultDto);
     }
-
-
 }

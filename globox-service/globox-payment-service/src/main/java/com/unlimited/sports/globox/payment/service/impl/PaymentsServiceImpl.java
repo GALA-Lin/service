@@ -112,8 +112,7 @@ public class PaymentsServiceImpl implements PaymentsService {
         PaymentTypeEnum paymentType = PaymentTypeEnum.from(dto.getPaymentTypeCode());
         // 1) 请求订单 rpc 接口，确认订单信息
         RpcResult<PaymentGetOrderResultDto> rpcResult = orderForPaymentDubboService.paymentGetOrders(orderNo);
-        Assert.rpcResultOk(rpcResult);
-        PaymentGetOrderResultDto resultDto = rpcResult.getData();
+        PaymentGetOrderResultDto resultDto = Assert.rpcResultOk(rpcResult);
 
         // 2) 查出所有 orderNo 的数据
         List<Payments> paymentsList = thisService.getPaymentsList(orderNo);

@@ -79,6 +79,20 @@
             created_at ASC
     </select>
 
+    <update id="incrementLikeCount">
+        UPDATE social_note_comment
+        SET like_count = like_count + 1,
+            updated_at = NOW()
+        WHERE comment_id = #{commentId}
+    </update>
+
+    <update id="decrementLikeCount">
+        UPDATE social_note_comment
+        SET like_count = CASE WHEN like_count &gt; 0 THEN like_count - 1 ELSE 0 END,
+            updated_at = NOW()
+        WHERE comment_id = #{commentId}
+    </update>
+
 </mapper>
 
 

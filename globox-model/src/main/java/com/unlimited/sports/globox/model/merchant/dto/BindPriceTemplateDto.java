@@ -2,19 +2,21 @@ package com.unlimited.sports.globox.model.merchant.dto;
 
 import lombok.Data;
 
+import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
+import java.util.List;
 
 /**
- * 绑定价格模板到场馆DTO
+ * 绑定价格模板到场地DTO（批量）
  */
 @Data
 public class BindPriceTemplateDto {
 
     /**
-     * 场馆ID
+     * 场地ID列表（支持批量绑定）
      */
-    @NotNull(message = "场馆ID不能为空")
-    private Long venueId;
+    @NotEmpty(message = "场地ID列表不能为空")
+    private List<Long> courtIds;
 
     /**
      * 模板ID
@@ -22,10 +24,5 @@ public class BindPriceTemplateDto {
     @NotNull(message = "模板ID不能为空")
     private Long templateId;
 
-    /**
-     * 是否刷新已生成的时段价格
-     * true: 将重新生成未来所有未支付的时段
-     * false: 只对新生成的时段生效
-     */
-    private Boolean refreshExistingSlots = false;
+
 }

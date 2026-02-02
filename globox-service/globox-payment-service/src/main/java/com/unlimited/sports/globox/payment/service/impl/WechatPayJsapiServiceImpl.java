@@ -58,7 +58,6 @@ public class WechatPayJsapiServiceImpl implements WechatPayJsapiService {
         prepayRequest.setTimeExpire(paymentsService.getPaymentTimeout(payments));
         prepayRequest.setNotifyUrl(wechatPayProperties.getNotifyPaymentUrl());
         Payer payer = new Payer();
-        // TODO 填充 open id
         payer.setOpenid(payments.getOpenId());
         prepayRequest.setPayer(payer);
         Amount amount = new Amount();

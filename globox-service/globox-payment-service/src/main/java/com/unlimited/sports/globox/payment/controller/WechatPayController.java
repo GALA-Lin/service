@@ -38,22 +38,11 @@ public class WechatPayController {
     @Autowired
     private NotificationConfig notificationConfig;
 
-    @Autowired
-    private PaymentsService paymentsService;
-
     /**
      * 微信异步回调方法
      */
     @RequestMapping("/callback/notify")
     public WechatPayNotifyVo notifyCallback(HttpServletRequest request) {
         return wechatPayService.handleCallback(request, notificationConfig);
-    }
-
-
-    @PostMapping("/profitSharing/{outTradeNo}")
-    public R profitSharing(@PathVariable String outTradeNo) {
-        Payments payments = paymentsService.getPaymentByOutTradeNo(outTradeNo);
-        paymentsService.profitSharing(payments);
-        return R.ok();
     }
 }

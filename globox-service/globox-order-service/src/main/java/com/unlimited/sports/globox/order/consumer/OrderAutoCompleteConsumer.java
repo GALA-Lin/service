@@ -29,6 +29,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+
 /**
  * 订单定时完成 消费者
  */
@@ -61,6 +63,7 @@ public class OrderAutoCompleteConsumer {
             OrderAutoCompleteMessage message,
             Channel channel,
             Message amqpMessage) {
+        LocalDateTime now = LocalDateTime.now();
 
         message.incrementRetryCount();
         log.info("[订单自动完成] 收到订单自动完成消息 orderNo：{}", message.getOrderNo());
@@ -79,6 +82,7 @@ public class OrderAutoCompleteConsumer {
                 || orderStatus.equals(OrderStatusEnum.REFUND_CANCELLED)) {
             // 已支付、已确认、部分退款、退款被拒绝、退款取消 标记为 已完成
             orders.setOrderStatus(OrderStatusEnum.COMPLETED);
+            orders.setCompletedAt(now);
             ordersMapper.updateById(orders);
 
             OrderStatusLogs orderLog = OrderStatusLogs.builder()
@@ -99,7 +103,7 @@ public class OrderAutoCompleteConsumer {
             ProfitSharingMessage profitSharingMessage = new ProfitSharingMessage();
             BeanUtils.copyProperties(orders, profitSharingMessage);
 
-            log.info("[订单自动完成] 订单状态已更新为完成:{}", orders.getOrderNo());
+            log.info("[订单自动完成] 订单:{} 状态已更新为完成:{}", orders.getOrderNo(), orders.getOrderNo());
 
         } else if (orderStatus.equals(OrderStatusEnum.REFUND_APPLYING)
                 || orderStatus.equals(OrderStatusEnum.REFUNDING)) {
@@ -116,7 +120,7 @@ public class OrderAutoCompleteConsumer {
                     OrderMQConstants.ROUTING_ORDER_AUTO_CANCEL,
                     message,
                     delay);
-            log.info("[订单自动完成] 当前订单状态不能变为已完成，{}s 后重试，orderNo:{}, orderStatus:{}",delay, orders.getOrderNo(), orderStatus);
+            log.info("[订单自动完成] 当前订单状态不能变为已完成，{}s 后重试，orderNo:{}, 当前 orderStatus:{}",delay, orders.getOrderNo(), orderStatus);
         } else if (orderStatus.equals(OrderStatusEnum.PENDING)
                 || orderStatus.equals(OrderStatusEnum.COMPLETED)
                 || orderStatus.equals(OrderStatusEnum.CANCELLED)

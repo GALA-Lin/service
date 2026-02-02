@@ -130,7 +130,7 @@ public class Orders extends BaseEntity implements Serializable {
     /**
      * 完成时间
      */
-    private LocalDate completedAt;
+    private LocalDateTime completedAt;
 
 
     @Serial

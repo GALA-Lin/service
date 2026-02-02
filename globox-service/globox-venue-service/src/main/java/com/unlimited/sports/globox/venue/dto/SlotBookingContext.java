@@ -37,12 +37,12 @@ public class SlotBookingContext {
     private Venue venue;
 
     /**
-     * 场地ID到场地名���的映射
+     * 场地ID到场地名的映射
      */
     private Map<Long, String> courtNameMap;
 
     /**
-     * 场地ID���场地对象的映射
+     * 场地ID与场地对象的映射
      */
     private Map<Long, Court> courtMap;
 }

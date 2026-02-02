@@ -5,7 +5,7 @@ import lombok.Getter;
 
 /**
  * 社交模块相关响应码枚举
- * 错误码区间：3000-3099（社交模块专用）
+ * 错误码区间：3000-3099（社交模块&&RallyResultEnum专用）  26-01-28 使用到3059
  */
 @Getter
 @AllArgsConstructor
@@ -30,6 +30,7 @@ public enum SocialCode implements ResultCode {
     NOTE_DRAFT_EMPTY(3018, "草稿不能完全为空，标题、正文、媒体至少填写一项"),
     NOTE_PUBLISH_VALIDATION_FAILED(3020, "发布失败：正文和媒体不能为空"),
     NOTE_SYNC_FAILED(3019, "笔记数据同步失败"),
+    NOTE_DRAFT_NOT_FOUND(3020, "草稿不存在或已删除"),
 
     COMMENT_CONTENT_EMPTY(3021, "评论内容不能为空"),
     COMMENT_CLOSED(3022, "评论已关闭"),
@@ -50,7 +51,13 @@ public enum SocialCode implements ResultCode {
     RELATION_RPC_FAILED(3034, "关注关系RPC调用失败"),
     USER_NOT_FOUND(3035, "用户不存在"),
     RALLY_CREATE_FAILED(3036, "创建社交活动失败，请稍后重试"),
-    RALLY_EVENT_DATE_BEFORE_NOW(3037, "社交活动创建时间早于当前时间，请重新核对时间");
+    RALLY_EVENT_DATE_BEFORE_NOW(3037, "社交活动创建时间早于当前时间，请重新核对时间"),
+    INVALID_TAG_CODE(3038, "无效的标签代码"),
+    FOLLOWER_COUNT_FETCH_FAILED(3039,"粉丝数量获取失败"),
+    USER_NOTE_STATISTIC_ERROR(3040,"获取用户帖子统计失败"),
+
+
+    ;
 
     private final Integer code;
     private final String message;

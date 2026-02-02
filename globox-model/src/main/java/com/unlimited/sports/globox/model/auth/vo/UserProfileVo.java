@@ -25,6 +25,9 @@ public class UserProfileVo {
     @Schema(description = "昵称", example = "Ace Player")
     private String nickName;
 
+    @Schema(description = "球盒号（区分大小写展示）", example = "GloBox123")
+    private String username;
+
     @Schema(description = "当前用户是否关注TA", example = "false")
     private Boolean isFollowed;
 

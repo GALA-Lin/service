@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.*;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -490,6 +491,17 @@ public class RedisService {
         }
     }
 
+    /**
+     * 批量判断多个元素是否在 set 中
+     * 
+     * @param key     键
+     * @param objects 要检查的元素
+     * @return 元素 -> 是否存在的映射
+     */
+    public Map<Object, Boolean> isMember(final String key, Object... objects) {
+        return redisTemplate.opsForSet().isMember(key, objects);
+    }
+
     // 操作ZSet
 
     /**
@@ -873,5 +885,69 @@ public class RedisService {
         return redisTemplate.opsForHash().increment(key, hashKey, delta);
     }
 
+     // lua操作
+    /**
+     * 执行 Lua 脚本，获取指定类型的返回结果
+     *
+     * @param scriptContent Lua 脚本内容
+     * @param returnType    返回类型（Long, List, Boolean 等）
+     * @param keys          Redis 键列表
+     * @param args          脚本参数
+     * @return 脚本执行结果
+     */
+    public <T> T executeLuaScript(final String scriptContent, final Class<T> returnType,
+                                   final List<String> keys, final String... args) {
+        try {
+            DefaultRedisScript<Object> script = new DefaultRedisScript<>(scriptContent, Object.class);
+            Object result = redisTemplate.execute(script, keys, args);
+            if (result == null) {
+                return null;
+            }
+            return RedisJsonUtil.string2Obj(RedisJsonUtil.obj2String(result), returnType);
+        } catch (Exception e) {
+            log.error("未能执行带有返回类型的 Lua 脚本: {}", returnType.getName(), e);
+            return null;
+        }
+    }
 
+    /**
+     * 执行 Lua 脚本，获取指定类型的返回结果（使用 TypeReference）
+     *
+     * @param scriptContent  Lua 脚本内容
+     * @param returnTypeRef  返回类型引用（List<String>, Map<String,String> 等）
+     * @param keys           Redis 键列表
+     * @param args           脚本参数
+     * @return 脚本执行结果
+     */
+    public <T> T executeLuaScript(final String scriptContent, final TypeReference<T> returnTypeRef,
+                                   final List<String> keys, final String... args) {
+        try {
+            DefaultRedisScript<Object> script = new DefaultRedisScript<>(scriptContent, Object.class);
+            Object result = redisTemplate.execute(script, keys, args);
+            if (result == null) {
+                return null;
+            }
+            return RedisJsonUtil.string2Obj(RedisJsonUtil.obj2String(result), returnTypeRef);
+        } catch (Exception e) {
+            log.error("执行带有“TypeReference”类型的 Lua 脚本时失败", e);
+            return null;
+        }
+    }
+
+    /**
+     * 执行 Lua 脚本，不需要返回结果
+     *
+     * @param scriptContent Lua 脚本内容
+     * @param keys          Redis 键列表
+     * @param args          脚本参数
+     */
+    public void executeLuaScriptWithoutResult(final String scriptContent,
+                                              final List<String> keys, final String... args) {
+        try {
+            DefaultRedisScript<Object> script = new DefaultRedisScript<>(scriptContent, Object.class);
+            redisTemplate.execute(script, keys, args);
+        } catch (Exception e) {
+            log.error("未能执行 Lua 脚本", e);
+        }
+    }
 }

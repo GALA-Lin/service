@@ -73,6 +73,11 @@ public class NoteSyncVo implements Serializable {
     private Integer collectCount;
 
     /**
+     * 是否精选
+     */
+    private Boolean featured;
+
+    /**
      * 笔记状态
      */
     private SocialNote.Status status;

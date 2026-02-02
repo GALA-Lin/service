@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.model.social.enums;
 import lombok.Getter;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -73,6 +74,23 @@ public enum NoteTag {
     public static List<DictItem> getDictItems() {
         return Arrays.stream(NoteTag.values())
                 .map(tag -> new DictItem(tag.code, tag.description))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 批量转换标签代码为描述列表
+     * @param tagCodes 标签代码列表
+     * @return 标签描述列表
+     */
+    public static List<String> toDescriptions(List<String> tagCodes) {
+        if (tagCodes == null || tagCodes.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return tagCodes.stream()
+                .map(code -> {
+                    NoteTag tag = fromCode(code);
+                    return tag != null ? tag.description : code;
+                })
                 .collect(Collectors.toList());
     }
 

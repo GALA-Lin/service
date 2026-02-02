@@ -40,7 +40,7 @@ public class GetOrderVo {
     @Schema(description = "卖方名称（场馆名 / 教练名）", example = "星耀网球中心")
     private String sellerName;
 
-    // TODO ETA 2025/01/03 修改结构，将其变为 List
+    // TODO 修改结构，将其变为 List
     @NotNull
     @Schema(description = "资源ID（当前为单值，后续将调整为列表）", example = "101")
     private Long resourceId;

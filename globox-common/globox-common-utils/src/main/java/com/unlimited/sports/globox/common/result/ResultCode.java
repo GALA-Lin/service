@@ -10,4 +10,5 @@ public interface ResultCode {
 
     Integer getCode();
     String getMessage();
+    String name();
 }

@@ -115,4 +115,12 @@ public interface IVenueSearchService {
      * @return 同步的数据条数
      */
     int syncVenueData(LocalDateTime updatedTime);
+
+    /**
+     * 将VenueSearchDocument转换为VenueItemVo
+     * @param document 场馆搜索文档
+     * @param distance 距离（公里）
+     * @return 场馆列表项视图对象
+     */
+    com.unlimited.sports.globox.model.venue.vo.VenueItemVo toListItemVo(com.unlimited.sports.globox.search.document.VenueSearchDocument document, java.math.BigDecimal distance);
 }

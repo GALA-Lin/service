@@ -24,7 +24,7 @@ public class ChangxiaoerUnlockSlotRequest {
     /**
      * 详情ID列表
      */
-    private List<Object> detailIds;
+    private List<String> detailIds;
 
     /**
      * 管理员ID

@@ -24,6 +24,7 @@ import com.unlimited.sports.globox.order.service.OrderDubboService;
 import com.unlimited.sports.globox.order.service.OrderService;
 import io.seata.spring.annotation.GlobalTransactional;
 import io.seata.tm.api.transaction.Propagation;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,7 @@ import java.util.stream.Stream;
 /**
  * 订单服务对教练服务 提供订单相关接口
  */
+@Slf4j
 @Component
 @DubboService(group = "rpc")
 public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService {
@@ -47,12 +49,6 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
 
     @Autowired
     private OrderItemsMapper orderItemsMapper;
-
-    @Autowired
-    private OrderStatusLogsMapper orderStatusLogsMapper;
-
-    @Autowired
-    private MQService mqService;
 
     @Autowired
     private OrderActivitiesMapper orderActivitiesMapper;
@@ -280,10 +276,17 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
      */
     @Override
     public RpcResult<SellerCancelOrderResultDto> cancelUnpaidOrder(CoachCancelOrderRequestDto dto) {
-        return orderDubboService.sellerCancelUnpaidOrder(dto.getOrderNo(),
+        log.info("[教练取消用户订单] start 教练id:{} orderNo:{}", dto.getCoachId(), dto.getOrderNo());
+        RpcResult<SellerCancelOrderResultDto> rpcResult = orderDubboService.sellerCancelUnpaidOrder(
+                dto.getOrderNo(),
                 dto.getCoachId(),
                 dto.getCoachId(),
                 SellerTypeEnum.COACH);
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[教练取消用户订单] 教练取消用户订单失败 教练id:{} orderNo:{} message:{}", dto.getCoachId(), dto.getOrderNo(), rpcResult.getResultCode().getMessage());
+        }
+        return rpcResult;
     }
 
 
@@ -295,10 +298,18 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
      */
     @Override
     public RpcResult<SellerConfirmResultDto> confirm(CoachConfirmRequestDto dto) {
-        return orderDubboService.sellerConfirm(dto.getOrderNo(),
+        log.info("[教练确认用户订单] start 教练id:{} orderNo:{} autoConfirm:{}", dto.getCoachId(), dto.getOrderNo(), dto.isAutoConfirm());
+        RpcResult<SellerConfirmResultDto> rpcResult = orderDubboService.sellerConfirm(dto.getOrderNo(),
                 dto.isAutoConfirm(),
                 dto.getCoachId(),
-                SellerTypeEnum.COACH);
+                SellerTypeEnum.COACH,
+                dto.getCoachId());
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[教练确认用户订单] 教练确认用户订单失败 教练id:{} orderNo:{} message:{}", dto.getCoachId(), dto.getOrderNo(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
 
@@ -310,11 +321,19 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
      */
     @Override
     public RpcResult<SellerApproveRefundResultDto> approveRefund(CoachApproveRefundRequestDto dto) {
-        return orderDubboService.sellerApproveRefund(dto.getOrderNo(),
+        log.info("[教练同意用户退款] start 教练id:{} orderNo:{} refundApplyId:{}", dto.getCoachId(), dto.getOrderNo(), dto.getRefundApplyId());
+        RpcResult<SellerApproveRefundResultDto> rpcResult = orderDubboService.sellerApproveRefund(
+                dto.getOrderNo(),
                 dto.getCoachId(),
                 dto.getRefundApplyId(),
                 SellerTypeEnum.COACH,
                 dto.getRefundPercentage());
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[教练同意用户退款] 教练同意用户退款失败 教练id:{} orderNo:{} refundApplyId:{} message:{}", dto.getCoachId(), dto.getOrderNo(), dto.getRefundApplyId(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
 
@@ -326,12 +345,19 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
      */
     @Override
     public RpcResult<SellerRejectRefundResultDto> rejectRefund(CoachRejectRefundRequestDto dto) {
-        return orderDubboService.rejectRefund(dto.getOrderNo(),
+        log.info("[教练拒绝用户退款] start 教练id:{} orderNo:{} refundApplyId:{}", dto.getCoachId(), dto.getOrderNo(), dto.getRefundApplyId());
+        RpcResult<SellerRejectRefundResultDto> rpcResult = orderDubboService.rejectRefund(dto.getOrderNo(),
                 dto.getRefundApplyId(),
                 dto.getCoachId(),
                 dto.getCoachId(),
                 SellerTypeEnum.COACH,
                 dto.getRemark());
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[教练拒绝用户退款] 教练拒绝用户退款失败 教练id:{} orderNo:{} refundApplyId:{} message:{}", dto.getCoachId(), dto.getOrderNo(), dto.getRefundApplyId(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
 
@@ -342,22 +368,9 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
      * @return 返回商家退款的结果，包括订单状态、退款申请状态等信息
      */
     @Override
-    @GlobalTransactional(
-            // 当前全局事务的名称
-            name = "coach-refund",
-            // 回滚异常
-            rollbackFor = Exception.class,
-            // 全局锁重试间隔
-            lockRetryInterval = 5000,
-            // 全局锁重试次数
-            lockRetryTimes = 5,
-            // 超时时间
-            timeoutMills = 30000,
-            //事务传播
-            propagation = Propagation.REQUIRES_NEW
-    )
     @RedisLock(value = "#dto.orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     public RpcResult<SellerRefundResultDto> refund(CoachRefundRequestDto dto) {
+        log.info("[教练申请用户订单退款] start 教练id:{} orderNo:{}", dto.getCoachId(), dto.getOrderNo());
         List<OrderItems> orderItems = orderItemsMapper.selectList(
                 Wrappers.<OrderItems>lambdaQuery()
                         .eq(OrderItems::getOrderNo, dto.getOrderNo()));
@@ -365,7 +378,18 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
             return RpcResult.error(OrderCode.ORDER_ITEM_NOT_EXIST);
         }
         List<Long> reqItemIds = orderItems.stream().map(OrderItems::getId).toList();
-        return orderDubboService.refund(dto.getOrderNo(), dto.getCoachId(), dto.getCoachId(), reqItemIds, SellerTypeEnum.COACH, dto.getRemark());
+        RpcResult<SellerRefundResultDto> rpcResult = orderDubboService.refund(dto.getOrderNo(),
+                dto.getCoachId(),
+                dto.getCoachId(),
+                reqItemIds,
+                SellerTypeEnum.COACH,
+                dto.getRemark());
+
+        if (!rpcResult.isSuccess()) {
+            log.error("[教练申请用户订单退款] 教练申请用户订单退款失败 教练id:{} orderNo:{} message:{}", dto.getCoachId(), dto.getOrderNo(), rpcResult.getResultCode().getMessage());
+        }
+
+        return rpcResult;
     }
 
 

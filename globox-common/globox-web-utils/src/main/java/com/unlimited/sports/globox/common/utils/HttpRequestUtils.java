@@ -75,7 +75,7 @@ public class HttpRequestUtils {
      * @return 真实IP地址，获取失败返回 "unknown"
      */
     public static String getRealIp() {
-        HttpServletRequest request = AuthContextHolder.getRequest();
+        HttpServletRequest request = RequestContextHolder.getRequest();
         return getRealIp(request);
     }
 
@@ -100,7 +100,7 @@ public class HttpRequestUtils {
      * @return User-Agent字符串，获取失败返回 "unknown"
      */
     public static String getUserAgent() {
-        HttpServletRequest request = AuthContextHolder.getRequest();
+        HttpServletRequest request = RequestContextHolder.getRequest();
         return getUserAgent(request);
     }
 

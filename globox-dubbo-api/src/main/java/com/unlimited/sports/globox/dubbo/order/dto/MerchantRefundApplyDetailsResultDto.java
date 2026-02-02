@@ -90,10 +90,4 @@ public class MerchantRefundApplyDetailsResultDto implements Serializable {
      */
     @NotNull
     private List<MerchantRefundExtraChargeDto> extraCharges;
-
-    /**
-     * 时间线（可选）
-     */
-    @Null
-    private List<RefundTimelineVo> timeline;
 }

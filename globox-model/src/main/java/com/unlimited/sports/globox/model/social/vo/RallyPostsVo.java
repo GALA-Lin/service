@@ -107,6 +107,10 @@ public class RallyPostsVo {
     /**
      * 约球状态
      */
+    private Integer rallyStatusCode;
+    /**
+     * 约球状态描述
+     */
     private String rallyStatus;
 
     /**

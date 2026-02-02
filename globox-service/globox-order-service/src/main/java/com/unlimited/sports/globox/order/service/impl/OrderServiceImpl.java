@@ -15,7 +15,7 @@ import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
+import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
 import com.unlimited.sports.globox.dubbo.coach.dto.*;
@@ -91,7 +91,7 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private IdGenerator idGenerator;
 
-    @DubboReference(group = "rpc")
+    @DubboReference(group = "rpc", timeout = 10000)
     private MerchantDubboService merchantDubboService;
 
     @DubboReference(group = "rpc")
@@ -117,7 +117,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public CreateOrderResultVo createVenueOrder(CreateVenueOrderDto dto) {
         // 0) 基础校验
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         // 1) RPC：校验 slot / 定价 / HOME-AWAY
@@ -142,7 +142,7 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public CreateOrderResultVo createVenueActivityOrder(CreateVenueActivityOrderDto dto) {
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         PricingActivityRequestDto requestDto = new PricingActivityRequestDto();
@@ -174,7 +174,7 @@ public class OrderServiceImpl implements OrderService {
 
 
         // 0) 基础校验
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         // 校验并获取价格
@@ -635,7 +635,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public PaginationResult<GetOrderVo> getOrderPage(GetOrderPageDto pageDto, String openId) {
 
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         // 1. 构建分页对象
@@ -704,11 +704,6 @@ public class OrderServiceImpl implements OrderService {
 
                     OrderItems firstItem = orderItems.get(0);
 
-                    // TODO 2026/01/10 是否修改
-                    String resourceName = orderItems.stream().map(OrderItems::getResourceName)
-                            .reduce(String::concat)
-                            .orElseGet(order::getSellerName);
-
                     List<SlotBookingTime> slotTimes =
                             orderItems.stream()
                                     .map(item -> {
@@ -766,7 +761,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public GetOrderDetailsVo getDetails(GetOrderDetailsDto dto) {
         LocalDateTime now = LocalDateTime.now();
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         Long orderNo = dto.getOrderNo();
@@ -1028,7 +1023,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(rollbackFor = Exception.class)
     public CancelOrderResultVo cancelUnpaidOrder(Long orderNo) {
 
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         // 1. 查询订单

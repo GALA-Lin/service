@@ -9,7 +9,7 @@ import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.utils.Assert;
-import com.unlimited.sports.globox.common.utils.AuthContextHolder;
+import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.dubbo.merchant.MerchantRefundRuleDubboService;
 import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeRequestDto;
 import com.unlimited.sports.globox.dubbo.merchant.dto.MerchantRefundRuleJudgeResultVo;
@@ -30,8 +30,6 @@ import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -75,9 +73,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     private OrderExtraChargeLinksMapper orderExtraChargeLinksMapper;
 
     @Autowired
-    private ExecutorService businessExecutorService;
-
-    @Autowired
     private OrderRefundActionService orderRefundActionService;
 
     @DubboReference(group = "rpc")
@@ -110,7 +105,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     @Transactional(rollbackFor = Exception.class)
     public ApplyRefundResultVo applyRefund(ApplyRefundRequestDto dto) {
 
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         Long orderNo = dto.getOrderNo();
@@ -305,7 +300,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     @Transactional(readOnly = true)
     public GetRefundProgressVo getRefundProgress(GetRefundProgressRequestDto dto) {
 
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         Long refundApplyId = dto.getRefundApplyId();
@@ -600,7 +595,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     @Transactional(rollbackFor = Exception.class)
     public CancelRefundApplyResultVo cancelRefundApply(CancelRefundApplyRequestDto dto) {
 
-        Long userId = AuthContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
+        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
         Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
 
         Long orderNo = dto.getOrderNo();

@@ -58,13 +58,13 @@ public class RallyPostsDetailsVo {
     /**
      * 约球开始时间
      */
-    @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
+    @JsonFormat(pattern = "HH:mm:ss", timezone = "GMT+8")
     private LocalTime rallyStartTime;
 
     /**
      * 约球结束时间
      */
-    @JsonFormat(pattern = "HH:mm", timezone = "GMT+8")
+    @JsonFormat(pattern = "HH:mm:ss", timezone = "GMT+8")
     private LocalTime rallyEndTime;
 
     /**

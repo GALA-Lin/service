@@ -40,6 +40,10 @@ public class ApplyRefundResultVo implements Serializable {
     @Schema(description = "是否可退款", example = "true")
     private boolean isRefundable;
 
+    @NotNull
+    @Schema(description = "是否自动退款", example = "true")
+    private boolean isAutoRefund;
+
     /**
      * 当前退款申请状态
      */

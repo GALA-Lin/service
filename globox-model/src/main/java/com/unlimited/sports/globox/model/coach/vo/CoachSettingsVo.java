@@ -7,7 +7,12 @@ import java.util.List;
 
 /**
  * @since 2026/1/12
- * 教练设置信息VO
+ * 教练设置信息VO（优化版）
+ *
+ * 优化说明：
+ * 1. ServiceAreaInfo 中移除了 coachServiceArea 和 coachRemoteServiceArea 字符串字段
+ * 2. 只保留 serviceAreaList 和 remoteServiceAreaList 数组字段
+ * 3. 前端直接使用数组，无需额外解析
  */
 @Data
 @Builder
@@ -71,28 +76,20 @@ public class CoachSettingsVo {
     }
 
     /**
-     * 服务区域信息
+     * 服务区域信息（优化版）
      */
     @Data
     @Builder
     public static class ServiceAreaInfo {
         /**
-         * 常驻服务区域
-         */
-        private String coachServiceArea;
-
-        /**
          * 常驻服务区域列表
+         * 示例：["双流区","金牛区"]
          */
-        private List<String> serviceAreaList;
-
-        /**
-         * 远距离服务区域
-         */
-        private String coachRemoteServiceArea;
+        private String serviceArea;
 
         /**
          * 远距离服务区域列表
+         * 示例：["锦江区","成华区"]
          */
         private List<String> remoteServiceAreaList;
 

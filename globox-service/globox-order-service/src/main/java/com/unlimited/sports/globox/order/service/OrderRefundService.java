@@ -1,17 +1,11 @@
 package com.unlimited.sports.globox.order.service;
 
-import com.unlimited.sports.globox.common.message.payment.PaymentRefundMessage;
 import com.unlimited.sports.globox.model.order.dto.ApplyRefundRequestDto;
 import com.unlimited.sports.globox.model.order.dto.CancelRefundApplyRequestDto;
 import com.unlimited.sports.globox.model.order.dto.GetRefundProgressRequestDto;
-import com.unlimited.sports.globox.model.order.entity.OrderItems;
-import com.unlimited.sports.globox.model.order.entity.Orders;
 import com.unlimited.sports.globox.model.order.vo.ApplyRefundResultVo;
 import com.unlimited.sports.globox.model.order.vo.CancelRefundApplyResultVo;
 import com.unlimited.sports.globox.model.order.vo.GetRefundProgressVo;
-
-import javax.validation.Valid;
-import java.util.List;
 
 /**
  * 提供订单退款相关的服务操作。
@@ -30,10 +24,11 @@ public interface OrderRefundService {
     /**
      * 查询指定订单或退款申请的退款进度。
      *
-     * @param dto 包含退款查询参数的对象，包括订单号和/或退款申请ID以及是否包含时间线
+     * @param dto    包含退款查询参数的对象，包括订单号和/或退款申请ID以及是否包含时间线
+     * @param userId 用户 id
      * @return 包含退款进度详情的对象，包括订单状态、申请单状态、处理金额等信息
      */
-    GetRefundProgressVo getRefundProgress(GetRefundProgressRequestDto dto);
+    GetRefundProgressVo getRefundProgress(GetRefundProgressRequestDto dto, Long userId);
 
 
     /**

@@ -135,25 +135,16 @@ public class NoteServiceImpl   implements NoteService {
         SocialNote draft = null;
 
         if (!ObjectUtils.isEmpty(noteId)) {
-            // 查找现有草稿（事务保护），按创建时间倒序，保留最新
             LambdaQueryWrapper<SocialNote> query = new LambdaQueryWrapper<>();
-            query.eq(SocialNote::getUserId, userId)
-                    .eq(SocialNote::getStatus, SocialNote.Status.DRAFT)
-                    .orderByDesc(SocialNote::getCreatedAt);
-            List<SocialNote> drafts = socialNoteMapper.selectList(query);
-
-            if (!drafts.isEmpty()) {
-                draft = drafts.get(0);
-                if (drafts.size() > 1) {
-                    for (int i = 1; i < drafts.size(); i++) {
-                        socialNoteMapper.deleteById(drafts.get(i).getNoteId());
-                        log.warn("清理多余草稿：userId={}, noteId={}", userId, drafts.get(i).getNoteId());
-                    }
-                }
+            query.eq(SocialNote::getNoteId, noteId)
+                    .eq(SocialNote::getUserId, userId)
+                    .eq(SocialNote::getStatus, SocialNote.Status.DRAFT);
+            draft = socialNoteMapper.selectOne(query);
+            if (draft == null) {
+                throw new GloboxApplicationException(SocialCode.NOTE_DRAFT_NOT_FOUND);
             }
         }
 
-        // 如果提供媒体且非空，校验媒体
         if (request.getMediaList() != null && !request.getMediaList().isEmpty()) {
             validateMedia(request.getMediaType(), request.getMediaList());
             fillVideoCoverUrls(request.getMediaType(), request.getMediaList());
@@ -476,15 +467,27 @@ public class NoteServiceImpl   implements NoteService {
             throw new GloboxApplicationException(SocialCode.NOTE_PERMISSION_DENIED);
         }
 
+        boolean isDraft = note.getStatus() == SocialNote.Status.DRAFT;
+
         note.setStatus(SocialNote.Status.DELETED);
         note.setUpdatedAt(LocalDateTime.now());
         socialNoteMapper.updateById(note);
 
+        if (isDraft) {
+            LambdaUpdateWrapper<SocialNoteMedia> mediaDeleteQuery = new LambdaUpdateWrapper<>();
+            mediaDeleteQuery.eq(SocialNoteMedia::getNoteId, noteId)
+                    .set(SocialNoteMedia::getDeleted, true);
+            socialNoteMediaMapper.update(null, mediaDeleteQuery);
+
+            log.info("草稿删除成功：userId={}, noteId={}", userId, noteId);
+            return R.ok("删除成功");
+        }
+
         log.info("笔记删除成功：userId={}, noteId={}", userId, noteId);
-        
+
         // 发送MQ消息同步到ES（删除）
         noteSyncMQSender.sendNoteSyncMessage(Collections.singletonList(note));
-        
+
         return R.ok("删除成功");
     }
 

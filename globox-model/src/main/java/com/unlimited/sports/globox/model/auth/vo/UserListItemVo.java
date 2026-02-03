@@ -15,7 +15,7 @@ public class UserListItemVo {
 
     private Long userId;
 
-    private String username;
+    private String globoxNo;
 
     private String nickName;
 

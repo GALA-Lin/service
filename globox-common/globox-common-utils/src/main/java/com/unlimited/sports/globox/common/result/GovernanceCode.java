@@ -14,12 +14,13 @@ public enum GovernanceCode implements ResultCode{
     SENSITIVE_WORDS_DOWNLOAD_FAILED(8002, "敏感词文件下载失败"),
     SENSITIVE_WORDS_RELOAD_ERROR(8003, "敏感词载入失败"),
     CONTENT_NOT_ALLOW(8004, "存在敏感词，请修改后重试"),
-    REPORT_CREATE_FAILED(8005, "举报工单创建失败"),
-    REPORT_TARGET_TYPE_INVALID(8006, "举报对象类型无效"),
-    REPORT_REASON_INVALID(8007, "举报原因无效"),
-    REPORT_SNAPSHOT_CREATE_FAILED(8008, "举报工单快照创建失败"),
-    REPORT_EVIDENCE_CREATE_FAILED(8009, "举报证据保存失败"),
+    COMPLAINT_CREATE_FAILED(8005, "举报工单创建失败"),
+    COMPLAINT_TARGET_TYPE_INVALID(8006, "举报对象类型无效"),
+    COMPLAINT_REASON_INVALID(8007, "举报原因无效"),
+    COMPLAINT_SNAPSHOT_CREATE_FAILED(8008, "举报工单快照创建失败"),
+    COMPLAINT_EVIDENCE_CREATE_FAILED(8009, "举报证据保存失败"),
     DEAD_LETTER_BIZ_TYPE_NOT_EXIST(8010, "死信队列的业务类型不存在"),
+    CANT_COMPLAINT_SELF(8011, "无法举报自己发布的内容"),
     ;
 
 

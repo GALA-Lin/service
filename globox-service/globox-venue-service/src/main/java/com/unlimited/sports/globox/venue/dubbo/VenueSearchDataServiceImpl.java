@@ -9,6 +9,7 @@ import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
 import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.merchant.entity.Venue;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
+import com.unlimited.sports.globox.model.venue.enums.VenueStatus;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueFacilityRelation;
 import com.unlimited.sports.globox.model.venue.vo.VenueSyncVO;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
@@ -167,12 +168,14 @@ public class VenueSearchDataServiceImpl implements IVenueSearchDataService {
      *
      * @param updatedTime 上一次同步的时间戳，为空表示同步全部数据，不为空表示同步该时间之后的数据
      * @return 同步的场馆数据列表（VenueSyncVO格式）
+     *
+     * 注意：同步所有状态的场馆，由search-service根据状态决定是否保存到ES或删除
      */
     @Override
     public RpcResult<List<VenueSyncVO>> syncVenueData(LocalDateTime updatedTime) {
         try {
             log.info("开始同步场馆数据: updatedTime={}", updatedTime);
-            //批量查询场馆数据
+            //批量查询场馆数据（同步所有状态的场馆）
             List<Venue> venues = venueMapper.selectList(new LambdaQueryWrapper<Venue>()
                     .gt(updatedTime != null, Venue::getUpdatedAt, updatedTime));
             if (venues == null || venues.isEmpty()) {
@@ -188,9 +191,9 @@ public class VenueSearchDataServiceImpl implements IVenueSearchDataService {
             // 按venueId分组
             Map<Long, List<Court>> courtsByVenueId = allCourts.stream()
                     .collect(Collectors.groupingBy(Court::getVenueId));
-            // 批量获取所有价格模板ID对应的价格时段数据
-            Set<Long> templateIds = venues.stream()
-                    .map(Venue::getTemplateId)
+            // 批量获取所有价格模板ID对应的价格时段数据（从场地级别的templateId获取）
+            Set<Long> templateIds = allCourts.stream()
+                    .map(Court::getTemplateId)
                     .filter(Objects::nonNull)
                     .collect(Collectors.toSet());
             Map<Long, List<VenuePriceTemplatePeriod>> periodsByTemplateId;
@@ -220,7 +223,7 @@ public class VenueSearchDataServiceImpl implements IVenueSearchDataService {
                 VenueSyncVO vo = convertVenueToVO(
                         venue,
                         courtsByVenueId.getOrDefault(venue.getVenueId(), new ArrayList<>()),
-                        periodsByTemplateId.getOrDefault(venue.getTemplateId(), new ArrayList<>()),
+                        periodsByTemplateId,
                         facilitiesByVenueId.getOrDefault(venue.getVenueId(), new ArrayList<>())
                 );
                 if (vo != null) {
@@ -242,11 +245,11 @@ public class VenueSearchDataServiceImpl implements IVenueSearchDataService {
      *
      * @param venue 场馆实体
      * @param courts 该场馆的Court列表（从外部批量获取）
-     * @param periods 该场馆对应的价格时段列表（从外部批量获取）
+     * @param periodsByTemplateId 所有模板对应的价格时段映射（从外部批量获取）
      * @param facilityRelations 该场馆的设施关联列表（从外部批量获取）
      * @return VenueSyncVO
      */
-    private VenueSyncVO convertVenueToVO(Venue venue, List<Court> courts, List<VenuePriceTemplatePeriod> periods,
+    private VenueSyncVO convertVenueToVO(Venue venue, List<Court> courts, Map<Long, List<VenuePriceTemplatePeriod>> periodsByTemplateId,
                                          List<VenueFacilityRelation> facilityRelations) {
         if (venue == null) {
             return null;
@@ -267,23 +270,31 @@ public class VenueSearchDataServiceImpl implements IVenueSearchDataService {
                     .distinct()
                     .toList();
         }
-        // 处理价格（从批量获取的periods中提取）
+        // 处理价格（从场地级别的templateId对应的periods中提取）
         BigDecimal priceMin = null;
         BigDecimal priceMax = null;
-        if (periods != null && !periods.isEmpty()) {
+        if (courts != null && !courts.isEmpty()) {
             // 收集所有价格
-            List<BigDecimal> allPrices = new ArrayList<>();
-            for (VenuePriceTemplatePeriod period : periods) {
-                if (period.getWeekdayPrice() != null) {
-                    allPrices.add(period.getWeekdayPrice());
-                }
-                if (period.getWeekendPrice() != null) {
-                    allPrices.add(period.getWeekendPrice());
-                }
-                if (period.getHolidayPrice() != null) {
-                    allPrices.add(period.getHolidayPrice());
-                }
-            }
+            List<BigDecimal> allPrices = courts.stream()
+                    .filter(court -> court.getTemplateId() != null)
+                    .flatMap(court -> {
+                        List<VenuePriceTemplatePeriod> courtPeriods = periodsByTemplateId.getOrDefault(court.getTemplateId(), new ArrayList<>());
+                        return courtPeriods.stream()
+                                .flatMap(period -> {
+                                    List<BigDecimal> prices = new ArrayList<>();
+                                    if (period.getWeekdayPrice() != null) {
+                                        prices.add(period.getWeekdayPrice());
+                                    }
+                                    if (period.getWeekendPrice() != null) {
+                                        prices.add(period.getWeekendPrice());
+                                    }
+                                    if (period.getHolidayPrice() != null) {
+                                        prices.add(period.getHolidayPrice());
+                                    }
+                                    return prices.stream();
+                                });
+                    })
+                    .toList();
             // 找出最小和最大价格
             if (!allPrices.isEmpty()) {
                 priceMin = allPrices.stream().min(BigDecimal::compareTo).orElse(null);

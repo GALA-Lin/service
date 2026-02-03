@@ -12,6 +12,7 @@ import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.common.utils.HttpRequestUtils;
 import com.unlimited.sports.globox.common.utils.JwtUtil;
+import com.unlimited.sports.globox.common.constants.RedisKeyConstants;
 import com.unlimited.sports.globox.dubbo.order.OrderForUserDubboService;
 import com.unlimited.sports.globox.dubbo.social.ChatDubboService;
 import com.unlimited.sports.globox.model.auth.dto.AppleLoginRequest;
@@ -67,13 +68,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 /**
  * 认证服务实现
  *
@@ -164,10 +167,8 @@ public class AuthServiceImpl implements AuthService {
     private static final int DEFAULT_STAMINA = 5;
     private static final int DEFAULT_MENTAL = 5;
     private static final String DEFAULT_HOME_DISTRICT = "510000";
-    private static final String DEFAULT_USERNAME_PREFIX = "globox";
-    private static final int DEFAULT_USERNAME_RANDOM_MIN_LEN = 6;
-    private static final int DEFAULT_USERNAME_RANDOM_MAX_LEN = 8;
-    private static final int DEFAULT_USERNAME_RETRY = 5;
+    private static final int GLOBOX_NO_SEQ_MAX = 9999;
+    private static final long GLOBOX_NO_SEQ_EXPIRE_SECONDS = 2 * 24 * 60 * 60;
     private static final String WHITELIST_LOGIN_PASSWORD = "970824"; // 白名单免验证码固定密码
     private static final String WHITELIST_CANCEL_PASSWORD = "970824"; // 白名单注销固定密码
 
@@ -1686,6 +1687,8 @@ public class AuthServiceImpl implements AuthService {
     private void resetUserProfileForCancellation(Long userId) {
         LambdaUpdateWrapper<UserProfile> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(UserProfile::getUserId, userId)
+                .set(UserProfile::getGloboxNo, "")
+                .set(UserProfile::getLastGloboxNoChangedAt, null)
                 .set(UserProfile::getAvatarUrl, normalizeAvatarForStorage(null))
                 .set(UserProfile::getPortraitUrl, null)
                 .set(UserProfile::getNickName, "已注销用户")
@@ -1710,7 +1713,7 @@ public class AuthServiceImpl implements AuthService {
      * 登录用户结果
      *
      * @param authUser    用户对象
-     * @param created     是否为新创建的用�?
+     * @param created     是否为新创建的用户
      * @param reactivated 是否为重新激活的用户
      */
     private record LoginUserResult(AuthUser authUser, boolean created, boolean reactivated) {
@@ -1890,6 +1893,15 @@ public class AuthServiceImpl implements AuthService {
                 .set(UserProfile::getStamina, DEFAULT_STAMINA)
                 .set(UserProfile::getMental, DEFAULT_MENTAL)
                 .set(UserProfile::getCancelled, false);
+        // 只在球盒号为空/非法时重新生成，避免每次激活都刷新
+        UserProfile current = userProfileMapper.selectOne(new LambdaQueryWrapper<UserProfile>()
+                .eq(UserProfile::getUserId, userId)
+                .select(UserProfile::getGloboxNo));
+        if (current == null || !StringUtils.hasText(current.getGloboxNo())
+                || !current.getGloboxNo().matches("^\\d{9}$")) {
+            updateWrapper.set(UserProfile::getGloboxNo, generateDefaultGloboxNo())
+                    .set(UserProfile::getLastGloboxNoChangedAt, LocalDateTime.now());
+        }
         userProfileMapper.update(null, updateWrapper);
         cancelUserProfileRelations(userId);
     }
@@ -1913,12 +1925,11 @@ public class AuthServiceImpl implements AuthService {
         if (profile.getCancelled() == null) {
             profile.setCancelled(false);
         }
-        if (!StringUtils.hasText(profile.getUsername())) {
-            String generated = generateDefaultUsername(profile.getUserId());
-            profile.setUsername(generated);
-            profile.setUsernameLower(generated.toLowerCase(Locale.ROOT));
-        } else if (!StringUtils.hasText(profile.getUsernameLower())) {
-            profile.setUsernameLower(profile.getUsername().toLowerCase(Locale.ROOT));
+        String globoxNo = profile.getGloboxNo();
+        if (!StringUtils.hasText(globoxNo) || !globoxNo.matches("^\\d{9}$")) {
+            String generated = generateDefaultGloboxNo();
+            profile.setGloboxNo(generated);
+            profile.setLastGloboxNoChangedAt(LocalDateTime.now());
         }
         if (!StringUtils.hasText(profile.getSignature())) {
             profile.setSignature(DEFAULT_SIGNATURE);
@@ -1958,36 +1969,14 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-    private String generateDefaultUsername(Long userId) {
-        for (int i = 0; i < DEFAULT_USERNAME_RETRY; i++) {
-            int randomLen = DEFAULT_USERNAME_RANDOM_MIN_LEN
-                    + (i % (DEFAULT_USERNAME_RANDOM_MAX_LEN - DEFAULT_USERNAME_RANDOM_MIN_LEN + 1));
-            String candidate = DEFAULT_USERNAME_PREFIX + randomBase36(randomLen);
-            String candidateLower = candidate.toLowerCase(Locale.ROOT);
-
-            LambdaQueryWrapper<UserProfile> query = new LambdaQueryWrapper<>();
-            query.eq(UserProfile::getUsernameLower, candidateLower);
-            Long count = userProfileMapper.selectCount(query);
-            if (count == null || count == 0) {
-                return candidate;
-            }
+    private String generateDefaultGloboxNo() {
+        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyDDD"));
+        String key = RedisKeyConstants.GLOBOX_NO_SEQ_PREFIX + datePart;
+        long seq = redisService.increment(key, GLOBOX_NO_SEQ_EXPIRE_SECONDS);
+        if (seq > GLOBOX_NO_SEQ_MAX) {
+            throw new GloboxApplicationException(UserAuthCode.USERNAME_SET_FAILED);
         }
-
-        String fallback = DEFAULT_USERNAME_PREFIX
-                + Long.toString(userId != null ? userId : System.currentTimeMillis(), 36);
-        if (fallback.length() > 20) {
-            fallback = fallback.substring(0, 20);
-        }
-        return fallback;
-    }
-
-    private String randomBase36(int length) {
-        StringBuilder builder = new StringBuilder(length);
-        while (builder.length() < length) {
-            String part = Long.toString(ThreadLocalRandom.current().nextLong(Long.MAX_VALUE), 36);
-            builder.append(part);
-        }
-        return builder.substring(0, length);
+        return datePart + String.format("%04d", seq);
     }
 
     private String buildDefaultNicknameForPhone(String phone) {

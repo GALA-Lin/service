@@ -75,4 +75,12 @@ public interface IVenueService {
      */
     List<ActivityListVo> getVenueActivityList(GetActivitiesByVenueDto dto);
 
+    /**
+     * 获取场馆的最大可提前预约日期
+     *
+     * @param venueId 场馆ID
+     * @return 最大可提前预约日期（天数），如果场馆不存在或未配置则返回null
+     */
+    Integer getMaxAdvanceDays(Long venueId);
+
 }

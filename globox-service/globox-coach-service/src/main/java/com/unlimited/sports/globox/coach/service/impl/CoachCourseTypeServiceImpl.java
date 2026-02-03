@@ -1,17 +1,21 @@
 package com.unlimited.sports.globox.coach.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.unlimited.sports.globox.coach.mapper.CoachCourseTypeMapper;
+import com.unlimited.sports.globox.coach.mapper.CoachProfileMapper;
 import com.unlimited.sports.globox.coach.service.ICoachCourseTypeService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeBatchDto;
 import com.unlimited.sports.globox.model.coach.dto.CoachCourseTypeDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
+import com.unlimited.sports.globox.model.coach.entity.CoachProfile;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -25,6 +29,9 @@ public class CoachCourseTypeServiceImpl implements ICoachCourseTypeService {
 
     @Autowired
     private CoachCourseTypeMapper coachCourseTypeMapper;
+
+    @Autowired
+    private CoachProfileMapper coachProfileMapper;
 
 
     /**
@@ -101,11 +108,37 @@ public class CoachCourseTypeServiceImpl implements ICoachCourseTypeService {
                 log.info("创建课程类型 - serviceType: {}, courseTypeId: {}", serviceType, newCourseType.getCoachCourseTypeId());
             }
         }
-
+        updateCoachMinPrice(coachUserId);
         log.info("批量创建/更新课程类型完成 - coachUserId: {}, 处理数量: {}", coachUserId, resultMap.size());
         return resultMap;
     }
 
+    /**
+     * 重新计算并更新教练的最低课程价格
+     */
+    private void updateCoachMinPrice(Long coachUserId) {
+        // 1. 查询该教练所有【已激活】的课程
+        List<CoachCourseType> allActiveCourses = coachCourseTypeMapper.selectList(
+                new LambdaQueryWrapper<CoachCourseType>()
+                        .eq(CoachCourseType::getCoachUserId, coachUserId)
+                        .eq(CoachCourseType::getCoachIsActive, true) // 只计算生效的
+        );
+
+        // 2. 找出最小值 (假设价格字段是 BigDecimal 或 Double)
+        BigDecimal minPrice = allActiveCourses.stream()
+                .map(CoachCourseType::getCoachPrice)
+                .filter(Objects::nonNull)
+                .min(Comparator.naturalOrder())
+                .orElse(BigDecimal.ZERO);
+
+        // 3. 更新到教练 Profile 表 (假设对应的 Mapper 为 coachProfileMapper)
+        // 建议使用 LambdaUpdateWrapper 仅更新特定字段，避免全量更新
+        coachProfileMapper.update(null, new LambdaUpdateWrapper<CoachProfile>()
+                .set(CoachProfile::getCoachMinPrice, minPrice)
+                .eq(CoachProfile::getCoachUserId, coachUserId));
+
+        log.info("教练 {} 的最低价格已更新为: {}", coachUserId, minPrice);
+    }
     /**
      * 创建或更新课程类型
      * 如果该服务类型已存在，则更新；否则创建新的
@@ -160,30 +193,36 @@ public class CoachCourseTypeServiceImpl implements ICoachCourseTypeService {
 
 
     /**
-     * 删除课程类型（软删除）
+     * 修改课程类型状态 (停用/启用)
      *
      * @param coachUserId  教练ID
      * @param courseTypeId 课程类型ID
+     * @return courseType 课程实体
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteCourseType(Long coachUserId, Long courseTypeId) {
-        log.info("删除课程类型 - coachUserId: {}, courseTypeId: {}", coachUserId, courseTypeId);
+    public CoachCourseType updateCourseTypeStatus(Long coachUserId, Long courseTypeId, Integer status) {
+        log.info("更新课程状态 - coachUserId: {}, courseTypeId: {}, 目标状态: {}", coachUserId, courseTypeId, status);
 
+        // 1. 基础校验
         CoachCourseType courseType = coachCourseTypeMapper.selectById(courseTypeId);
         if (courseType == null) {
             throw new GloboxApplicationException("课程类型不存在");
         }
-
         if (!courseType.getCoachUserId().equals(coachUserId)) {
-            throw new GloboxApplicationException("无权限删除该课程类型");
+            throw new GloboxApplicationException("无权限操作该课程类型");
         }
 
-        courseType.setCoachIsActive(0);
+        // 2. 更新状态
+        courseType.setCoachIsActive(status);
+        coachCourseTypeMapper.updateById(courseType);
 
-        log.info("删除课程类型成功");
+        // 3. 重新计算并更新教练 Profile 中的最低价格
+        updateCoachMinPrice(coachUserId);
+
+        log.info("更新课程状态成功，并已同步最低价格");
+        return courseType;
     }
-
     /**
      * 获取教练的所有课程类型
      *

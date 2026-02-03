@@ -26,6 +26,7 @@ import org.apache.dubbo.config.annotation.DubboReference;
 import org.elasticsearch.common.geo.GeoPoint;
 import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.IdsQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.elasticsearch.search.sort.SortBuilders;
@@ -46,6 +47,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -93,7 +95,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
 
         //构建通用过滤条件
         GeoPoint userLocation = new GeoPoint(dto.getLatitude(), dto.getLongitude());
-        Long maxDistance = dto.getMaxDistance() != null ? dto.getMaxDistance().longValue() : null;
+        Double maxDistance = dto.getMaxDistance();
         boolQuery = buildGeneralFilters(boolQuery, dto.getMinPrice(), dto.getMaxPrice(), userLocation, maxDistance);
 
         // 获取不可用的场馆ID（如果提供了预订时间）
@@ -227,14 +229,18 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
      */
     @Override
     public BoolQueryBuilder buildGeneralFilters(BoolQueryBuilder boolQuery, BigDecimal minPrice,
-                                                 BigDecimal maxPrice, GeoPoint userLocation, Long maxDistance) {
+                                                 BigDecimal maxPrice, GeoPoint userLocation, Double maxDistance) {
         // 价格范围过滤
+        // 场馆价格范围[priceMin, priceMax]必须完全在用户价格范围[minPrice, maxPrice]内
+        // 条件：场馆priceMin >= 用户minPrice AND 场馆priceMax <= 用户maxPrice
         if (minPrice != null || maxPrice != null) {
             if (minPrice != null) {
+                // 场馆的最低价要 >= 用户的最低价
                 boolQuery.filter(QueryBuilders.rangeQuery("priceMin").gte(minPrice.doubleValue()));
             }
             if (maxPrice != null) {
-                boolQuery.filter(QueryBuilders.rangeQuery("priceMin").lte(maxPrice.doubleValue()));
+                // 场馆的最高价要 <= 用户的最高价
+                boolQuery.filter(QueryBuilders.rangeQuery("priceMax").lte(maxPrice.doubleValue()));
             }
         }
         // 距离过滤
@@ -426,6 +432,11 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
     /**
      * 同步场馆数据到Elasticsearch
      *
+     * 业务逻辑：
+     * 1. 同步所有状态的场馆（正常、暂停等）
+     * 2. 对于状态为NORMAL的场馆：保存或更新到ES和统一索引
+     * 3. 对于状态不是NORMAL的场馆：从ES中删除
+     *
      * @param updatedTime 上次同步时间，为null则全量同步
      * @return 同步的数据条数
      */
@@ -434,7 +445,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         try {
             log.info("开始同步场馆数据: updatedTime={}", updatedTime);
 
-            // 调用RPC获取场馆数据
+            // 调用RPC获取场馆数据（包含所有状态）
             RpcResult<List<VenueSyncVO>> result = venueSearchDataService.syncVenueData(updatedTime);
             if (result == null || !result.isSuccess() || result.getData() == null || result.getData().isEmpty()) {
                 log.info("没有需要同步的场馆数据");
@@ -450,40 +461,70 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                     firstVo.getVenueId(), firstVo.getCreatedAt(), firstVo.getUpdatedAt());
             }
 
-            // 转换为VenueSearchDocument并保存到ES
-            List<VenueSearchDocument> documents = venueSyncVOs.stream()
-                    .map(this::convertVenueSyncVOToDocument)
-                    .filter(Objects::nonNull)
-                    .toList();
+            // 将场馆按状态分类
+            Map<Boolean, List<VenueSyncVO>> venusByStatus = venueSyncVOs.stream()
+                    .collect(Collectors.partitioningBy(vo -> vo.getStatus() != null && vo.getStatus() == 1)); // 1=NORMAL
 
-            if (documents.isEmpty()) {
-                log.info("转换后没有有效的文档");
-                return 0;
+            List<VenueSyncVO> normalVenues = venusByStatus.get(true);  // 正常场馆
+            List<VenueSyncVO> abnormalVenues = venusByStatus.get(false); // 非正常场馆
+
+            int syncCount = 0;
+
+            // 1. 处理正常场馆：转换并保存到ES
+            if (normalVenues != null && !normalVenues.isEmpty()) {
+                List<VenueSearchDocument> documents = normalVenues.stream()
+                        .map(this::convertVenueSyncVOToDocument)
+                        .filter(Objects::nonNull)
+                        .toList();
+
+                if (!documents.isEmpty()) {
+                    elasticsearchOperations.save(documents);
+                    log.info("正常场馆保存到ES: 成功条数={}", documents.size());
+
+                    // 同步到统一索引
+                    List<UnifiedSearchDocument> unifiedDocs = documents.stream()
+                            .map(venue -> UnifiedSearchDocument.builder()
+                                    .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.VENUE, venue.getVenueId()))
+                                    .businessId(venue.getVenueId())
+                                    .dataType(SearchDocTypeEnum.VENUE.getValue())
+                                    .title(venue.getName())
+                                    .content(venue.getDescription())
+                                    .tags(venue.getCourtTypes() != null ?
+                                            venue.getCourtTypes().stream().map(String::valueOf).collect(Collectors.toList()) : null)
+                                    .location(venue.getLocation())
+                                    .region(venue.getRegion())
+                                    .coverUrl(venue.getCoverUrl())
+                                    .score(venue.getRating() != null ? venue.getRating().doubleValue() : 0.0)
+                                    .createdAt(venue.getCreatedAt())
+                                    .updatedAt(venue.getUpdatedAt())
+                                    .build())
+                            .collect(Collectors.toList());
+                    unifiedSearchService.saveOrUpdateToUnified(unifiedDocs);
+                    syncCount = documents.size();
+                }
             }
-            elasticsearchOperations.save(documents);
-            log.info("场馆数据同步完成: 成功条数={}", documents.size());
 
-            // 同步到统一索引
-            List<UnifiedSearchDocument> unifiedDocs = documents.stream()
-                    .map(venue -> UnifiedSearchDocument.builder()
-                            .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.VENUE, venue.getVenueId()))
-                            .businessId(venue.getVenueId())
-                            .dataType(SearchDocTypeEnum.VENUE.getValue())
-                            .title(venue.getName())
-                            .content(venue.getDescription())
-                            .tags(venue.getCourtTypes() != null ?
-                                    venue.getCourtTypes().stream().map(String::valueOf).collect(Collectors.toList()) : null)
-                            .location(venue.getLocation())
-                            .region(venue.getRegion())
-                            .coverUrl(venue.getCoverUrl())
-                            .score(venue.getRating() != null ? venue.getRating().doubleValue() : 0.0)
-                            .createdAt(venue.getCreatedAt())
-                            .updatedAt(venue.getUpdatedAt())
-                            .build())
-                    .collect(Collectors.toList());
-            unifiedSearchService.saveOrUpdateToUnified(unifiedDocs);
+            // 2. 处理非正常场馆：从ES中删除
+            if (abnormalVenues != null && !abnormalVenues.isEmpty()) {
+                List<String> idsToDelete = abnormalVenues.stream()
+                        .map(vo -> SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.VENUE, vo.getVenueId()))
+                        .toList();
+                IdsQueryBuilder idsQueryBuilder = new IdsQueryBuilder()
+                        .addIds(idsToDelete.toArray(new String[0]));
+                NativeSearchQuery deleteQuery = new NativeSearchQueryBuilder()
+                        .withQuery(idsQueryBuilder)
+                        .build();
+                elasticsearchOperations.delete(deleteQuery, VenueSearchDocument.class);
+                unifiedSearchService.deleteFromUnified(idsToDelete);
+                log.info("非正常场馆从ES删除: 删除条数={}", idsToDelete.size());
 
-            return documents.size();
+            }
+
+            log.info("场馆数据同步完成: 正常场馆数={}, 非正常场馆数={}",
+                    normalVenues != null ? normalVenues.size() : 0,
+                    abnormalVenues != null ? abnormalVenues.size() : 0);
+
+            return syncCount;
 
         } catch (Exception e) {
             log.error("同步场馆数据异常: updatedTime={}", updatedTime, e);
@@ -562,12 +603,18 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         // 转换设施代码为设施描述
         List<String> facilitiesDesc = FacilityType.getDescriptionsByValues(document.getFacilities());
 
+        // 距离保留2位小数
+        BigDecimal formattedDistance = distance;
+        if (distance != null) {
+            formattedDistance = distance.setScale(2, java.math.RoundingMode.HALF_UP);
+        }
+
         // 构建VenueItemVo
         return VenueItemVo.builder()
                 .venueId(document.getVenueId())
                 .name(document.getName())
                 .region(document.getRegion())
-                .distance(distance)
+                .distance(formattedDistance)
                 .coverImage(document.getCoverUrl() != null ? document.getCoverUrl() : defaultVenueListCoverImage)
                 .avgRating(document.getRating() != null ? BigDecimal.valueOf(document.getRating()) : BigDecimal.ZERO)
                 .ratingCount(document.getRatingCount() != null ? document.getRatingCount() : 0)

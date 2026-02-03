@@ -5,7 +5,9 @@ import com.unlimited.sports.globox.model.venue.dto.DetailedPricingInfo;
 import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotTemplate;
 import com.unlimited.sports.globox.venue.adapter.dto.AwaySlotPrice;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
@@ -31,6 +33,16 @@ public interface IVenuePriceService {
              Map<Long, Court> courtMap);
 
 
+
+
+    /**
+     * 仅计算槽位价格（不计算额外费用）
+     */
+    Map<Long, Map<LocalTime, BigDecimal>> calculateSlotPricesByCourtTemplates(
+            List<VenueBookingSlotTemplate> templates,
+            Long venueId,
+            LocalDate bookingDate,
+            Map<Long, Court> courtMap);
 
     /**
      * 计算完整价格 - 按场地分组

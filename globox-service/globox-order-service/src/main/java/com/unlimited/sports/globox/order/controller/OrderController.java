@@ -1,14 +1,6 @@
 package com.unlimited.sports.globox.order.controller;
 
-import com.alibaba.csp.sentinel.annotation.SentinelResource;
-import com.alibaba.csp.sentinel.slots.block.BlockException;
-import com.alibaba.csp.sentinel.slots.block.authority.AuthorityException;
-import com.alibaba.csp.sentinel.slots.block.degrade.DegradeException;
-import com.alibaba.csp.sentinel.slots.block.flow.FlowException;
-import com.alibaba.csp.sentinel.slots.block.flow.param.ParamFlowException;
-import com.alibaba.csp.sentinel.slots.system.SystemBlockException;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
-import com.unlimited.sports.globox.common.handler.DefaultBlockHandler;
 import com.unlimited.sports.globox.common.result.PaginationResult;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.order.dto.*;
@@ -49,9 +41,11 @@ public class OrderController {
             @Valid
             @RequestBody
             @Parameter(description = "创建订场订单请求参数", required = true)
-            CreateVenueOrderDto dto) {
+            CreateVenueOrderDto dto,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
 
-        CreateOrderResultVo result = orderService.createVenueOrder(dto);
+        CreateOrderResultVo result = orderService.createVenueOrder(dto, userId);
+        log.info("[用户创建订单] 用户创建订场订单成功: userId:{} orderNo:{}", userId, result.getOrderNo());
         return R.ok(result);
     }
 
@@ -65,9 +59,11 @@ public class OrderController {
             @Valid
             @RequestBody
             @Parameter(description = "创建活动订单请求参数", required = true)
-            CreateVenueActivityOrderDto dto) {
+            CreateVenueActivityOrderDto dto,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
 
-        CreateOrderResultVo result = orderService.createVenueActivityOrder(dto);
+        CreateOrderResultVo result = orderService.createVenueActivityOrder(dto, userId);
+        log.info("[用户创建订单] 用户创建活动订场订单成功: userId:{} orderNo:{}", userId, result.getOrderNo());
         return R.ok(result);
     }
 
@@ -81,9 +77,11 @@ public class OrderController {
             @Valid
             @RequestBody
             @Parameter(description = "创建活动订单请求参数", required = true)
-            CreateCoachOrderDto dto) {
+            CreateCoachOrderDto dto,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
 
-        CreateOrderResultVo result = orderService.createCoachOrder(dto);
+        CreateOrderResultVo result = orderService.createCoachOrder(dto, userId);
+        log.info("[用户创建订单] 用户创建教练订单成功: userId:{} orderNo:{}", userId, result.getOrderNo());
         return R.ok(result);
     }
 
@@ -95,7 +93,7 @@ public class OrderController {
     @Operation(summary = "获取订单列表", description = "分页获取当前用户的订单列表")
     public R<PaginationResult<GetOrderVo>> getOrderPage(
             @Validated @Parameter(description = "订单分页查询参数") GetOrderPageDto pageDto,
-            @RequestHeader(value = RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID,required = false) String openId) {
+            @RequestHeader(value = RequestHeaderConstants.HEADER_THIRD_PARTY_OPENID, required = false) String openId) {
         PaginationResult<GetOrderVo> resultList = orderService.getOrderPage(pageDto, openId);
         return R.ok(resultList);
     }
@@ -123,8 +121,11 @@ public class OrderController {
             @PathVariable("orderNo")
             @NotNull(message = "订单号不能为空")
             @Parameter(description = "订单号", required = true, example = "202512180001")
-            Long orderNo) {
-        return R.ok(orderService.cancelUnpaidOrder(orderNo));
+            Long orderNo,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+        CancelOrderResultVo resultVo = orderService.cancelUnpaidOrder(orderNo, userId);
+        log.info("[用户手动取消订单] 用户取消订单成功 userId:{} orderNo:{}", userId, orderNo);
+        return R.ok(resultVo);
     }
 
     /**
@@ -136,8 +137,17 @@ public class OrderController {
             @Valid
             @RequestBody
             @Parameter(description = "退款申请参数", required = true)
-            ApplyRefundRequestDto dto) {
-        return R.ok(orderRefundService.applyRefund(dto));
+            ApplyRefundRequestDto dto,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+        ApplyRefundResultVo resultVo = orderRefundService.applyRefund(dto);
+        log.info("[用户申请退款] 用户申请订单退款成功 userId:{} orderNo:{} refundApplyId:{} isRefundable:{} isAutoRefund:{} applyStatus:{}",
+                userId,
+                dto.getOrderNo(),
+                resultVo.getRefundApplyId(),
+                resultVo.isRefundable(),
+                resultVo.isAutoRefund(),
+                resultVo.getApplyStatus());
+        return R.ok(resultVo);
     }
 
     /**
@@ -149,9 +159,9 @@ public class OrderController {
             @Valid
             @ModelAttribute
             @Parameter(description = "退款进度查询参数")
-            GetRefundProgressRequestDto dto) {
-
-        return R.ok(orderRefundService.getRefundProgress(dto));
+            GetRefundProgressRequestDto dto,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
+        return R.ok(orderRefundService.getRefundProgress(dto, userId));
     }
 
     /**
@@ -163,14 +173,14 @@ public class OrderController {
             @PathVariable("refundApplyId")
             @NotNull(message = "订单号不能为空")
             @Parameter(description = "退款申请ID", required = true, example = "10086")
-            Long refundApplyId) {
+            Long refundApplyId,
+            @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
 
         GetRefundProgressRequestDto dto = GetRefundProgressRequestDto.builder()
                 .refundApplyId(refundApplyId)
-                .includeTimeline(true)
                 .build();
 
-        return R.ok(orderRefundService.getRefundProgress(dto));
+        return R.ok(orderRefundService.getRefundProgress(dto, userId));
     }
 
     /**

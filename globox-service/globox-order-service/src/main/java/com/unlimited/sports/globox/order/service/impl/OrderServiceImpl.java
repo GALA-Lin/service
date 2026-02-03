@@ -111,15 +111,12 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 创建订场订单
      *
-     * @param dto 创建订单参数
+     * @param dto    创建订单参数
+     * @param userId 用户 id
      * @return 创建结果
      */
     @Override
-    public CreateOrderResultVo createVenueOrder(CreateVenueOrderDto dto) {
-        // 0) 基础校验
-        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
-        Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
-
+    public CreateOrderResultVo createVenueOrder(CreateVenueOrderDto dto, Long userId) {
         // 1) RPC：校验 slot / 定价 / HOME-AWAY
         PricingRequestDto pricingRequestDto = new PricingRequestDto();
         BeanUtils.copyProperties(dto, pricingRequestDto);
@@ -137,14 +134,12 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 用户创建活动订单
      *
-     * @param dto 创建活动订单参数
+     * @param dto    创建活动订单参数
+     * @param userId 用户 id
      * @return 创建结果
      */
     @Override
-    public CreateOrderResultVo createVenueActivityOrder(CreateVenueActivityOrderDto dto) {
-        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
-        Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
-
+    public CreateOrderResultVo createVenueActivityOrder(CreateVenueActivityOrderDto dto, Long userId) {
         PricingActivityRequestDto requestDto = new PricingActivityRequestDto();
         BeanUtils.copyProperties(dto, requestDto);
         requestDto.setUserId(userId);
@@ -165,18 +160,13 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 创建教练订单
      *
-     * @param dto 包含创建教练订单所需参数的数据传输对象，包括预订日期和预订的场地时段ID列表
+     * @param dto    包含创建教练订单所需参数的数据传输对象，包括预订日期和预订的场地时段ID列表
+     * @param userId 用户 id
      * @return 包含创建订单结果的信息对象，主要包含生成的订单号
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public CreateOrderResultVo createCoachOrder(CreateCoachOrderDto dto) {
-
-
-        // 0) 基础校验
-        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
-        Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
-
+    public CreateOrderResultVo createCoachOrder(CreateCoachOrderDto dto, Long userId) {
         // 校验并获取价格
         CoachPricingRequestDto requestDto = new CoachPricingRequestDto();
         BeanUtils.copyProperties(dto, requestDto);
@@ -866,7 +856,6 @@ public class OrderServiceImpl implements OrderService {
         } else if (orders.getSellerType() == SellerTypeEnum.COACH) {
             Long coachId = orders.getSellerId();
             List<Long> recordIds = items.stream().map(OrderItems::getRecordId).toList();
-            log.info("【用户查询教练订单详情】coachId:{}  recordIds:{}" , coachId , recordIds);
             CoachSnapshotRequestDto req = CoachSnapshotRequestDto.builder()
                     .coachUserId(coachId)
                     .recordList(recordIds)
@@ -1016,16 +1005,13 @@ public class OrderServiceImpl implements OrderService {
      * 取消未支付的订单。
      *
      * @param orderNo 包含取消订单所需信息的数据传输对象，包括订单号和可选的取消原因
+     * @param userId  用户 id
      * @return 返回包含订单号、当前订单状态、状态描述以及取消时间的结果对象
      */
     @Override
     @RedisLock(value = "#orderNo", prefix = RedisConsts.ORDER_LOCK_KEY_PREFIX)
     @Transactional(rollbackFor = Exception.class)
-    public CancelOrderResultVo cancelUnpaidOrder(Long orderNo) {
-
-        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
-        Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
-
+    public CancelOrderResultVo cancelUnpaidOrder(Long orderNo, Long userId) {
         // 1. 查询订单
         Orders order = ordersMapper.selectOne(
                 Wrappers.<Orders>lambdaQuery()

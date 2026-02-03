@@ -33,14 +33,9 @@ public class UserSyncVo implements Serializable {
     private String nickName;
 
     /**
-     * 球盒号（保留原始大小写）
+     * 球盒号（9位数字）
      */
-    private String username;
-
-    /**
-     * 球盒号小写（用于搜索匹配）
-     */
-    private String usernameLower;
+    private String globoxNo;
 
     /**
      * 头像URL
@@ -69,8 +64,7 @@ public class UserSyncVo implements Serializable {
         return UserSyncVo.builder()
                 .userId(profile.getUserId())
                 .nickName(profile.getNickName())
-                .username(profile.getUsername())
-                .usernameLower(profile.getUsernameLower())
+                .globoxNo(profile.getGloboxNo())
                 .avatarUrl(profile.getAvatarUrl())
                 .gender(profile.getGender() != null ? profile.getGender().getCode() : null)
                 .ntrp(profile.getNtrp())

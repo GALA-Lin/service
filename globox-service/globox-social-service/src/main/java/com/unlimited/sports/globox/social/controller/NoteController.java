@@ -270,7 +270,7 @@ public class NoteController {
     }
 
     @DeleteMapping("/{noteId}")
-    @Operation(summary = "删除笔记", description = "软删除笔记（状态置为 DELETED），仅作者可操作")
+    @Operation(summary = "删除笔记/草稿", description = "软删除笔记或草稿（状态置为 DELETED），仅作者可操作")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "删除成功"),
             @ApiResponse(responseCode = "3006", description = "笔记不存在或已删除"),

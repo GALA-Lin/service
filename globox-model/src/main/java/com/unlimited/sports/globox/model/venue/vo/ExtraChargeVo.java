@@ -48,4 +48,9 @@ public class ExtraChargeVo {
      */
     @NotNull
     private BigDecimal chargeAmount;
+
+    /**
+     * 是否默认费用（1=默认必选，0=可选）
+     */
+    private Integer isDefault;
 }

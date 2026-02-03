@@ -189,8 +189,8 @@ public class CoachDubboServiceImpl implements CoachDubboService {
             CoachPricingRequestDto dto) {
 
         // 获取教练的常驻服务区域和远距离服务区域
-        List<String> serviceAreas = coachProfile.getServiceAreaList();
-        List<String> remoteServiceAreas = coachProfile.getRemoteServiceAreaList();
+        String serviceAreas = coachProfile.getCoachServiceArea();
+        List<String> remoteServiceAreas = coachProfile.getCoachRemoteServiceArea();
 
         // 从第一个时段模板获取可接受区域（所有时段的区域要求一致）
         CoachSlotTemplate firstTemplate = slotTemplateMapper.selectById(dto.getSlotIds().get(0));

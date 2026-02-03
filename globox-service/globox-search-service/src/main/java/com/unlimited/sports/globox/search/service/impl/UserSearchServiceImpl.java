@@ -73,12 +73,12 @@ public class UserSearchServiceImpl implements IUserSearchService {
 
             // 关键词搜索（匹配昵称或球盒号）
             if (keyword != null && !keyword.trim().isEmpty()) {
-                String trimmedKeyword = keyword.trim().toLowerCase();
+                String trimmedKeyword = keyword.trim();
                 boolQuery.must(
                     QueryBuilders.boolQuery()
                         .should(QueryBuilders.matchQuery("nickName", keyword).boost(2.0f))
-                        .should(QueryBuilders.prefixQuery("usernameLower", trimmedKeyword).boost(3.0f))
-                        .should(QueryBuilders.wildcardQuery("usernameLower", "*" + trimmedKeyword + "*"))
+                        .should(QueryBuilders.prefixQuery("globoxNo", trimmedKeyword).boost(3.0f))
+                        .should(QueryBuilders.wildcardQuery("globoxNo", "*" + trimmedKeyword + "*"))
                         .minimumShouldMatch(1)
                 );
             }
@@ -187,8 +187,7 @@ public class UserSearchServiceImpl implements IUserSearchService {
                     .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.USER, vo.getUserId()))
                     .userId(vo.getUserId())
                     .nickName(vo.getNickName())
-                    .username(vo.getUsername())
-                    .usernameLower(vo.getUsernameLower())
+                    .globoxNo(vo.getGloboxNo())
                     .avatarUrl(vo.getAvatarUrl())
                     .gender(vo.getGender())
                     .ntrp(vo.getNtrp())
@@ -253,7 +252,7 @@ public class UserSearchServiceImpl implements IUserSearchService {
         }
         return UserListItemVo.builder()
                 .userId(document.getUserId())
-                .username(document.getUsername())
+                .globoxNo(document.getGloboxNo())
                 .nickName(document.getNickName())
                 .avatarUrl(document.getAvatarUrl())
                 .gender(document.getGender())

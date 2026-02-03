@@ -98,6 +98,11 @@ public class DetailedPricingInfo {
          * 费用金额
          */
         private BigDecimal amount;
+
+        /**
+         * 是否默认费用（1=默认必选，0=可选）
+         */
+        private Integer isDefault;
     }
 
 
@@ -126,18 +131,15 @@ public class DetailedPricingInfo {
         private Integer chargeMode;
 
         /**
-         * 单位金额或比例
+         * 固定金额或百分比值
+         * FIXED模式：单位金额
+         * PERCENTAGE模式：百分比值（如10表示10%）
          */
         private BigDecimal fixedValue;
 
         /**
-         * 费用金额（该场地所有槽位的总金额）
+         * 是否默认费用（1=默认必选，0=可选）
          */
-        private BigDecimal amount;
-
-        /**
-         * 单个槽位的费用金额
-         */
-        private BigDecimal perSlotAmount;
+        private Integer isDefault;
     }
 }

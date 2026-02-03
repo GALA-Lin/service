@@ -20,12 +20,14 @@
                 javaType="java.util.List"/>
         <result property="coachSpecialtyTags" column="coach_specialty_tags"
                 typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+        <result property="coachRemoteServiceArea" column="coach_remote_service_area"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+
 
         <!-- 其他字段 -->
         <result property="coachTeachingYears" column="coach_teaching_years"/>
         <result property="coachTeachingStyle" column="coach_teaching_style"/>
         <result property="coachServiceArea" column="coach_service_area"/>
-        <result property="coachRemoteServiceArea" column="coach_remote_service_area"/>
         <result property="coachMinHours" column="coach_min_hours"/>
         <result property="coachRemoteMinHours" column="coach_remote_min_hours"/>
         <result property="coachAcceptVenueType" column="coach_accept_venue_type"/>

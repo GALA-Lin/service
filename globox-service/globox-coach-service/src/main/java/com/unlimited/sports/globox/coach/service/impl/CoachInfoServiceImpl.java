@@ -12,7 +12,6 @@ import com.unlimited.sports.globox.common.utils.DistanceUtils;
 import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
-import com.unlimited.sports.globox.dubbo.user.dto.UserInfoDto;
 import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachListDto;
@@ -37,7 +36,7 @@ import java.util.stream.Collectors;
 
 /**
  * @since 2026/1/1 12:23
- * 教练服务实现
+ * 教练服务实现（已修复 List<String> 类型错误）
  */
 @Slf4j
 @Service
@@ -141,14 +140,6 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
 
         List<CoachProfile> allCoaches = coachProfileMapper.selectAllForFilters();
 
-
-//        // 查询所有正常接单的教练
-//        List<CoachProfile> allCoaches = coachProfileMapper.selectList(
-//                new LambdaQueryWrapper<CoachProfile>()
-//                        .eq(CoachProfile::getCoachStatus, 1)
-//                        .eq(CoachProfile::getCoachAuditStatus, 1)
-//        );
-
         BigDecimal minPrice = null;
         BigDecimal maxPrice = null;
 
@@ -158,15 +149,8 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 certifications.addAll(coach.getCoachCertificationLevel());
             }
 
-            // 收集区域（处理逗号分隔）
-            if (coach.getCoachServiceArea() != null && !coach.getCoachServiceArea().trim().isEmpty()) {
-                String[] areas = coach.getCoachServiceArea().split(",");
-                for (String area : areas) {
-                    String trimmedArea = area.trim();
-                    if (!trimmedArea.isEmpty()) {
-                        serviceAreas.add(trimmedArea);
-                    }
-                }
+            if (coach.getCoachServiceArea() != null && !coach.getCoachServiceArea().isEmpty()) {
+                serviceAreas.add(coach.getCoachServiceArea());
             }
 
             // 计算价格区间
@@ -184,7 +168,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
 
         return CoachListResponse.PriceRange.builder()
                 .minPrice(minPrice != null ? minPrice : BigDecimal.ZERO)
-                .maxPrice(maxPrice != null ? maxPrice : BigDecimal.valueOf(1000))
+                .maxPrice(maxPrice != null ? maxPrice : BigDecimal.ZERO)
                 .build();
     }
 
@@ -192,47 +176,36 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
     public CoachDetailVo getCoachDetail(Long coachUserId, Double latitude, Double longitude) {
         log.info("获取教练详情 - coachUserId: {}", coachUserId);
 
+        // 查询教练信息
         CoachProfile profile = coachProfileMapper.selectOne(
                 new LambdaQueryWrapper<CoachProfile>()
                         .eq(CoachProfile::getCoachUserId, coachUserId)
                         .eq(CoachProfile::getCoachStatus, 1)
+                        .eq(CoachProfile::getCoachAuditStatus, 1)
         );
 
         if (profile == null) {
-            throw new GloboxApplicationException("教练不存在或暂停接单");
+            throw new GloboxApplicationException("教练不存在或未通过审核");
         }
 
-        // 查询用户基本信息
-        BatchUserInfoRequest request = new BatchUserInfoRequest();
-        request.setUserIds(Collections.singletonList(coachUserId));
-
-        RpcResult<BatchUserInfoResponse> rpcResult = userDubboService.batchGetUserInfo(request);
-        Assert.rpcResultOk(rpcResult);
-        BatchUserInfoResponse response = rpcResult.getData();
-
-        RpcResult<List<UserPhoneDto>> getUserPhone = userDubboService.batchGetUserPhone(request.getUserIds());
-        Assert.rpcResultOk(getUserPhone);
-        List<UserPhoneDto> phoneDtos = getUserPhone.getData();
-
-        if (response == null || response.getUsers() == null || response.getUsers().isEmpty()) {
-            log.error("无法获取教练基本信息 - coachUserId: {}", coachUserId);
-            throw new GloboxApplicationException("无法获取教练基本信息");
-        }
-
-        if (phoneDtos == null || phoneDtos.isEmpty()) {
-            log.error("无法获取教练电话 -  coachUserId: {}", coachUserId);
-            throw new GloboxApplicationException("无法获取教练电话");
-        }
-
-        UserInfoVo userInfo = response.getUsers().get(0);
-        String coachPhone = phoneDtos.get(0).getPhone();
-        // 查询教练的所有课程服务
+        // 查询教练服务类型
         List<CoachCourseType> services = coachCourseTypeMapper.selectList(
                 new LambdaQueryWrapper<CoachCourseType>()
                         .eq(CoachCourseType::getCoachUserId, coachUserId)
                         .eq(CoachCourseType::getCoachIsActive, 1)
-                        .orderByAsc(CoachCourseType::getCoachServiceTypeEnum)
         );
+
+        // 获取用户基本信息
+        RpcResult<UserInfoVo> userResult = userDubboService.getUserInfo(coachUserId);
+        Assert.rpcResultOk(userResult);
+        UserInfoVo userInfo = userResult.getData();
+
+        // 获取教练电话
+        RpcResult<UserPhoneDto> phoneResult = userDubboService.getUserPhone(coachUserId);
+        String coachPhone = null;
+        if (phoneResult != null && phoneResult.getData() != null) {
+            coachPhone = phoneResult.getData().getPhone();
+        }
 
         // 转换课程服务为VO
         List<CoachServiceVo> serviceVos = services.stream()
@@ -276,13 +249,15 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         UserInfoVo userInfoVo = new UserInfoVo();
         BeanUtils.copyProperties(userInfo, userInfoVo);
 
-        // 构建简单信息VO
+        // 【修复】：构建简单信息VO，coachServiceArea 使用 List<String>
         CoachItemVo simpleInfo = CoachItemVo.builder()
                 .coachUserInfo(userInfoVo)
                 .coachPhone(coachPhone)
-                .coachServiceArea(profile.getCoachServiceArea())
+                .coachServiceArea(profile.getCoachServiceArea() != null ?
+                        profile.getCoachServiceArea() : null) // 修复：直接使用 List<String>
                 .coachMinHours(profile.getCoachMinHours())
-                .coachRemoteServiceArea(profile.getCoachRemoteServiceArea())
+                .coachRemoteServiceArea(profile.getCoachRemoteServiceArea() != null ?
+                        profile.getCoachRemoteServiceArea() : Collections.emptyList()) // 修复：直接使用 List<String>
                 .coachRemoteMinHours(profile.getCoachRemoteMinHours())
                 .coachTeachingYears(profile.getCoachTeachingYears())
                 .coachRatingScore(profile.getCoachRatingScore())
@@ -352,6 +327,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
 
     /**
      * 构建教练列表项VO
+     * 【修复】：处理 serviceArea 字段类型
      */
     private List<CoachItemVo> buildCoachItemVos(List<Map<String, Object>> searchResults,
                                                 Map<Long, UserInfoVo> userInfoMap) {
@@ -369,13 +345,15 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
             String certificationLevelStr = (String) result.get("certificationLevel");
             List<String> certificationTags = parseJsonArrayFromDb(certificationLevelStr);
 
+            String serviceAreaStr = (String) result.get("serviceArea");
+
             BigDecimal distance = result.get("distance") != null
                     ? new BigDecimal(result.get("distance").toString())
                     : null;
 
             return CoachItemVo.builder()
                     .coachUserInfo(userInfo)
-                    .coachServiceArea((String) result.get("serviceArea"))
+                    .coachServiceArea(serviceAreaStr)
                     .coachTeachingYears(result.get("teachingYears") != null ?
                             ((Number) result.get("teachingYears")).intValue() : 0)
                     .coachRatingScore(result.get("ratingScore") != null ?

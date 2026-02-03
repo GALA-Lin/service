@@ -3,7 +3,6 @@ package com.unlimited.sports.globox.model.coach.vo;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NonNull;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -39,7 +38,7 @@ public class CoachItemVo {
     /**
      * 可接受的远距离服务区域
      */
-    private String coachRemoteServiceArea;
+    private List<String> coachRemoteServiceArea;
 
     /**
      * 远距离区域最低授课时长（小时）

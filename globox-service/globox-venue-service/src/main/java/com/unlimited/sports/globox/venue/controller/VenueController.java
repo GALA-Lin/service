@@ -91,6 +91,18 @@ public class VenueController {
     }
 
     /**
+     * 获取场馆的最大可提前预约日期
+     *
+     * @param venueId 场馆ID
+     * @return 最大可提前预约日期（天数）
+     */
+    @GetMapping("/{venueId}/max-advance-days")
+    public R<Integer> getMaxAdvanceDays(@PathVariable Long venueId) {
+        Integer maxAdvanceDays = venueService.getMaxAdvanceDays(venueId);
+        return R.ok(maxAdvanceDays);
+    }
+
+    /**
      * 获取活动详情
      *
      * @param activityId 活动ID

@@ -9,11 +9,17 @@ import java.io.Serial;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
 /**
  * @since 2025/12/29 11:47
  * 教练扩展信息表
+ *
+ * 优化说明：
+ * 1. coach_remote_service_area 改为使用 JacksonTypeHandler
+ * 2. 数据库存储 JSON 数组格式：["锦江区","成华区"]
+ * 3. Java 对象直接使用 List<String> 类型，自动序列化/反序列化
  */
 @Data
 @AllArgsConstructor
@@ -42,18 +48,17 @@ public class CoachProfile implements Serializable {
     @TableField(value = "coach_certification_level", typeHandler = JacksonTypeHandler.class)
     private List<String> coachCertificationLevel;
 
-
     /**
      * 主要奖项
      */
     @TableField(value = "coach_award", typeHandler = JacksonTypeHandler.class)
     private List<String> coachAward;
+
     /**
      * 证书附件URL（JSON数组）
      */
     @TableField(value = "coach_certification_files", typeHandler = JacksonTypeHandler.class)
     private List<String> coachCertificationFiles;
-
 
     /**
      * 教学图片（JSON数组）
@@ -67,18 +72,16 @@ public class CoachProfile implements Serializable {
     @TableField(value = "coach_work_videos", typeHandler = JacksonTypeHandler.class)
     private List<VideoItem> coachWorkVideos;
 
-
     /**
      * 教龄
      */
     @TableField(value = "coach_teaching_years")
     private Integer coachTeachingYears;
 
-
     /**
      * 专长标签（JSON数组）
      */
-    @TableField(value = "coach_specialty_tags",typeHandler = JacksonTypeHandler.class)
+    @TableField(value = "coach_specialty_tags", typeHandler = JacksonTypeHandler.class)
     private List<String> coachSpecialtyTags;
 
     /**
@@ -88,17 +91,18 @@ public class CoachProfile implements Serializable {
     private String coachTeachingStyle;
 
     /**
-     * 常驻服务区域
-     * 例如: "双流区, 金牛区"
+     * 常驻服务区域（1个）
      */
     @TableField(value = "coach_service_area")
     private String coachServiceArea;
 
     /**
-     * 可接受的远距离服务区域（多个，逗号分隔）
+     * 可接受的远距离服务区域（JSON数组）
+     * 数据库存储格式：["锦江区","成华区"]
+     * Java对象类型：List<String>
      */
-    @TableField(value = "coach_remote_service_area")
-    private String coachRemoteServiceArea;
+    @TableField(value = "coach_remote_service_area", typeHandler = JacksonTypeHandler.class)
+    private List<String> coachRemoteServiceArea;
 
     /**
      * 最短授课时长（小时）
@@ -227,23 +231,11 @@ public class CoachProfile implements Serializable {
     private LocalDateTime updatedAt;
 
     /**
-     * 获取服务区域列表
+     * 获取远距离服务区域列表（兼容方法，已废弃）
+     * @deprecated 直接使用 getCoachRemoteServiceArea() 即可获取 List<String>
      */
-    public List<String> getServiceAreaList() {
-        if (coachServiceArea == null || coachServiceArea.trim().isEmpty()) {
-            return List.of();
-        }
-        return List.of(coachServiceArea.split(","));
-    }
-
-    /**
-     * 获取远距离服务区域列表
-     */
+    @Deprecated
     public List<String> getRemoteServiceAreaList() {
-        if (coachRemoteServiceArea == null || coachRemoteServiceArea.trim().isEmpty()) {
-            return List.of();
-        }
-        return List.of(coachRemoteServiceArea.split(","));
+        return coachRemoteServiceArea != null ? coachRemoteServiceArea : Collections.emptyList();
     }
-
 }

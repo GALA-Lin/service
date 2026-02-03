@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.coach.controller;
 import com.unlimited.sports.globox.coach.service.ICoachSettingsService;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.coach.dto.*;
+import com.unlimited.sports.globox.model.coach.entity.CoachProfile;
 import com.unlimited.sports.globox.model.coach.vo.CoachSettingsVo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,14 +48,14 @@ public class CoachSettingsController {
      * @return 更新结果
      */
     @PatchMapping("/location")
-    public R<Void> updateCoachLocation(
+    public R<CoachProfile> updateCoachLocation(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @Valid @RequestBody UpdateCoachLocationDto dto) {
         log.info("更新教练位置 - coachUserId: {}, lat: {}, lng: {}",
                 coachUserId, dto.getLatitude(), dto.getLongitude());
         dto.setCoachUserId(coachUserId);
-        coachSettingsService.updateCoachLocation(dto);
-        return R.ok();
+        CoachProfile profile = coachSettingsService.updateCoachLocation(dto);
+        return R.ok(profile);
     }
 
     /**
@@ -65,13 +66,13 @@ public class CoachSettingsController {
      * @return 更新结果
      */
     @PutMapping("/basic")
-    public R<Void> updateBasicSettings(
+    public R<CoachProfile> updateBasicSettings(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @Valid @RequestBody UpdateCoachBasicSettingsDto dto) {
         log.info("更新教练基本设置 - coachUserId: {}", coachUserId);
         dto.setCoachUserId(coachUserId);
-        coachSettingsService.updateBasicSettings(dto);
-        return R.ok();
+        CoachProfile profile = coachSettingsService.updateBasicSettings(dto);
+        return R.ok(profile);
     }
 
     /**
@@ -82,13 +83,13 @@ public class CoachSettingsController {
      * @return 更新结果
      */
     @PutMapping("/service-area")
-    public R<Void> updateServiceArea(
+    public R<CoachProfile> updateServiceArea(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @Valid @RequestBody UpdateCoachServiceAreaDto dto) {
         log.info("更新教练服务区域 - coachUserId: {}", coachUserId);
         dto.setCoachUserId(coachUserId);
-        coachSettingsService.updateServiceArea(dto);
-        return R.ok();
+        CoachProfile profile = coachSettingsService.updateServiceArea(dto);
+        return R.ok(profile);
     }
 
     /**
@@ -99,14 +100,14 @@ public class CoachSettingsController {
      * @return 更新结果
      */
     @PatchMapping("/status")
-    public R<Void> updateCoachStatus(
+    public R<CoachProfile> updateCoachStatus(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @Valid @RequestBody UpdateCoachStatusDto dto) {
         log.info("更新教练状态 - coachUserId: {}, status: {}",
                 coachUserId, dto.getCoachStatus());
         dto.setCoachUserId(coachUserId);
-        coachSettingsService.updateCoachStatus(dto);
-        return R.ok();
+        CoachProfile profile = coachSettingsService.updateCoachStatus(dto);
+        return R.ok(profile);
     }
 
     /**
@@ -117,13 +118,13 @@ public class CoachSettingsController {
      * @return 更新结果
      */
     @PutMapping("/display")
-    public R<Void> updateDisplaySettings(
+    public R<CoachProfile> updateDisplaySettings(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @Valid @RequestBody UpdateCoachDisplaySettingsDto dto) {
         log.info("更新教练展示信息 - coachUserId: {}", coachUserId);
         dto.setCoachUserId(coachUserId);
-        coachSettingsService.updateDisplaySettings(dto);
-        return R.ok();
+        CoachProfile profile = coachSettingsService.updateDisplaySettings(dto);
+        return R.ok(profile);
     }
 
     /**
@@ -134,12 +135,12 @@ public class CoachSettingsController {
      * @return 更新结果
      */
     @PutMapping("/venue-preference")
-    public R<Void> updateVenuePreference(
+    public R<CoachProfile> updateVenuePreference(
             @RequestHeader(HEADER_USER_ID) Long coachUserId,
             @Valid @RequestBody UpdateCoachVenuePreferenceDto dto) {
         log.info("更新教练场地偏好 - coachUserId: {}", coachUserId);
         dto.setCoachUserId(coachUserId);
-        coachSettingsService.updateVenuePreference(dto);
-        return R.ok();
+        CoachProfile profile = coachSettingsService.updateVenuePreference(dto);
+        return R.ok(profile);
     }
 }

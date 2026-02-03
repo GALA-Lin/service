@@ -13,17 +13,14 @@ import com.unlimited.sports.globox.model.merchant.enums.SlotRecordStatusEnum;
 import com.unlimited.sports.globox.model.merchant.vo.*;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueActivity;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenuePriceTemplatePeriod;
-import com.unlimited.sports.globox.model.venue.dto.DetailedPricingInfo;
 import com.unlimited.sports.globox.model.venue.enums.CourtStatus;
 import com.unlimited.sports.globox.venue.mapper.venues.VenuePriceTemplatePeriodMapper;
 import com.unlimited.sports.globox.venue.service.IVenueActivityService;
 import com.unlimited.sports.globox.venue.service.IVenueBusinessHoursService;
 import com.unlimited.sports.globox.venue.service.IVenuePriceService;
-import com.unlimited.sports.globox.venue.service.impl.VenuePriceServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
-import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,12 +46,11 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
     private final VenuePriceTemplatePeriodMapper priceTemplatePeriodMapper;
     private final IVenueBusinessHoursService venueBusinessHoursService;
 
-    private final IVenuePriceService venuePriceService;
     private final IVenueActivityService venueActivityService;
 
     private final VenueStaffMapper venueStaffMapper;
 
-    private final VenuePriceServiceImpl venuePriceServiceImpl;
+    private final IVenuePriceService venuePriceService;
 
     @DubboReference(group = "rpc")
     private OrderForMerchantDubboService orderForMerchantDubboService;
@@ -372,14 +368,14 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
                         .updatedAt(source.getUpdatedAt())
                         .build())
                 .collect(Collectors.toList());
-        DetailedPricingInfo detailedPricingInfo = venuePriceServiceImpl.calculatePricingByCourtTemplates(
+        Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId = venuePriceService.calculateSlotPricesByCourtTemplates(
                 targetTemplates,
                 venue.getVenueId(),
                 date,
                 courtMapForPricing
         );
 
-        log.debug("批量获取价格完成 - 场地数: {}", detailedPricingInfo.getPricesByCourtId().size());
+        log.debug("批量获取价格完成 - 场地数: {}", pricesByCourtId.size());
 
         // 9. 批量获取场馆在该日期的所有活动
         List<VenueActivity> allActivities = venueActivityService.getActivitiesByVenueAndDate(
@@ -453,7 +449,7 @@ public class VenueSlotRecordServiceImpl implements VenueSlotRecordService {
             if (courtTemplates.isEmpty()) continue;
 
             // 为该场地提取对应的价格
-            Map<LocalTime, BigDecimal> courtPrices = detailedPricingInfo.getPricesByCourtId()
+            Map<LocalTime, BigDecimal> courtPrices = pricesByCourtId
                     .getOrDefault(court.getCourtId(), new HashMap<>());
 
             // 使用 CourtSlotVo 统一构建逻辑

@@ -16,7 +16,7 @@ import java.util.List;
  * 支持多种计费方式和适用范围的灵活配置
  */
 @Data
-@TableName("venue_extra_charge_template")
+@TableName(value = "venue_extra_charge_template", autoResultMap = true)
 public class VenueExtraChargeTemplate {
 
     @TableId(value = "template_id", type = IdType.AUTO)

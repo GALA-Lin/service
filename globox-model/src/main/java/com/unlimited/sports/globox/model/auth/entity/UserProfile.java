@@ -51,20 +51,16 @@ public class UserProfile {
     private String realName;
     
     /**
-     * 球盒号（保留用户输入大小写）
+     * 球盒号（9位数字）
      */
-    @TableField("username")
-    private String userName;
-    
-    /**
-     * 球盒号小写（用于唯一索引和搜索）
-     */
-    private String usernameLower;
-    
+    @TableField("globox_no")
+    private String globoxNo;
+
     /**
      * 上次球盒号修改时间
      */
-    private LocalDateTime lastUsernameChangedAt;
+    @TableField("last_globox_no_changed_at")
+    private LocalDateTime lastGloboxNoChangedAt;
     
     /**
      * 个性签名
@@ -144,12 +140,12 @@ public class UserProfile {
      */
     private LocalDateTime updatedAt;
 
-    public String getUsername() {
-        return userName;
+    public String getGloboxNo() {
+        return globoxNo;
     }
 
-    public void setUsername(String username) {
-        this.userName = username;
+    public void setGloboxNo(String globoxNo) {
+        this.globoxNo = globoxNo;
     }
 
     @Deprecated

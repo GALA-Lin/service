@@ -54,7 +54,7 @@ public interface IVenueSearchService {
      * @return 构建后的boolQuery
      */
     BoolQueryBuilder buildGeneralFilters(BoolQueryBuilder boolQuery, java.math.BigDecimal minPrice,
-            java.math.BigDecimal maxPrice, GeoPoint userLocation, Long maxDistance);
+            java.math.BigDecimal maxPrice, GeoPoint userLocation, Double maxDistance);
 
     /**
      * 构建场馆专属查询条件

@@ -3,13 +3,11 @@ package com.unlimited.sports.globox.dubbo.order.dto;
 import com.unlimited.sports.globox.common.enums.order.ApplyRefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.UserRefundReasonEnum;
-import com.unlimited.sports.globox.model.order.vo.RefundTimelineVo;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Null;
 import java.io.Serializable;

@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serial;
 import java.io.Serializable;
 
 @Data
@@ -13,6 +14,7 @@ import java.io.Serializable;
 @Schema(name = "GetRefundProgressRequestDto", description = "查询退款进度请求参数")
 public class GetRefundProgressRequestDto implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     /**
@@ -32,16 +34,6 @@ public class GetRefundProgressRequestDto implements Serializable {
             example = "10086",
             requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private Long refundApplyId;
-
-    /**
-     * 是否返回退款状态时间线（状态日志）
-     */
-    @Builder.Default
-    @Schema(description = "是否返回退款进度时间线（状态日志）",
-            example = "true",
-            defaultValue = "true",
-            requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-    private Boolean includeTimeline = true;
 
     /**
      * 参数校验：orderNo 与 refundApplyId 二选一，不能同时为空

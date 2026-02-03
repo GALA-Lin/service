@@ -210,4 +210,13 @@ public interface RedisService {
      * @param tempToken 临时凭证
      */
     void deleteWechatTempToken(String tempToken);
+
+    /**
+     * 原子自增并设置过期时间（首次自增时）
+     *
+     * @param key           键
+     * @param expireSeconds 过期时间（秒）
+     * @return 自增后的值
+     */
+    long increment(String key, long expireSeconds);
 }

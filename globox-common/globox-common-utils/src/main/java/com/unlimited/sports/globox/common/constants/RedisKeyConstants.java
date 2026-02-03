@@ -53,5 +53,10 @@ public final class RedisKeyConstants {
      * 微信临时凭证前缀
      */
     public static final String WECHAT_TEMP_TOKEN_PREFIX = "wechat:temp:";
+
+    /**
+     * 球盒号序列前缀（按日期）
+     */
+    public static final String GLOBOX_NO_SEQ_PREFIX = "globox:no:seq:";
 }
 

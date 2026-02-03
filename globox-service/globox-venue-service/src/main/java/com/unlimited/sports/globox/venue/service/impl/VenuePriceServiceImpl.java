@@ -34,14 +34,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * 新版价格服务实现 - V2版本
+ * 新版价格服务实现
  * 支持按场地（Court）分别配置价格，而不是整个场馆统一价格
- *
- * 核心改进：
- * 1. 每个场地（Court）可以有独立的价格模板（priceTemplateId）
- * 2. 如果场地没有单独配置，则使用场馆默认价格模板
- * 3. 返回详细的按场地分组的价格信息
- * 4. 为向后兼容性，提供聚合的时间->价格映射
  */
 @Slf4j
 @Service
@@ -58,6 +52,8 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
 
     @Autowired
     private VenuePriceOverrideMapper priceOverrideMapper;
+
+    private static final BigDecimal DEFAULT_MISSING_PRICE = new BigDecimal("999");
 
     /**
      * 将Away槽位价格列表转换为DetailedPricingInfo格式
@@ -125,6 +121,78 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
     }
 
     /**
+     * 仅计算槽位价格（不计算额外费用）
+     * 在商家/用户查看面板的时候调用
+     */
+    public Map<Long, Map<LocalTime, BigDecimal>> calculateSlotPricesByCourtTemplates(
+            List<VenueBookingSlotTemplate> templates,
+            Long venueId,
+            LocalDate bookingDate,
+            Map<Long, Court> courtMap) {
+        log.info("开始计算价格 - venueId: {}, 槽位数: {}, 日期: {}",
+                venueId, templates.size(), bookingDate);
+        Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = templates.stream()
+                .collect(Collectors.groupingBy(VenueBookingSlotTemplate::getCourtId));
+
+        Map<Long, Long> courtIdToTemplateIdMap = new HashMap<>();
+        Set<Long> templateIds = new HashSet<>();
+        templatesByCourtId.forEach((courtId, templateList) -> {
+            Court court = courtMap.get(courtId);
+            if (court == null) {
+                log.warn("[价格计算] 场地不存在 - courtId: {}", courtId);
+                return;
+            }
+            Long priceTemplateId = court.getTemplateId();
+            if (priceTemplateId == null) {
+                log.warn("[价格计算] 场地未配置价格模板 - courtId: {}, 场地名: {}", courtId, court.getName());
+                courtIdToTemplateIdMap.put(courtId, null);
+            } else {
+                courtIdToTemplateIdMap.put(courtId, priceTemplateId);
+                templateIds.add(priceTemplateId);
+            }
+        });
+
+        if (ObjectUtils.isEmpty(templateIds)) {
+            throw new GloboxApplicationException(VenueCode.VENUE_PRICE_NOT_CONFIGURED);
+        }
+
+        List<VenuePriceTemplate> allTemplates = priceTemplateMapper.selectBatchIds(new ArrayList<>(templateIds));
+        Map<Long, VenuePriceTemplate> templateMap = allTemplates.stream()
+                .filter(VenuePriceTemplate::getIsEnabled)
+                .collect(Collectors.toMap(VenuePriceTemplate::getTemplateId, Function.identity()));
+
+        List<VenuePriceTemplatePeriod> allPeriods = priceTemplatePeriodMapper.selectList(
+                new LambdaQueryWrapper<VenuePriceTemplatePeriod>()
+                        .in(VenuePriceTemplatePeriod::getTemplateId, templateIds)
+                        .eq(VenuePriceTemplatePeriod::getIsEnabled, true)
+                        .orderByAsc(VenuePriceTemplatePeriod::getStartTime)
+        );
+        Map<Long, List<VenuePriceTemplatePeriod>> periodsByTemplateId = allPeriods.stream()
+                .collect(Collectors.groupingBy(VenuePriceTemplatePeriod::getTemplateId));
+
+        List<VenuePriceOverride> overrides = priceOverrideMapper.selectList(
+                new LambdaQueryWrapper<VenuePriceOverride>()
+                        .eq(VenuePriceOverride::getVenueId, venueId)
+                        .eq(VenuePriceOverride::getOverrideDate, bookingDate)
+                        .eq(VenuePriceOverride::getIsEnabled, 1)
+        );
+
+        DayType dayType = determineDayType(bookingDate);
+        Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId = calculatePricesByCourtId(
+                templatesByCourtId,
+                courtIdToTemplateIdMap,
+                templateMap,
+                periodsByTemplateId,
+                overrides,
+                dayType,
+                bookingDate
+        );
+
+        log.info("[价格计算-仅价格] 计算完成 - 场地数: {}", pricesByCourtId.size());
+        return pricesByCourtId;
+    }
+
+    /**
      * 计算完整价格 - 按场地分组
      * 流程：
      * 1. 按场地分组templates
@@ -145,41 +213,37 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
             Long venueId,
             LocalDate bookingDate,
             Map<Long, Court> courtMap) {
-        log.info("[价格计算] 开始计算 - venueId: {}, 槽位数: {}, 日期: {}",
+        log.info("[价格计算] 开始计算价格 - venueId: {}, 槽位数: {}, 日期: {}",
                 venueId, templates.size(), bookingDate);
         //按场地分组templates
         Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = templates.stream()
                 .collect(Collectors.groupingBy(VenueBookingSlotTemplate::getCourtId));
-        log.info("[价格计算] 按场地分组 - 场地数: {}", templatesByCourtId.size());
         // 为每个场地确定有效的价格模板ID
         Map<Long, Long> courtIdToTemplateIdMap = new HashMap<>();
         Set<Long> templateIds = new HashSet<>();
         templatesByCourtId.forEach((courtId, templateList) -> {
             Court court = courtMap.get(courtId);
             if (court == null) {
-                log.warn("[价格计算V2] 场地不存在 - courtId: {}", courtId);
-                return; // Stream中的return相当于for循环的continue
+                log.warn("[价格计算] 场地不存在 - courtId: {}", courtId);
+                return;
             }
-
             Long priceTemplateId = court.getTemplateId();
             if (priceTemplateId == null) {
-                log.warn("[价格计算V2] 场地未配置价格模板 - courtId: {}, 场地名: {}", courtId, court.getName());
+                log.warn("[价格计算] 场地未配置价格模板 - courtId: {}, 场地名: {}", courtId, court.getName());
                 courtIdToTemplateIdMap.put(courtId, null);
             } else {
                 courtIdToTemplateIdMap.put(courtId, priceTemplateId);
                 templateIds.add(priceTemplateId);
             }
         });
-        log.info("[价格计算V2] 需要查询的模板ID数: {}", templateIds.size());
         // 批量查询所有价格模板
-        if(ObjectUtils.isEmpty(templateIds)) {
+        if (ObjectUtils.isEmpty(templateIds)) {
             throw new GloboxApplicationException(VenueCode.VENUE_PRICE_NOT_CONFIGURED);
         }
         List<VenuePriceTemplate> allTemplates = priceTemplateMapper.selectBatchIds(new ArrayList<>(templateIds));
         Map<Long, VenuePriceTemplate> templateMap = allTemplates.stream()
                 .filter(VenuePriceTemplate::getIsEnabled)
                 .collect(Collectors.toMap(VenuePriceTemplate::getTemplateId, Function.identity()));
-        log.info("[价格计算] 批量查询价格模板完成 - 查询数: {}, 有效数: {}", templateIds.size(), templateMap.size());
         // 批量查询所有价格时段
         List<VenuePriceTemplatePeriod> allPeriods = priceTemplatePeriodMapper.selectList(
                 new LambdaQueryWrapper<VenuePriceTemplatePeriod>()
@@ -197,45 +261,29 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                         .eq(VenuePriceOverride::getOverrideDate, bookingDate)
                         .eq(VenuePriceOverride::getIsEnabled, 1)
         );
-        log.info("[价格计算V2] 批量查询价格覆盖完成 - 覆盖数: {}", overrides.size());
-        //  为每个场地计算价格
+        log.info("[价格计算] 批量查询价格覆盖完成 - 覆盖数: {}", overrides.size());
+        // 为每个场地计算价格
         DayType dayType = determineDayType(bookingDate);
-        Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId = templatesByCourtId.entrySet().stream()
-                .map(entry -> {
-                    Long courtId = entry.getKey();
-                    Long templateId = courtIdToTemplateIdMap.get(courtId);
-                    //  基础校验：模板 ID 是否存在
-                    if (templateId == null) return null;
-                    //  模板对象校验
-                    VenuePriceTemplate template = templateMap.get(templateId);
-                    if (template == null) {
-                        log.warn("[价格计算] 价格模板不存在或未启用 - courtId: {}, templateId: {}", courtId, templateId);
-                        return null;
-                    }
-                    // 时段配置校验
-                    List<VenuePriceTemplatePeriod> periods = periodsByTemplateId.getOrDefault(templateId, Collections.emptyList());
-                    if (periods.isEmpty()) {
-                        log.warn("[价格计算]价格模板未配置时段 - courtId: {}, templateId: {}", courtId, templateId);
-                        return null;
-                    }
-                    // 执行计算逻辑
-                    Map<LocalTime, BigDecimal> courtPrices = calculateCourtPriceMap(
-                            courtId, entry.getValue(), overrides, periods, dayType, bookingDate);
-                    log.info("[价格计算] 场地价格计算完成 - courtId: {}, 模板ID: {}, 找到价格数: {}",
-                            courtId, templateId, courtPrices.size());
-                    return Map.entry(courtId, courtPrices);
-                })
-                .filter(Objects::nonNull) // 过滤掉因校验失败返回的空值
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId = calculatePricesByCourtId(
+                templatesByCourtId,
+                courtIdToTemplateIdMap,
+                templateMap,
+                periodsByTemplateId,
+                overrides,
+                dayType,
+                bookingDate
+        );
+
+        // 计算每个场地的基础价格
+        Map<Long, BigDecimal> courtBasePriceMap = calculateCourtBasePriceMap(templatesByCourtId, pricesByCourtId);
 
         // 计算基础价格总和
-        BigDecimal basePrice = pricesByCourtId.values().stream()
-                .flatMap(m -> m.values().stream())
+        BigDecimal basePrice = courtBasePriceMap.values().stream()
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        log.info("[价格计算V2] 基础价格计算完成 - 基础价格: {}", basePrice);
+        log.info("[价格计算] 基础价格计算完成 - 基础价格: {}", basePrice);
 
-        //  批量查询所有额外费用模板（订单级和订单项级）
+        // 批量查询所有额外费用模板（订单级和订单项级）
         List<VenueExtraChargeTemplate> allExtraCharges = extraChargeTemplateMapper.selectList(
                 new LambdaQueryWrapper<VenueExtraChargeTemplate>()
                         .eq(VenueExtraChargeTemplate::getVenueId, venueId)
@@ -257,7 +305,9 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
         // 计算订单级额外费用
         List<OrderLevelExtraQuote> orderLevelExtrasQuotes = calculateExtraCharges(
                 orderLevelCharges,
-                basePrice);
+                courtBasePriceMap,
+                templatesByCourtId.keySet(),
+                dayType);
 
         List<DetailedPricingInfo.OrderLevelExtraInfo> orderLevelExtras = orderLevelExtrasQuotes.stream()
                 .map(extra -> DetailedPricingInfo.OrderLevelExtraInfo.builder()
@@ -266,6 +316,7 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                         .chargeMode(extra.getChargeMode().getCode())
                         .fixedValue(extra.getFixedValue())
                         .amount(extra.getAmount())
+                        .isDefault(findExtraChargeDefault(orderLevelCharges, extra.getChargeTypeId()))
                         .build())
                 .collect(Collectors.toList());
 
@@ -274,28 +325,42 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         // 计算项级额外费用
         Map<Long, List<DetailedPricingInfo.ItemLevelExtraInfo>> itemLevelExtrasByCourtId =
-                calculateItemLevelExtrasByCourtId(templates, itemLevelCharges, pricesByCourtId);
+                calculateItemLevelExtrasByCourtId(templates, itemLevelCharges, pricesByCourtId, dayType);
 
-        // 计算所有项级额外费用的总和
+        // 计算所有项级额外费用的总和（仅计算必选费用，可选费用由用户选择）
         BigDecimal itemLevelExtraAmount = itemLevelExtrasByCourtId.entrySet().stream()
                 .map(entry -> {
                     Long courtId = entry.getKey();
                     List<DetailedPricingInfo.ItemLevelExtraInfo> extras = entry.getValue();
-                    int courtSlotCount = templatesByCourtId.getOrDefault(courtId, Collections.emptyList()).size();
-
-                    BigDecimal courtExtraAmount = extras.stream()
-                            .map(DetailedPricingInfo.ItemLevelExtraInfo::getAmount)
-                            .reduce(BigDecimal.ZERO, BigDecimal::add)
-                            .multiply(new BigDecimal(courtSlotCount));
-
-                    return courtExtraAmount;
+                    List<VenueBookingSlotTemplate> courtTemplates = templatesByCourtId.getOrDefault(courtId, Collections.emptyList());
+                    Map<LocalTime, BigDecimal> courtPrices = pricesByCourtId.getOrDefault(courtId, Collections.emptyMap());
+                    
+                    // 只计算必选费用(isDefault=1)
+                    return extras.stream()
+                            .filter(extra -> Integer.valueOf(1).equals(extra.getIsDefault()))
+                            .map(extra -> {
+                                if (ChargeModeEnum.PERCENTAGE.getCode().equals(extra.getChargeMode())) {
+                                    // 百分比费用：每个槽位价格 × 百分比
+                                    return courtTemplates.stream()
+                                            .map(slot -> {
+                                                BigDecimal slotPrice = courtPrices.getOrDefault(slot.getStartTime(), BigDecimal.ZERO);
+                                                return slotPrice.multiply(extra.getFixedValue())
+                                                        .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+                                            })
+                                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                                } else {
+                                    // 固定金额费用：fixedValue × 槽位数
+                                    return extra.getFixedValue().multiply(new BigDecimal(courtTemplates.size()));
+                                }
+                            })
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // 6. 计算总价
         BigDecimal totalPrice = basePrice.add(orderLevelExtraAmount).add(itemLevelExtraAmount);
 
-        log.info("[价格计算V2] 价格计算完成 - 基础价格: {}, 订单级额外: {}, 项级额外: {}, 总价: {}",
+        log.info("[价格计算] 价格计算完成 - 基础价格: {}, 订单级额外: {}, 项级额外: {}, 总价: {}",
                 basePrice, orderLevelExtraAmount, itemLevelExtraAmount, totalPrice);
 
         // 7. 返回结果
@@ -310,8 +375,72 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                 .build();
     }
 
+    private Map<Long, Map<LocalTime, BigDecimal>> calculatePricesByCourtId(
+            Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId,
+            Map<Long, Long> courtIdToTemplateIdMap,
+            Map<Long, VenuePriceTemplate> templateMap,
+            Map<Long, List<VenuePriceTemplatePeriod>> periodsByTemplateId,
+            List<VenuePriceOverride> overrides,
+            DayType dayType,
+            LocalDate bookingDate) {
+        return templatesByCourtId.entrySet().stream()
+                .map(entry -> {
+                    Long courtId = entry.getKey();
+                    Long templateId = courtIdToTemplateIdMap.get(courtId);
+                    if (templateId == null) {
+                        log.error("[价格计算] 场地未配置价格模板，使用默认价格 - courtId: {}", courtId);
+                        return Map.entry(courtId, buildDefaultPriceMap(entry.getValue()));
+                    }
+                    VenuePriceTemplate template = templateMap.get(templateId);
+                    if (template == null) {
+                        log.warn("[价格计算] 价格模板不存在或未启用，使用默认价格 - courtId: {}, templateId: {}", courtId, templateId);
+                        return Map.entry(courtId, buildDefaultPriceMap(entry.getValue()));
+                    }
+                    List<VenuePriceTemplatePeriod> periods = periodsByTemplateId.getOrDefault(templateId, Collections.emptyList());
+                    if (periods.isEmpty()) {
+                        log.warn("[价格计算] 价格模板未配置时段，使用默认价格 - courtId: {}, templateId: {}", courtId, templateId);
+                        return Map.entry(courtId, buildDefaultPriceMap(entry.getValue()));
+                    }
+                    Map<LocalTime, BigDecimal> courtPrices = calculateCourtPriceMap(
+                            courtId, entry.getValue(), overrides, periods, dayType, bookingDate);
+                    Map<LocalTime, BigDecimal> normalizedPrices = normalizeCourtPrices(entry.getValue(), courtPrices);
+                    log.info("[价格计算] 场地价格计算完成 - courtId: {}, 模板ID: {}, 价格数: {}",
+                            courtId, templateId, normalizedPrices.size());
+                    return Map.entry(courtId, normalizedPrices);
+                })
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    private Map<LocalTime, BigDecimal> normalizeCourtPrices(
+            List<VenueBookingSlotTemplate> templates,
+            Map<LocalTime, BigDecimal> courtPrices) {
+        Map<LocalTime, BigDecimal> normalized = new HashMap<>();
+        if (courtPrices != null) {
+            normalized.putAll(courtPrices);
+        }
+        for (VenueBookingSlotTemplate template : templates) {
+            normalized.putIfAbsent(template.getStartTime(), DEFAULT_MISSING_PRICE);
+        }
+        return normalized;
+    }
+
+    private Map<LocalTime, BigDecimal> buildDefaultPriceMap(List<VenueBookingSlotTemplate> templates) {
+        Map<LocalTime, BigDecimal> prices = new HashMap<>();
+        for (VenueBookingSlotTemplate template : templates) {
+            prices.put(template.getStartTime(), DEFAULT_MISSING_PRICE);
+        }
+        return prices;
+    }
+
+    private BigDecimal getPriceOrDefault(Map<LocalTime, BigDecimal> courtPrices, LocalTime startTime) {
+        if (courtPrices != null && courtPrices.containsKey(startTime)) {
+            return courtPrices.get(startTime);
+        }
+        return DEFAULT_MISSING_PRICE;
+    }
+
     /**
-     * 为单个场地计算价格映射（内存操作，使用预加载的数据）
+     * 为单个场地计算价格映射
      *
      * @param courtId 场地ID
      * @param templates 该场地的所有槽位模板
@@ -369,8 +498,6 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
-
-
     /**
      * 判断日期类型
      */
@@ -412,22 +539,30 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
      * 计算订单级额外费用
      *
      * @param chargeTemplates
-     * @param basePrice 基础价格
+     * @param courtBasePriceMap 各场地基础价格
+     * @param orderCourtIds 订单内包含的场地ID
+     * @param dayType 日期类型
      * @return 订单级额外费用列表
      */
     private List<OrderLevelExtraQuote> calculateExtraCharges(
             List<VenueExtraChargeTemplate> chargeTemplates,
-            BigDecimal basePrice) {
+            Map<Long, BigDecimal> courtBasePriceMap,
+            Set<Long> orderCourtIds,
+            DayType dayType) {
         log.debug("[额外费用] 订单级计算 - 配置数: {}",
                 Optional.ofNullable(chargeTemplates).map(List::size).orElse(0));
         if (chargeTemplates == null || chargeTemplates.isEmpty()) {
             return Collections.emptyList();
         }
         return chargeTemplates.stream()
+                .filter(template -> isChargeApplicableOnDay(template, dayType)) // 过滤掉不适用的dayType,如周末不收费
+                .filter(template -> isOrderLevelChargeApplicableForCourts(template, orderCourtIds)) // 如果当前额外费用对所有场地都不适用,就不计算
                 .map(template -> {
-                    BigDecimal amount = calculateExtraChargeAmount(template, basePrice);
+                    // 额外费用实际的基础价格,例如1号场地100元,2号场地100元,只有1号场地需要这个额外费用,那计算百分比的基础价格只有100
+                    BigDecimal applicableBasePrice = calculateApplicableBasePrice(template, courtBasePriceMap, orderCourtIds);
+                    BigDecimal amount = calculateExtraChargeAmount(template, applicableBasePrice);
                     ChargeModeEnum chargeModeEnum = ChargeModeEnum.getByCode(template.getChargeMode());
-                    log.debug("[额外费用] 订单级 - chargeName: {}, chargeMode: {}, amount: {}",
+                    log.info("[额外费用] 订单级 - chargeName: {}, chargeMode: {}, amount: {}",
                             template.getChargeName(), chargeModeEnum, amount);
                     return OrderLevelExtraQuote.builder()
                             .chargeTypeId(template.getTemplateId())
@@ -439,13 +574,14 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                 })
                 .collect(Collectors.toList());
     }
+
     /**
      * 计算额外费用金额
      * 逻辑：
      * 1. 百分比计费：额外费用 = 基础价格 × 百分比 / 100
-     * 2. 固定金额计费：
-     *    - 订单级：返回固定金额（不受槽位数影响）
-     *    - 订单项级：返回单位金额（每个槽位的费用）
+     * 2. 固定金额计费
+     * - 订单级：返回固定金额（不受槽位数影响）
+     * - 订单项级：返回单位金额（每个槽位的费用）
      */
     private BigDecimal calculateExtraChargeAmount(
             VenueExtraChargeTemplate template,
@@ -480,8 +616,9 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
     private Map<Long, List<DetailedPricingInfo.ItemLevelExtraInfo>> calculateItemLevelExtrasByCourtId(
             List<VenueBookingSlotTemplate> templates,
             List<VenueExtraChargeTemplate> itemLevelCharges,
-            Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId) {
-        log.debug("[额外费用] 项级计算 - 配置数: {}", itemLevelCharges.size());
+            Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId,
+            DayType dayType) {
+        log.info("[额外费用] 项级计算 - 配置数: {}", itemLevelCharges.size());
         if (templates == null || templates.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -492,37 +629,117 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                         Map.Entry::getKey, // courtId
                         entry -> {
                             Long courtId = entry.getKey();
-                            List<VenueBookingSlotTemplate> courtTemplates = entry.getValue();
-                            //  计算该场地的基础总价
-                            BigDecimal courtBasePrice = courtTemplates.stream()
-                                    .map(slot -> pricesByCourtId.getOrDefault(courtId, Collections.emptyMap())
-                                            .getOrDefault(slot.getStartTime(), BigDecimal.ZERO))
-                                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
                             // 过滤并转换适用的额外费用
                             return itemLevelCharges.stream()
-                                    .filter(charge -> isChargeApplicable(charge, courtId))
-                                    .map(charge -> {
-                                        BigDecimal amount = calculateExtraChargeAmount(charge, courtBasePrice);
-                                        return DetailedPricingInfo.ItemLevelExtraInfo.builder()
-                                                .chargeTypeId(charge.getTemplateId())
-                                                .chargeName(charge.getChargeName())
-                                                .chargeMode(charge.getChargeMode())
-                                                .fixedValue(charge.getUnitAmount())
-                                                .amount(amount)
-                                                .perSlotAmount(amount)
-                                                .build();
-                                    })
+                                    .filter(charge -> isChargeApplicable(charge, courtId, dayType))
+                                    .map(charge -> DetailedPricingInfo.ItemLevelExtraInfo.builder()
+                                            .chargeTypeId(charge.getTemplateId())
+                                            .chargeName(charge.getChargeName())
+                                            .chargeMode(charge.getChargeMode())
+                                            .fixedValue(charge.getUnitAmount())
+                                            .isDefault(charge.getIsDefault())
+                                            .build())
                                     .collect(Collectors.toList());
                         }
                 ));
     }
 
     /**
-     * 抽取判断逻辑
+     * 判断逻辑
      */
-    private boolean isChargeApplicable(VenueExtraChargeTemplate charge, Long courtId) {
+    private boolean isChargeApplicable(VenueExtraChargeTemplate charge, Long courtId, DayType dayType) {
+        log.info("charge: {}, courtId: {}, dayType: {}", charge, courtId, dayType);
+        return isChargeApplicableForCourt(charge, courtId) && isChargeApplicableOnDay(charge, dayType);
+    }
+
+    private boolean isChargeApplicableForCourt(VenueExtraChargeTemplate charge, Long courtId) {
         List<Long> applicableIds = charge.getApplicableCourtIds();
         return applicableIds == null || applicableIds.isEmpty() || applicableIds.contains(courtId);
+    }
+
+    private boolean isChargeApplicableOnDay(VenueExtraChargeTemplate charge, DayType dayType) {
+        Integer applicableDays = charge.getApplicableDays();
+        if (applicableDays == null || applicableDays == 0 || dayType == null) {
+            return true;
+        }
+        int dayTypeValue = dayType.getValue();
+        if (DayType.HOLIDAY.equals(dayType)) {
+            dayTypeValue = DayType.WEEKEND.getValue();
+        }
+        return applicableDays == dayTypeValue;
+    }
+
+    /**
+     * 判断是否这个额外价格配置有适用的场地
+     */
+    private boolean isOrderLevelChargeApplicableForCourts(
+            VenueExtraChargeTemplate charge,
+            Set<Long> orderCourtIds
+    ) {
+        List<Long> applicableIds = charge.getApplicableCourtIds();
+        if (applicableIds == null || applicableIds.isEmpty()) {
+            return true;
+        }
+        if (orderCourtIds == null || orderCourtIds.isEmpty()) {
+            return false;
+        }
+        return applicableIds.stream()
+                .anyMatch(orderCourtIds::contains);
+    }
+
+
+    private BigDecimal calculateApplicableBasePrice(
+            VenueExtraChargeTemplate charge,
+            Map<Long, BigDecimal> courtBasePriceMap,
+            Set<Long> orderCourtIds) {
+        if (courtBasePriceMap == null || courtBasePriceMap.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        List<Long> applicableIds = charge.getApplicableCourtIds();
+        if (applicableIds == null || applicableIds.isEmpty()) {
+            return courtBasePriceMap.values().stream()
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        if (orderCourtIds == null || orderCourtIds.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return applicableIds.stream()
+                .filter(Objects::nonNull)
+                .filter(orderCourtIds::contains)
+                .map(courtId -> courtBasePriceMap.getOrDefault(courtId, BigDecimal.ZERO))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private Map<Long, BigDecimal> calculateCourtBasePriceMap(
+            Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId,
+            Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId) {
+        if (templatesByCourtId == null || templatesByCourtId.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return templatesByCourtId.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> {
+                            Long courtId = entry.getKey();
+                            List<VenueBookingSlotTemplate> courtTemplates = entry.getValue();
+                            Map<LocalTime, BigDecimal> courtPrices =
+                                    pricesByCourtId.getOrDefault(courtId, Collections.emptyMap());
+                            return courtTemplates.stream()
+                                    .map(template -> getPriceOrDefault(courtPrices, template.getStartTime()))
+                                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+                        }
+                ));
+    }
+
+    private Integer findExtraChargeDefault(List<VenueExtraChargeTemplate> templates, Long templateId) {
+        if (templates == null || templateId == null) {
+            return 0;
+        }
+        return templates.stream()
+                .filter(t -> templateId.equals(t.getTemplateId()))
+                .map(VenueExtraChargeTemplate::getIsDefault)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(0);
     }
 }

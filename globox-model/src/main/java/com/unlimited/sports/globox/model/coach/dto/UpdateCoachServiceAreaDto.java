@@ -35,10 +35,11 @@ public class UpdateCoachServiceAreaDto {
     private Integer coachMinHours;
 
     /**
-     * 可接受的远距离服务区域
+     * 可接受的远距离服务区域（数组）
+     * 前端传递示例：["锦江区","成华区"]
      */
-    @Size(max = 500, message = "远距离服务区域不能超过500字")
-    private String coachRemoteServiceArea;
+    @Size(max = 20, message = "远距离服务区域最多20个")
+    private List<String> coachRemoteServiceArea;
 
     /**
      * 远距离区域最低授课时长（小时）

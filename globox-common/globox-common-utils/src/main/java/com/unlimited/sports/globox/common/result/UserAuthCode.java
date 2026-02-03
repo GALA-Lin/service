@@ -56,8 +56,9 @@ public enum UserAuthCode implements ResultCode {
     INVALID_RACKET_LEVEL(2047, "球拍层级无效，必须为MODEL"),
     INACTIVE_RACKET_MODEL(2048, "球拍型号已下架或不可用"),
     INVALID_REGION(2057, "地区无效或不存在"),
-    USERNAME_INVALID_FORMAT(2058, "球盒号格式不正确，仅支持4-20位字母和数字"),
+    USERNAME_INVALID_FORMAT(2058, "球盒号格式不正确，仅支持9位数字"),
     USERNAME_ALREADY_TAKEN(2059, "球盒号已被占用，请换一个试试"),
+    USERNAME_SET_FAILED(2060, "球盒号设置失败，请稍后再试"),
 
     MISSING_USER_ID_HEADER(2049, "缺少用户ID请求头"),
     MISSING_UPLOAD_FILE(2050, "缺少上传文件"),

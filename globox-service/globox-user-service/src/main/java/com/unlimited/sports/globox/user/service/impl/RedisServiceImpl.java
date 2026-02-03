@@ -212,6 +212,15 @@ public class RedisServiceImpl implements RedisService {
     }
 
     @Override
+    public long increment(String key, long expireSeconds) {
+        Long count = stringRedisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1) {
+            stringRedisTemplate.expire(key, expireSeconds, TimeUnit.SECONDS);
+        }
+        return count == null ? 0 : count;
+    }
+
+    @Override
     public void deleteAllRefreshTokens(Long userId) {
         // 通过userId索引查找所有refresh token
         String pattern = RedisKeyConstants.REFRESH_TOKEN_USER_PREFIX + String.valueOf(userId) + ":*";

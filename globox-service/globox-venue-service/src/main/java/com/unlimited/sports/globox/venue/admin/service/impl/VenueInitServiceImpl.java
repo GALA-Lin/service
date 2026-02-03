@@ -89,18 +89,20 @@ public class VenueInitServiceImpl implements IVenueInitService {
         Long venueId = venue.getVenueId();
         log.info("场馆创建成功：venueId={}", venueId);
 
-        // 3. 创建场地
-        List<Court> courts = createCourts(venueId, dto.getCourts());
+        // 3. 创建价格模板和时段（需要在创建场地之前，以便绑定到场地）
+        PriceTemplateBindResult priceTemplateResult = createPriceTemplatesForCourts(merchantId, dto);
+        log.info("价格模板创建成功：templateIds={}", priceTemplateResult.getTemplateIds());
+
+        // 4. 创建场地（绑定价格模板ID）
+        List<Court> courts = createCourts(venueId, dto.getCourts(), priceTemplateResult);
         List<Long> courtIds = courts.stream().map(Court::getCourtId).collect(Collectors.toList());
         log.info("场地创建成功：courtIds={}", courtIds);
 
-        // 4. 创建价格模板和时段
-        Long priceTemplateId = createPriceTemplate(merchantId, dto.getPriceConfig());
-        log.info("价格模板创建成功：templateId={}", priceTemplateId);
-
-        // 5. 更新场馆的模板ID
-        venue.setTemplateId(priceTemplateId);
-        venueMapper.updateById(venue);
+        // 5. 构建场地索引到实际ID的映射（用于处理extraCharges的applicableCourtIds）
+        Map<Integer, Long> courtIndexToIdMap = new HashMap<>();
+        for (int i = 0; i < courts.size(); i++) {
+            courtIndexToIdMap.put(i, courts.get(i).getCourtId());
+        }
 
         // 6. 创建营业时间
         int businessHourCount = createBusinessHours(venueId, dto.getBusinessHours());
@@ -123,8 +125,8 @@ public class VenueInitServiceImpl implements IVenueInitService {
             log.info("第三方平台配置创建成功：venueId={}", venueId);
         }
 
-        // 10. 创建额外费用配置
-        int extraChargeCount = createExtraCharges(venueId, dto.getExtraCharges());
+        // 10. 创建额外费用配置（需要将applicableCourtIndices转换为实际courtIds）
+        int extraChargeCount = createExtraCharges(venueId, dto.getExtraCharges(), courtIndexToIdMap);
         log.info("额外费用配置创建成功：共{}条", extraChargeCount);
 
         // 返回结果
@@ -133,7 +135,7 @@ public class VenueInitServiceImpl implements IVenueInitService {
                 .venueName(venue.getName())
                 .courtIds(courtIds)
                 .courtCount(courts.size())
-                .priceTemplateId(priceTemplateId)
+                .priceTemplateId(priceTemplateResult.getDefaultTemplateId())
                 .imageUrls(imageUrls)
                 .totalSlotTemplates(totalSlots)
                 .businessHourCount(businessHourCount)
@@ -172,18 +174,81 @@ public class VenueInitServiceImpl implements IVenueInitService {
     }
 
     /**
-     * 创建场地
+     * 价格模板绑定结果
      */
-    private List<Court> createCourts(Long venueId, List<CreateVenueInitDto.CourtBasicInfoDto> courtDtos) {
+    @lombok.Data
+    @lombok.Builder
+    private static class PriceTemplateBindResult {
+        private Long defaultTemplateId;
+        private List<Long> templateIds;
+        private Map<Integer, Long> courtIndexToTemplateIdMap;
+    }
+
+    /**
+     * 为场地创建价格模板
+     * 当前实现：创建一个统一的价格模板，所有场地共用
+     */
+    private PriceTemplateBindResult createPriceTemplatesForCourts(Long merchantId, CreateVenueInitDto dto) {
+        CreateVenueInitDto.PriceConfigDto priceConfig = dto.getPriceConfig();
+        List<CreateVenueInitDto.CourtBasicInfoDto> courtDtos = dto.getCourts();
+
+        // 检查是否有场地级别的价格配置
+        boolean hasCourtLevelPriceConfig = courtDtos.stream()
+                .anyMatch(court -> court.getPriceConfig() != null);
+
+        Map<Integer, Long> courtIndexToTemplateIdMap = new HashMap<>();
+        List<Long> templateIds = new ArrayList<>();
+
+        if (hasCourtLevelPriceConfig) {
+            // 场地级别价格配置：每个场地可以有自己的价格模板,由于一键插入提前拿不到场地id,这里使用下标
+            for (int i = 0; i < courtDtos.size(); i++) {
+                CreateVenueInitDto.CourtBasicInfoDto courtDto = courtDtos.get(i);
+                CreateVenueInitDto.PriceConfigDto courtPriceConfig = courtDto.getPriceConfig();
+                if (courtPriceConfig == null) {
+                    // 如果场地没有配置价格，使用全局价格配置
+                    courtPriceConfig = priceConfig;
+                }
+                if (courtPriceConfig == null) {
+                    throw new GloboxApplicationException("场地 " + courtDto.getName() + " 未配置价格模板");
+                }
+                Long templateId = createPriceTemplate(merchantId, courtPriceConfig);
+                courtIndexToTemplateIdMap.put(i, templateId);
+                templateIds.add(templateId);
+            }
+        } else {
+            // 统一价格配置：所有场地共用一个价格模板
+            Long templateId = createPriceTemplate(merchantId, priceConfig);
+            templateIds.add(templateId);
+            for (int i = 0; i < courtDtos.size(); i++) {
+                courtIndexToTemplateIdMap.put(i, templateId);
+            }
+        }
+
+        return PriceTemplateBindResult.builder()
+                .defaultTemplateId(templateIds.get(0))
+                .templateIds(templateIds)
+                .courtIndexToTemplateIdMap(courtIndexToTemplateIdMap)
+                .build();
+    }
+
+    /**
+     * 创建场地（绑定价格模板ID）
+     */
+    private List<Court> createCourts(Long venueId, List<CreateVenueInitDto.CourtBasicInfoDto> courtDtos,
+                                      PriceTemplateBindResult priceTemplateResult) {
         List<Court> courts = new ArrayList<>();
 
-        for (CreateVenueInitDto.CourtBasicInfoDto dto : courtDtos) {
+        for (int i = 0; i < courtDtos.size(); i++) {
+            CreateVenueInitDto.CourtBasicInfoDto dto = courtDtos.get(i);
+            Long templateId = priceTemplateResult.getCourtIndexToTemplateIdMap().get(i);
+
             Court court = new Court();
             court.setVenueId(venueId);
             court.setName(dto.getName());
             court.setGroundType(dto.getGroundType());
             court.setCourtType(dto.getCourtType());
-            court.setThirdPartyCourtId(dto.getThirdPartyCourtId());  // 设置第三方场地ID（Away球场专用）
+            court.setThirdPartyCourtId(dto.getThirdPartyCourtId());
+            court.setTemplateId(templateId);  // 绑定价格模板ID
             court.setStatus(1);  // 开放状态
             courtMapper.insert(court);
             courts.add(court);
@@ -310,8 +375,12 @@ public class VenueInitServiceImpl implements IVenueInitService {
 
     /**
      * 创建额外费用配置
+     * @param venueId 场馆ID
+     * @param extraCharges 额外费用配置列表
+     * @param courtIndexToIdMap 场地索引到实际ID的映射（用于转换applicableCourtIndices）
      */
-    private int createExtraCharges(Long venueId, List<CreateVenueInitDto.ExtraChargeConfigDto> extraCharges) {
+    private int createExtraCharges(Long venueId, List<CreateVenueInitDto.ExtraChargeConfigDto> extraCharges,
+                                    Map<Integer, Long> courtIndexToIdMap) {
         if (extraCharges == null || extraCharges.isEmpty()) {
             return 0;
         }
@@ -325,7 +394,24 @@ public class VenueInitServiceImpl implements IVenueInitService {
                     charge.setChargeLevel(chargeDto.getChargeLevel());
                     charge.setChargeMode(chargeDto.getChargeMode());
                     charge.setUnitAmount(chargeDto.getUnitAmount());
-                    charge.setApplicableCourtIds(chargeDto.getApplicableCourtIds());
+
+                    // 处理applicableCourtIds：支持两种方式
+                    // 1. applicableCourtIndices - 使用场地索引（0-based），在创建时转换为实际ID
+                    // 2. applicableCourtIds - 直接使用场地ID（用于已知ID的情况）
+                    List<Long> actualCourtIds = null;
+                    if (chargeDto.getApplicableCourtIndices() != null && !chargeDto.getApplicableCourtIndices().isEmpty()) {
+                        // 将索引转换为实际的courtId
+                        actualCourtIds = chargeDto.getApplicableCourtIndices().stream()
+                                .filter(index -> courtIndexToIdMap.containsKey(index))
+                                .map(courtIndexToIdMap::get)
+                                .collect(Collectors.toList());
+                        log.info("额外费用 {} 的applicableCourtIndices {} 转换为 courtIds {}",
+                                chargeDto.getChargeName(), chargeDto.getApplicableCourtIndices(), actualCourtIds);
+                    } else if (chargeDto.getApplicableCourtIds() != null && !chargeDto.getApplicableCourtIds().isEmpty()) {
+                        actualCourtIds = chargeDto.getApplicableCourtIds();
+                    }
+                    charge.setApplicableCourtIds(actualCourtIds);
+
                     charge.setApplicableDays(chargeDto.getApplicableDays() != null ? chargeDto.getApplicableDays() : 0);
                     charge.setDescription(chargeDto.getDescription());
                     charge.setIsEnabled(chargeDto.getIsEnabled() != null ? chargeDto.getIsEnabled() : 1);

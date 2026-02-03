@@ -185,6 +185,10 @@ public class CreateVenueInitDto {
 
         @Schema(description = "第三方场地ID（仅Away球场需要）")
         private String thirdPartyCourtId;
+
+        @Valid
+        @Schema(description = "场地级别价格配置（可选，不传则使用全局价格配置）")
+        private PriceConfigDto priceConfig;
     }
 
     /**
@@ -351,8 +355,11 @@ public class CreateVenueInitDto {
         @Schema(description = "单位金额或比例（FIXED时为固定费用金额，PERCENTAGE时为百分比值，如5表示5%）")
         private BigDecimal unitAmount;
 
-        @Schema(description = "适用场地ID列表（留空表示对所有场地适用）")
+        @Schema(description = "适用场地ID列表（留空表示对所有场地适用，用于已知courtId的情况）")
         private List<Long> applicableCourtIds;
+
+        @Schema(description = "适用场地索引列表（0-based，对应courts数组中的位置，创建时自动转换为实际courtId）")
+        private List<Integer> applicableCourtIndices;
 
         @Min(value = 0, message = "适用天数范围0-2")
         @Max(value = 2, message = "适用天数范围0-2")

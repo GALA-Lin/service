@@ -1,9 +1,11 @@
 package com.unlimited.sports.globox.venue.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.unlimited.sports.globox.common.utils.LocalDateUtils;
 import com.unlimited.sports.globox.model.venue.entity.venues.ThirdPartyPlatform;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConfig;
+import com.unlimited.sports.globox.model.venue.enums.VenueThirdPartyConfigStatusEnum;
 import com.unlimited.sports.globox.service.RedisService;
 import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapter;
 import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapterFactory;
@@ -64,7 +66,9 @@ public class AwayVenueSearchService {
      */
     public Set<Long> getUnavailableAwayVenueIds(LocalDate date, LocalTime startTime, LocalTime endTime) {
         //查询所有away球场配置
-        List<VenueThirdPartyConfig> allAwayConfigs = venueThirdPartyConfigMapper.selectList(null);
+        List<VenueThirdPartyConfig> allAwayConfigs = venueThirdPartyConfigMapper.selectList(
+                new LambdaQueryWrapper<VenueThirdPartyConfig>()
+                        .eq(VenueThirdPartyConfig::getStatus, VenueThirdPartyConfigStatusEnum.NORMAL.getValue()));
         if (allAwayConfigs.isEmpty()) {
             log.info("[AwayVenueSearch] 没有away球场配置");
             return new HashSet<>();

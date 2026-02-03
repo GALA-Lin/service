@@ -42,16 +42,10 @@ public class UserSearchDocument {
     private String nickName;
 
     /**
-     * 球盒号（保留原始大小写，用于展示）
+     * 球盒号（9位数字）
      */
     @Field(type = FieldType.Keyword)
-    private String username;
-
-    /**
-     * 球盒号小写（用于搜索匹配）
-     */
-    @Field(type = FieldType.Keyword)
-    private String usernameLower;
+    private String globoxNo;
 
     /**
      * 头像URL

@@ -19,8 +19,8 @@ public class UserSearchItemVo {
     @Schema(description = "用户ID", example = "1")
     private Long userId;
 
-    @Schema(description = "球盒号（保留用户输入大小写）", example = "GloboxPlayer123")
-    private String username;
+    @Schema(description = "球盒号（9位数字）", example = "260340001")
+    private String globoxNo;
 
     @Schema(description = "昵称", example = "Ace Player")
     private String nickName;

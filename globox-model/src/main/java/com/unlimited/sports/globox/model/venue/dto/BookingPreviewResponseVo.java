@@ -64,4 +64,17 @@ public class BookingPreviewResponseVo {
      */
     @NotNull
     private List<BookingItemVo> items;
+
+
+    /**
+     * 活动当前参与人数
+     */
+    private Integer currentParticipants;
+
+    /**
+     * 活动最多参与人数
+     */
+    private Integer maxParticipants;
+
+
 }

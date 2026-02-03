@@ -34,7 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
 
@@ -283,6 +282,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
         return ApplyRefundResultVo.builder()
                 .orderNo(orderNo)
                 .isRefundable(true)
+                .isAutoRefund(autoRefund)
                 .refundApplyId(refundApplyId)
                 .applyStatus(ApplyRefundStatusEnum.PENDING)
                 .appliedAt(appliedAt)
@@ -293,16 +293,13 @@ public class OrderRefundServiceImpl implements OrderRefundService {
     /**
      * 查询指定订单或退款申请的退款进度。
      *
-     * @param dto 包含退款查询参数的对象，包括订单号和/或退款申请ID以及是否包含时间线
+     * @param dto    包含退款查询参数的对象，包括订单号和/或退款申请ID以及是否包含时间线
+     * @param userId 用户 id
      * @return 包含退款进度详情的对象，包括订单状态、申请单状态、处理金额等信息
      */
     @Override
     @Transactional(readOnly = true)
-    public GetRefundProgressVo getRefundProgress(GetRefundProgressRequestDto dto) {
-
-        Long userId = RequestContextHolder.getLongHeader(RequestHeaderConstants.HEADER_USER_ID);
-        Assert.isNotEmpty(userId, UserAuthCode.TOKEN_EXPIRED);
-
+    public GetRefundProgressVo getRefundProgress(GetRefundProgressRequestDto dto, Long userId) {
         Long refundApplyId = dto.getRefundApplyId();
         Long orderNo = dto.getOrderNo();
 
@@ -532,33 +529,7 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             refundingAmount = BigDecimal.ZERO;
         }
 
-        // 7) timeline（可选）
-        List<RefundTimelineVo> timeline = List.of();
-        if (Boolean.TRUE.equals(dto.getIncludeTimeline())) {
-            List<OrderStatusLogs> logs = orderStatusLogsMapper.selectList(
-                    Wrappers.<OrderStatusLogs>lambdaQuery()
-                            .eq(OrderStatusLogs::getOrderNo, orderNo)
-                            .eq(OrderStatusLogs::getRefundApplyId, refundApplyId)
-                            .in(OrderStatusLogs::getAction,
-                                    OrderActionEnum.REFUND_APPLY,
-                                    OrderActionEnum.REFUND_APPROVE,
-                                    OrderActionEnum.REFUND_REJECT,
-                                    OrderActionEnum.REFUND_COMPLETE)
-                            .orderByAsc(OrderStatusLogs::getCreatedAt));
-
-            timeline = (logs == null ? List.<RefundTimelineVo>of() : logs.stream()
-                    .map(statusLogs -> RefundTimelineVo.builder()
-                            .action(statusLogs.getAction())
-                            .actionName(statusLogs.getAction().getDescription())
-                            .at(statusLogs.getCreatedAt())
-                            .remark(statusLogs.getRemark())
-                            .operatorType(statusLogs.getOperatorType())
-                            .operatorId(statusLogs.getOperatorId())
-                            .operatorName(statusLogs.getOperatorName())
-                            .build()).toList());
-        }
-
-        // 8) 返回
+        // 7) 返回
         return GetRefundProgressVo.builder()
                 .orderNo(orderNo)
                 .refundApplyId(refundApplyId)
@@ -579,7 +550,6 @@ public class OrderRefundServiceImpl implements OrderRefundService {
                 .refundingAmount(refundingAmount)
                 .items(itemVos)
                 .extraCharges(extraVos)
-                .timeline(timeline)
                 .build();
     }
 

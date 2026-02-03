@@ -49,6 +49,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -197,14 +198,14 @@ public class BookingServiceImpl implements IBookingService {
         Map<Long, Court> courtMap = courts.stream()
                 .collect(Collectors.toMap(Court::getCourtId, court -> court));
 
-        DetailedPricingInfo detailedPricingInfo = venuePriceServiceImpl.calculatePricingByCourtTemplates(
+        Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId = venuePriceServiceImpl.calculateSlotPricesByCourtTemplates(
                 allTemplates,
                 venue.getVenueId(),
                 bookingDate,
                 courtMap
         );
 
-        log.debug("批量获取价格完成 - 场地数: {}", detailedPricingInfo.getPricesByCourtId().size());
+        log.debug("批量获取价格完成 - 场地数: {}", pricesByCourtId.size());
 
         // 批量获取场馆在该日期的所有活动
         List<VenueActivity> allActivities = venueActivityService.getActivitiesByVenueAndDate(
@@ -244,7 +245,7 @@ public class BookingServiceImpl implements IBookingService {
         return courts.stream()
                 .map(court -> {
                     // 为该场地提取对应的价格
-                    Map<LocalTime, BigDecimal> courtPrices = detailedPricingInfo.getPricesByCourtId()
+                    Map<LocalTime, BigDecimal> courtPrices = pricesByCourtId
                             .getOrDefault(court.getCourtId(), new HashMap<>());
 
                     return CourtSlotVo.buildVo(
@@ -284,6 +285,10 @@ public class BookingServiceImpl implements IBookingService {
         List<VenueBookingSlotTemplate> templates = context.getTemplates();
         Venue venue = context.getVenue();
         Map<Long, Court> courtMap = context.getCourtMap();
+        List<Long> selectedOrderExtraIds = normalizeSelectedOrderExtraIds(dto.getSelectedOrderExtraIds());
+        Map<Long, List<Long>> selectedItemExtraBySlotId =
+                normalizeSelectedItemExtraBySlotId(dto.getSelectedItemExtraBySlotId());
+        Set<Long> selectedOrderExtraIdSet = new HashSet<>(selectedOrderExtraIds);
 
         // 计算完整价格
         DetailedPricingInfo detailedPricingInfo;
@@ -338,6 +343,8 @@ public class BookingServiceImpl implements IBookingService {
         // 按场地分组模板，构建BookingItemVo列表
         Map<Long, List<VenueBookingSlotTemplate>> templatesByCourtId = templates.stream()
                 .collect(Collectors.groupingBy(VenueBookingSlotTemplate::getCourtId));
+        Map<Long, Map<Long, Integer>> selectedItemExtraCountByCourt =
+                buildSelectedItemExtraCountByCourt(templates, selectedItemExtraBySlotId);
 
         List<BookingItemVo> items = templatesByCourtId.entrySet().stream()
                 .map(entry -> {
@@ -391,19 +398,52 @@ public class BookingServiceImpl implements IBookingService {
 
                     // 转换为ExtraChargeVo格式
                     int slotCount = courtTemplates.size();
+                    Map<Long, Integer> selectedCountByExtraId =
+                            selectedItemExtraCountByCourt.getOrDefault(courtId, Collections.emptyMap());
                     List<ExtraChargeVo> extraCharges = itemLevelExtras.stream()
-                            .map(extra -> ExtraChargeVo.builder()
-                                    .chargeTypeId(extra.getChargeTypeId())
-                                    .chargeName(extra.getChargeName())
-                                    .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
-                                    .fixedValue(extra.getFixedValue())
-                                    .chargeAmount(extra.getAmount().multiply(new BigDecimal(slotCount)))
-                                    .build())
+                            .map(extra -> {
+                                int selectedCount = isDefaultExtra(extra.getIsDefault())
+                                        ? slotCount
+                                        : selectedCountByExtraId.getOrDefault(extra.getChargeTypeId(), 0);
+                                
+                                BigDecimal chargeAmount;
+                                if (ChargeModeEnum.PERCENTAGE.getCode().equals(extra.getChargeMode())) {
+                                    // 百分比费用：需要根据每个槽位的价格计算
+                                    // 遍历选中的槽位，用每个槽位价格 × 百分比
+                                    BigDecimal percentageRate = extra.getFixedValue(); // fixedValue存的是百分比值
+                                    chargeAmount = BigDecimal.ZERO;
+                                    for (VenueBookingSlotTemplate template : courtTemplates) {
+                                        // 判断该槽位是否选中了这个费用
+                                        boolean isSelected = isDefaultExtra(extra.getIsDefault()) ||
+                                                isSlotExtraSelected(template.getBookingSlotTemplateId(), 
+                                                        extra.getChargeTypeId(), selectedItemExtraBySlotId);
+                                        if (isSelected) {
+                                            BigDecimal slotPrice = courtPrices.getOrDefault(template.getStartTime(), BigDecimal.ZERO);
+                                            BigDecimal slotCharge = slotPrice.multiply(percentageRate)
+                                                    .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+                                            chargeAmount = chargeAmount.add(slotCharge);
+                                        }
+                                    }
+                                } else {
+                                    // 固定金额费用：fixedValue × 选中槽位数
+                                    BigDecimal fixedAmount = extra.getFixedValue() != null ? extra.getFixedValue() : BigDecimal.ZERO;
+                                    chargeAmount = fixedAmount.multiply(new BigDecimal(selectedCount));
+                                }
+                                
+                                return ExtraChargeVo.builder()
+                                        .chargeTypeId(extra.getChargeTypeId())
+                                        .chargeName(extra.getChargeName())
+                                        .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
+                                        .fixedValue(extra.getFixedValue())
+                                        .chargeAmount(chargeAmount)
+                                        .isDefault(extra.getIsDefault())
+                                        .build();
+                            })
                             .collect(Collectors.toList());
 
                     // 计算该item的实际金额（基础金额 + 订单项级附加费用）
-                    BigDecimal itemLevelExtraAmount = itemLevelExtras.stream()
-                            .map(extra -> extra.getAmount().multiply(new BigDecimal(slotCount)))
+                    BigDecimal itemLevelExtraAmount = extraCharges.stream()
+                            .map(ExtraChargeVo::getChargeAmount)
                             .reduce(BigDecimal.ZERO, BigDecimal::add);
                     BigDecimal itemAmount = itemBaseAmount.add(itemLevelExtraAmount);
 
@@ -421,21 +461,34 @@ public class BookingServiceImpl implements IBookingService {
 
         // 转换订单级额外费用为ExtraChargeVo
         List<ExtraChargeVo> orderLevelExtraCharges = detailedPricingInfo.getOrderLevelExtras().stream()
-                .map(extra -> ExtraChargeVo.builder()
-                        .chargeTypeId(extra.getChargeTypeId())
-                        .chargeName(extra.getChargeName())
-                        .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
-                        .chargeAmount(extra.getAmount())
-                        .fixedValue(extra.getFixedValue())
-                        .build())
+                .map(extra -> {
+                    boolean selected = isOrderExtraSelected(extra, selectedOrderExtraIdSet);
+                    BigDecimal chargeAmount = selected ? extra.getAmount() : BigDecimal.ZERO;
+                    return ExtraChargeVo.builder()
+                            .chargeTypeId(extra.getChargeTypeId())
+                            .chargeName(extra.getChargeName())
+                            .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
+                            .chargeAmount(chargeAmount)
+                            .fixedValue(extra.getFixedValue())
+                            .isDefault(extra.getIsDefault())
+                            .build();
+                })
                 .collect(Collectors.toList());
 
+        BigDecimal orderLevelExtraAmount = orderLevelExtraCharges.stream()
+                .map(ExtraChargeVo::getChargeAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         VenueSnapshotVo venueSnapshotVo = getVenueSnapshotVo(dto.getLatitude(), dto.getLongitude(), venue);
+        BigDecimal itemsTotalAmount = items.stream()
+                .map(BookingItemVo::getItemAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalAmount = itemsTotalAmount.add(orderLevelExtraAmount);
 
         // 构建返回结果
         return BookingPreviewResponseVo.builder()
                 .venueSnapshot(venueSnapshotVo)
-                .amount(detailedPricingInfo.getTotalPrice())
+                .amount(totalAmount)
                 .bookingDate(dto.getBookingDate())
                 .isActivity(false)
                 .activityTypeName(null)
@@ -499,6 +552,8 @@ public class BookingServiceImpl implements IBookingService {
                 .activityTypeName(activityType != null ? activityType.getTypeCode() : null)
                 .orderLevelExtraCharges(Collections.emptyList())
                 .items(Collections.singletonList(item))
+                .currentParticipants(activity.getCurrentParticipants())
+                .maxParticipants(activity.getMaxParticipants())
                 .build();
     }
 
@@ -668,6 +723,10 @@ public class BookingServiceImpl implements IBookingService {
         Venue venue = context.getVenue();
         List<VenueBookingSlotTemplate> templates = context.getTemplates();
         Map<Long, String> courtNameMap = context.getCourtNameMap();
+        List<Long> selectedOrderExtraIds = normalizeSelectedOrderExtraIds(dto.getSelectedOrderExtraIds());
+        Map<Long, List<Long>> selectedItemExtraBySlotId =
+                normalizeSelectedItemExtraBySlotId(dto.getSelectedItemExtraBySlotId());
+        Set<Long> selectedOrderExtraIdSet = new HashSet<>(selectedOrderExtraIds);
 
         // 检查Away球场权限
         if(VenueTypeEnum.AWAY.getCode().equals(venue.getVenueType())) {
@@ -734,21 +793,36 @@ public class BookingServiceImpl implements IBookingService {
                     List<DetailedPricingInfo.ItemLevelExtraInfo> itemLevelExtras =
                             detailedPricingInfo.getItemLevelExtrasByCourtId().getOrDefault(courtId, Collections.emptyList());
 
-                    // 转换为ExtraQuote格式
-                    List<ExtraQuote> recordExtras = itemLevelExtras.stream()
-                            .map(extra -> ExtraQuote.builder()
-                                    .chargeTypeId(extra.getChargeTypeId())
-                                    .chargeName(extra.getChargeName())
-                                    .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
-                                    .fixedValue(extra.getFixedValue())
-                                    .amount(extra.getAmount())  // 直接使用单位金额
-                                    .build())
-                            .collect(Collectors.toList());
-
                     // 获取该时段的单价
                     Map<LocalTime, BigDecimal> courtPrices = detailedPricingInfo.getPricesByCourtId()
                             .getOrDefault(courtId, new HashMap<>());
                     BigDecimal unitPrice = courtPrices.getOrDefault(template.getStartTime(), BigDecimal.ZERO);
+                    
+                    // 转换为ExtraQuote格式
+                    List<ExtraQuote> recordExtras = itemLevelExtras.stream()
+                            .filter(extra -> isItemExtraSelectedForSlot(
+                                    extra,
+                                    template.getBookingSlotTemplateId(),
+                                    selectedItemExtraBySlotId))
+                            .map(extra -> {
+                                BigDecimal amount;
+                                if (ChargeModeEnum.PERCENTAGE.getCode().equals(extra.getChargeMode())) {
+                                    // 百分比费用：使用该槽位价格 × 百分比
+                                    amount = unitPrice.multiply(extra.getFixedValue())
+                                            .divide(new BigDecimal(100), 2, RoundingMode.HALF_UP);
+                                } else {
+                                    // 固定金额费用：直接使用fixedValue
+                                    amount = extra.getFixedValue();
+                                }
+                                return ExtraQuote.builder()
+                                        .chargeTypeId(extra.getChargeTypeId())
+                                        .chargeName(extra.getChargeName())
+                                        .chargeMode(ChargeModeEnum.getByCode(extra.getChargeMode()))
+                                        .fixedValue(extra.getFixedValue())
+                                        .amount(amount)
+                                        .build();
+                            })
+                            .collect(Collectors.toList());
 
                     return RecordQuote.builder()
                             .recordId(record.getBookingSlotRecordId())  // 使用record的ID
@@ -768,6 +842,7 @@ public class BookingServiceImpl implements IBookingService {
 
         // 转换订单级额外费用格式
         List<OrderLevelExtraQuote> orderLevelExtraQuotes = detailedPricingInfo.getOrderLevelExtras().stream()
+                .filter(extra -> isOrderExtraSelected(extra, selectedOrderExtraIdSet))
                 .map(extra -> OrderLevelExtraQuote.builder()
                         .chargeTypeId(extra.getChargeTypeId())
                         .chargeName(extra.getChargeName())
@@ -785,6 +860,89 @@ public class BookingServiceImpl implements IBookingService {
                 .sellerId(venue.getVenueId())
                 .bookingDate(dto.getBookingDate())
                 .build();
+    }
+
+    private List<Long> normalizeSelectedOrderExtraIds(List<Long> selectedOrderExtraIds) {
+        return selectedOrderExtraIds == null ? Collections.emptyList() : selectedOrderExtraIds;
+    }
+
+    private Map<Long, List<Long>> normalizeSelectedItemExtraBySlotId(Map<Long, List<Long>> selectedItemExtraBySlotId) {
+        if (selectedItemExtraBySlotId == null || selectedItemExtraBySlotId.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return selectedItemExtraBySlotId.entrySet().stream()
+                .filter(entry -> entry.getKey() != null)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> entry.getValue() == null ? Collections.emptyList() : entry.getValue()
+                ));
+    }
+
+    private Map<Long, Map<Long, Integer>> buildSelectedItemExtraCountByCourt(
+            List<VenueBookingSlotTemplate> templates,
+            Map<Long, List<Long>> selectedItemExtraBySlotId) {
+        if (templates == null || templates.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Map<Long, Integer>> result = new HashMap<>();
+        for (VenueBookingSlotTemplate template : templates) {
+            Long templateId = template.getBookingSlotTemplateId();
+            List<Long> selectedExtras = selectedItemExtraBySlotId.getOrDefault(templateId, Collections.emptyList());
+            if (selectedExtras.isEmpty()) {
+                continue;
+            }
+            Map<Long, Integer> extraCountMap = result.computeIfAbsent(
+                    template.getCourtId(), key -> new HashMap<>());
+            for (Long extraId : selectedExtras) {
+                if (extraId == null) {
+                    continue;
+                }
+                extraCountMap.merge(extraId, 1, Integer::sum);
+            }
+        }
+        return result;
+    }
+
+    private boolean isDefaultExtra(Integer isDefault) {
+        return isDefault != null && isDefault == 1;
+    }
+
+    private boolean isOrderExtraSelected(
+            DetailedPricingInfo.OrderLevelExtraInfo extra,
+            Set<Long> selectedOrderExtraIdSet) {
+        if (extra == null) {
+            return false;
+        }
+        return isDefaultExtra(extra.getIsDefault())
+                || (selectedOrderExtraIdSet != null && selectedOrderExtraIdSet.contains(extra.getChargeTypeId()));
+    }
+
+    private boolean isItemExtraSelectedForSlot(
+            DetailedPricingInfo.ItemLevelExtraInfo extra,
+            Long slotTemplateId,
+            Map<Long, List<Long>> selectedItemExtraBySlotId) {
+        if (extra == null) {
+            return false;
+        }
+        if (isDefaultExtra(extra.getIsDefault())) {
+            return true;
+        }
+        if (slotTemplateId == null) {
+            return false;
+        }
+        List<Long> selectedExtras = selectedItemExtraBySlotId.getOrDefault(slotTemplateId, Collections.emptyList());
+        return selectedExtras.contains(extra.getChargeTypeId());
+    }
+    
+    private boolean isSlotExtraSelected(
+            Long slotTemplateId,
+            Long chargeTypeId,
+            Map<Long, List<Long>> selectedItemExtraBySlotId) {
+        if (slotTemplateId == null || chargeTypeId == null) {
+            return false;
+        }
+        List<Long> selectedExtras = selectedItemExtraBySlotId.getOrDefault(slotTemplateId, Collections.emptyList());
+        return selectedExtras.contains(chargeTypeId);
     }
 
     /**
@@ -1434,10 +1592,7 @@ public class BookingServiceImpl implements IBookingService {
                     .filter(Objects::nonNull)
                     .flatMap(List::stream)
                     .filter(Objects::nonNull)
-                    .forEach(extra -> {
-                        extra.setAmount(BigDecimal.ZERO);
-                        extra.setPerSlotAmount(BigDecimal.ZERO);
-                    });
+                    .forEach(extra -> {});
         }
 
         detailedPricingInfo.setOrderLevelExtraAmount(BigDecimal.ZERO);

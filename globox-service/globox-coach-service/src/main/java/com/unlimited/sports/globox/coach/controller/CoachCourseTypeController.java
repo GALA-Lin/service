@@ -13,6 +13,8 @@ import javax.validation.Valid;
 import java.util.List;
 import java.util.Map;
 
+import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_USER_ID;
+
 /**
  * @since 2026/1/8 10:12
  * 教练课程类型管理接口
@@ -34,7 +36,7 @@ public class CoachCourseTypeController {
     @PostMapping("/batch")
     public R<Map<Integer, Long>> batchSaveOrUpdateCourseTypes(
             @Valid @RequestBody CoachCourseTypeBatchDto batchDto,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("批量创建/更新课程类型 - coachUserId: {}, 课程数量: {}",
                 coachUserId, batchDto.getCourseTypes().size());
@@ -52,7 +54,7 @@ public class CoachCourseTypeController {
     @PostMapping
     public R<Long> saveOrUpdateCourseType(
             @Valid @RequestBody CoachCourseTypeDto dto,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("创建/更新课程类型 - coachUserId: {}, serviceType: {}",
                 coachUserId, dto.getCoachServiceTypeEnum());
@@ -68,7 +70,7 @@ public class CoachCourseTypeController {
      */
     @GetMapping
     public R<List<CoachCourseType>> getCourseTypes(
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("获取课程类型列表 - coachUserId: {}", coachUserId);
 
@@ -77,18 +79,21 @@ public class CoachCourseTypeController {
     }
 
     /**
-     * 删除课程类型
+     * 修改课程类型状态 (停用/启用)
+     * @param status 1-启用, 0-停用
      */
-    @DeleteMapping("/{courseTypeId}")
-    public R<Void> deleteCourseType(
+    @PutMapping("/{courseTypeId}/status/{status}")
+    public R<CoachCourseType> updateCourseTypeStatus(
             @PathVariable Long courseTypeId,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @PathVariable Integer status,
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
-        log.info("删除课程类型 - coachUserId: {}, courseTypeId: {}", coachUserId, courseTypeId);
+        log.info("修改课程状态请求 - 教练: {}, 课程: {}, 目标状态: {}", coachUserId, courseTypeId, status);
 
-        courseTypeService.deleteCourseType(coachUserId, courseTypeId);
-        return R.ok();
+        CoachCourseType updatedCourseType = courseTypeService.updateCourseTypeStatus(coachUserId, courseTypeId, status);
+        return R.ok(updatedCourseType);
     }
+
 
     /**
      * 启用/禁用课程类型
@@ -97,7 +102,7 @@ public class CoachCourseTypeController {
     public R<Void> toggleStatus(
             @PathVariable Long courseTypeId,
             @RequestParam Integer isActive,
-            @RequestHeader("X-User-Id") Long coachUserId) {
+            @RequestHeader(HEADER_USER_ID) Long coachUserId) {
 
         log.info("切换课程类型状态 - coachUserId: {}, courseTypeId: {}, isActive: {}",
                 coachUserId, courseTypeId, isActive);

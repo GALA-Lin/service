@@ -15,14 +15,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * @since 2026/1/12
- * 教练设置服务实现
+ * 教练设置服务实现（优化版）
+ *
+ * 优化说明：
+ * 1. 移除了 parseAreaString 方法，直接使用 List<String>
+ * 2. 简化了服务区域的处理逻辑
+ * 3. MyBatis-Plus 的 JacksonTypeHandler 自动处理 JSON 序列化/反序列化
  */
 @Slf4j
 @Service
@@ -65,11 +67,7 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
             log.warn("未知的场地类型: {}", profile.getCoachAcceptVenueType());
         }
 
-        // 解析服务区域列表
-        List<String> serviceAreaList = parseAreaString(profile.getCoachServiceArea());
-        List<String> remoteServiceAreaList = parseAreaString(profile.getCoachRemoteServiceArea());
-
-        // 构建返回结果
+        // 构建返回结果（直接使用 List<String>，无需额外解析）
         return CoachSettingsVo.builder()
                 .coachUserId(coachUserId)
                 .coachStatus(profile.getCoachStatus())
@@ -79,10 +77,11 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
                         .longitude(profile.getCoachLongitude())
                         .build())
                 .serviceAreaInfo(CoachSettingsVo.ServiceAreaInfo.builder()
-                        .coachServiceArea(profile.getCoachServiceArea())
-                        .serviceAreaList(serviceAreaList)
-                        .coachRemoteServiceArea(profile.getCoachRemoteServiceArea())
-                        .remoteServiceAreaList(remoteServiceAreaList)
+                        // 直接返回 List<String>，无需转换
+                        .serviceArea(profile.getCoachServiceArea() != null ?
+                                profile.getCoachServiceArea() : null)
+                        .remoteServiceAreaList(profile.getCoachRemoteServiceArea() != null ?
+                                profile.getCoachRemoteServiceArea() : Collections.emptyList())
                         .coachRemoteMinHours(profile.getCoachRemoteMinHours())
                         .build())
                 .basicSettingsInfo(CoachSettingsVo.BasicSettingsInfo.builder()
@@ -112,7 +111,7 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateCoachLocation(UpdateCoachLocationDto dto) {
+    public CoachProfile updateCoachLocation(UpdateCoachLocationDto dto) {
         log.info("更新教练位置 - coachUserId: {}, lat: {}, lng: {}",
                 dto.getCoachUserId(), dto.getLatitude(), dto.getLongitude());
 
@@ -139,72 +138,75 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         }
 
         log.info("教练位置更新成功 - coachUserId: {}", dto.getCoachUserId());
+        return profile;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateBasicSettings(UpdateCoachBasicSettingsDto dto) {
+    public CoachProfile updateBasicSettings(UpdateCoachBasicSettingsDto dto) {
         log.info("更新教练基本设置 - coachUserId: {}", dto.getCoachUserId());
 
         verifyCoachExists(dto.getCoachUserId());
 
-        LambdaUpdateWrapper<CoachProfile> updateWrapper =
-                new LambdaUpdateWrapper<CoachProfile>()
-                        .eq(CoachProfile::getCoachUserId, dto.getCoachUserId());
+        // ========== 核心修改：和 updateServiceArea 保持一致，先构造实体对象 ==========
+        CoachProfile updateEntity = new CoachProfile();
 
+        // 保留原有非空判断，仅当 DTO 字段不为 null 时，给实体对象赋值（避免覆盖原有有效数据）
         if (dto.getCoachTeachingStyle() != null) {
-            updateWrapper.set(CoachProfile::getCoachTeachingStyle, dto.getCoachTeachingStyle());
+            updateEntity.setCoachTeachingStyle(dto.getCoachTeachingStyle());
         }
         if (dto.getCoachSpecialtyTags() != null) {
-            updateWrapper.set(CoachProfile::getCoachSpecialtyTags, dto.getCoachSpecialtyTags());
+            updateEntity.setCoachSpecialtyTags(dto.getCoachSpecialtyTags());
         }
         if (dto.getCoachAward() != null) {
-            updateWrapper.set(CoachProfile::getCoachAward, dto.getCoachAward());
+            updateEntity.setCoachAward(dto.getCoachAward());
         }
         if (dto.getCoachTeachingYears() != null) {
-            updateWrapper.set(CoachProfile::getCoachTeachingYears, dto.getCoachTeachingYears());
+            updateEntity.setCoachTeachingYears(dto.getCoachTeachingYears());
         }
 
-        int updated = coachProfileMapper.update(null, updateWrapper);
+        int updated = coachProfileMapper.update(
+                updateEntity, // 第一个参数：要更新的字段（已赋值的实体对象）
+                new LambdaUpdateWrapper<CoachProfile>()
+                        .eq(CoachProfile::getCoachUserId, dto.getCoachUserId()) // 第二个参数：更新条件
+        );
+
         if (updated == 0) {
             throw new GloboxApplicationException("更新教练基本设置失败");
         }
 
         log.info("教练基本设置更新成功 - coachUserId: {}", dto.getCoachUserId());
+
+        return updateEntity;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateServiceArea(UpdateCoachServiceAreaDto dto) {
+    public CoachProfile updateServiceArea(UpdateCoachServiceAreaDto dto) {
         log.info("更新教练服务区域 - coachUserId: {}", dto.getCoachUserId());
 
         verifyCoachExists(dto.getCoachUserId());
 
-        LambdaUpdateWrapper<CoachProfile> updateWrapper =
+        CoachProfile updateEntity = new CoachProfile();
+        updateEntity.setCoachServiceArea(dto.getCoachServiceArea());
+        updateEntity.setCoachMinHours(dto.getCoachMinHours());
+        updateEntity.setCoachRemoteServiceArea(dto.getCoachRemoteServiceArea());
+        updateEntity.setCoachRemoteMinHours(dto.getCoachRemoteMinHours());
+
+        int updated = coachProfileMapper.update(updateEntity,
                 new LambdaUpdateWrapper<CoachProfile>()
                         .eq(CoachProfile::getCoachUserId, dto.getCoachUserId())
-                        .set(CoachProfile::getCoachServiceArea, dto.getCoachServiceArea());
+        );
 
-        if (dto.getCoachRemoteServiceArea() != null) {
-            updateWrapper.set(CoachProfile::getCoachRemoteServiceArea,
-                    dto.getCoachRemoteServiceArea());
-        }
-        if (dto.getCoachRemoteMinHours() != null) {
-            updateWrapper.set(CoachProfile::getCoachRemoteMinHours,
-                    dto.getCoachRemoteMinHours());
-        }
-
-        int updated = coachProfileMapper.update(null, updateWrapper);
         if (updated == 0) {
             throw new GloboxApplicationException("更新教练服务区域失败");
         }
-
-        log.info("教练服务区域更新成功 - coachUserId: {}", dto.getCoachUserId());
+        return updateEntity;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateCoachStatus(UpdateCoachStatusDto dto) {
+    public CoachProfile updateCoachStatus(UpdateCoachStatusDto dto) {
         log.info("更新教练状态 - coachUserId: {}, status: {}",
                 dto.getCoachUserId(), dto.getCoachStatus());
 
@@ -228,11 +230,12 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         }
 
         log.info("教练状态更新成功 - coachUserId: {}", dto.getCoachUserId());
+        return null;
     }
 
     @Transactional(rollbackFor = Exception.class)
     @Override
-    public void updateDisplaySettings(UpdateCoachDisplaySettingsDto dto) {
+    public CoachProfile updateDisplaySettings(UpdateCoachDisplaySettingsDto dto) {
         log.info("更新教练展示信息 - coachUserId: {}", dto.getCoachUserId());
 
         verifyCoachExists(dto.getCoachUserId());
@@ -262,11 +265,12 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         }
 
         log.info("教练展示信息更新成功 - coachUserId: {}", dto.getCoachUserId());
+        return null;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateVenuePreference(UpdateCoachVenuePreferenceDto dto) {
+    public CoachProfile updateVenuePreference(UpdateCoachVenuePreferenceDto dto) {
         log.info("更新教练场地偏好 - coachUserId: {}, venueType: {}",
                 dto.getCoachUserId(), dto.getCoachAcceptVenueType());
 
@@ -290,6 +294,7 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         }
 
         log.info("教练场地偏好更新成功 - coachUserId: {}", dto.getCoachUserId());
+        return null;
     }
 
     // ========== 私有辅助方法 ==========
@@ -306,19 +311,5 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         if (count == null || count == 0) {
             throw new GloboxApplicationException("教练信息不存在");
         }
-    }
-
-    /**
-     * 解析区域字符串为列表
-     */
-    private List<String> parseAreaString(String areaString) {
-        if (areaString == null || areaString.trim().isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        return Arrays.stream(areaString.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.toList());
     }
 }

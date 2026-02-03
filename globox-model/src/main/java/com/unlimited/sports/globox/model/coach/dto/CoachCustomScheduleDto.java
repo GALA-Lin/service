@@ -2,7 +2,9 @@ package com.unlimited.sports.globox.model.coach.dto;
 
 import lombok.Data;
 
+import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
+import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -24,6 +26,13 @@ public class CoachCustomScheduleDto {
      */
     @Size(max = 20, message = "学员姓名不能超过20个字符")
     private String studentName;
+
+    /**
+     * 学员手机号
+     */
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
+    private String studentPhone;
+
 
     /**
      * 日期

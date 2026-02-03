@@ -168,15 +168,4 @@ public class GetRefundProgressVo implements Serializable {
             nullable = true
     )
     private List<RefundExtraChargeProgressVo> extraCharges;
-
-    /**
-     * 时间线
-     * 来自 order_status_logs / refund_status_logs
-     */
-    @Null
-    @Schema(
-            description = "退款处理时间线",
-            nullable = true
-    )
-    private List<RefundTimelineVo> timeline;
 }

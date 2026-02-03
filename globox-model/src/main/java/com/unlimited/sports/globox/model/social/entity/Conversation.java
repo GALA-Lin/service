@@ -162,47 +162,4 @@ public class Conversation implements Serializable {
      */
     @TableField("updated_at")
     private LocalDateTime updatedAt;
-
-    /**
-     * 获取指定用户的未读计数
-     * @param userId 用户ID
-     * @return 该用户在此会话中的未读消息数
-     */
-    public Long getUnreadCountForUser(Long userId) {
-        if (userId == null) {
-            return 0L;
-        }
-        if (userId.equals(this.senderUserId)) {
-            return this.unreadCountSender != null ? this.unreadCountSender : 0L;
-        } else if (userId.equals(this.receiveUserId)) {
-            return this.unreadCountReceiver != null ? this.unreadCountReceiver : 0L;
-        }
-        return 0L;
-    }
-
-    /**
-     * 获取指定用户的对方用户ID
-     * @param userId 用户ID
-     * @return 对方用户ID
-     */
-    public Long getPeerUserId(Long userId) {
-        if (userId == null) {
-            return null;
-        }
-        if (userId.equals(this.senderUserId)) {
-            return this.receiveUserId;
-        } else if (userId.equals(this.receiveUserId)) {
-            return this.senderUserId;
-        }
-        return null;
-    }
-
-    /**
-     * 判断用户是否为会话的sender角色
-     * @param userId 用户ID
-     * @return true: sender角色, false: receiver角色或不在会话中
-     */
-    public boolean isSenderRole(Long userId) {
-        return userId != null && userId.equals(this.senderUserId);
-    }
 }

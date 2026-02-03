@@ -9,6 +9,7 @@ import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 预订预览请求DTO
@@ -41,4 +42,14 @@ public class GeneralBookingPreviewRequestDto {
      * 用户经度（用于计算距离，可选）
      */
     private Double longitude;
+
+    /**
+     * 用户选择的订单级附加费用ID列表（可选，不传视为默认不选）
+     */
+    private List<Long> selectedOrderExtraIds;
+
+    /**
+     * 用户选择的每个槽位附加费用ID列表（key=slotTemplateId）
+     */
+    private Map<Long, List<Long>> selectedItemExtraBySlotId;
 }

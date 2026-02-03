@@ -40,6 +40,12 @@ public class CoachCustomSchedule  implements Serializable {
     private String studentName;
 
     /**
+     * 学员手机号
+     */
+    @TableField(value = "student_phone")
+    private String studentPhone;
+
+    /**
      * 日程日期
      */
     @TableField(value = "schedule_date")

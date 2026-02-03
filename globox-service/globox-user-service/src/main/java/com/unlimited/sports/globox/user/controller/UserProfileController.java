@@ -5,11 +5,11 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountRequest;
-import com.unlimited.sports.globox.model.auth.dto.SetUsernameRequest;
+import com.unlimited.sports.globox.model.auth.dto.SetGloboxNoRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
-import com.unlimited.sports.globox.model.auth.vo.SetUsernameResultVo;
+import com.unlimited.sports.globox.model.auth.vo.SetGloboxNoResultVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.StyleTagVo;
@@ -345,7 +345,7 @@ public class UserProfileController {
         return R.ok(regionDubboService.listDistrictsByCity(cityEnum).getData());
     }
 
-    @PostMapping("/username")
+    @PostMapping("/globox-no")
     @Operation(summary = "设置/修改球盒号", 
             description = "设置或修改当前用户的球盒号。规则：\n" +
                     "1. 格式：4-20位字母或数字（大小写不敏感）\n" +
@@ -362,15 +362,15 @@ public class UserProfileController {
             @ApiResponse(responseCode = "2059", description = "球盒号已被占用，请换一个试试"),
             @ApiResponse(responseCode = "2067", description = "球盒号修改冷却期未到，请稍后再试")
     })
-    public R<SetUsernameResultVo> setUsername(
+    public R<SetGloboxNoResultVo> setGloboxNo(
             @Parameter(description = "用户ID（由网关自动注入，测试时可手动设置）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId,
             @Parameter(description = "设置球盒号请求", required = true)
-            @Validated @RequestBody SetUsernameRequest request) {
-        return userProfileService.setUsername(userId, request);
+            @Validated @RequestBody SetGloboxNoRequest request) {
+        return userProfileService.setGloboxNo(userId, request);
     }
 
-    @GetMapping("/search")
+    @GetMapping("/globox-no/search")
     @Operation(summary = "按球盒号搜索用户", 
             description = "根据球盒号搜索用户列表。搜索规则：\n" +
                     "1. 不区分大小写\n" +
@@ -382,14 +382,14 @@ public class UserProfileController {
             @ApiResponse(responseCode = "200", description = "搜索成功"),
             @ApiResponse(responseCode = "2021", description = "无效的Token")
     })
-    public R<UserSearchResultVo> searchUsersByUsername(
+    public R<UserSearchResultVo> searchUsersByGloboxNo(
             @Parameter(description = "搜索关键词（球盒号）", required = true, example = "globox")
             @RequestParam("keyword") String keyword,
             @Parameter(description = "页码（从1开始）", example = "1")
             @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
             @Parameter(description = "每页大小（最大100）", example = "20")
             @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize) {
-        return userProfileService.searchUsersByUsername(keyword, page, pageSize);
+        return userProfileService.searchUsersByGloboxNo(keyword, page, pageSize);
     }
 
     private RegionCityEnum toEnum(Integer code) {

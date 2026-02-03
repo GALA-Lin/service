@@ -194,18 +194,21 @@ public class Venue implements Serializable {
 
         // 预订日期不能超过最大提前天数
         long daysUntilBooking = ChronoUnit.DAYS.between(today, bookingDate);
+        if (daysUntilBooking < 0) {
+            log.warn("用户尝试查看过去的预订日期 - venueId={}, bookingDate={}, 距今{}天", venueId, bookingDate, daysUntilBooking);
+            return false;
+        }
         if (daysUntilBooking > maxAdvanceDays) {
             log.warn("用户尝试查看过远的预订日期 - venueId={}, bookingDate={}, 距今{}天，最多允许{}天",
                     venueId, bookingDate, daysUntilBooking, maxAdvanceDays);
             return false;
         }
-        // 如果预订日期就是今天，需要检查当前时间是否已经到达开放时间
-        if (bookingDate.equals(today)) {
-            if (currentTime.isBefore(slotVisibilityTime)) {
-                log.warn("用户尝试查看今日槽位，但还未到开放时间 - venueId={}, 当前时间={}, 开放时间={}",
-                        venueId, currentTime, slotVisibilityTime);
-                return false;
-            }
+
+        // 只对“最远可预订日”(today + maxAdvanceDays)做开放时间控制。
+        if (daysUntilBooking == maxAdvanceDays && currentTime.isBefore(slotVisibilityTime)) {
+            log.warn("用户尝试查看最远可预订日槽位，但还未到开放时间 - venueId={}, bookingDate={}, 当前时间={}, 开放时间={}",
+                    venueId, bookingDate, currentTime, slotVisibilityTime);
+            return false;
         }
         return true;
     }

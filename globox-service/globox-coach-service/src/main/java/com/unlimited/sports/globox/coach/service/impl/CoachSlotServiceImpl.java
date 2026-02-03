@@ -16,6 +16,7 @@ import com.unlimited.sports.globox.model.coach.entity.*;
 import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
 import com.unlimited.sports.globox.model.coach.enums.CoachSlotLockType;
 import com.unlimited.sports.globox.model.coach.enums.CoachSlotRecordStatusEnum;
+import com.unlimited.sports.globox.model.coach.enums.CourseStatusEnum;
 import com.unlimited.sports.globox.model.coach.vo.*;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -342,24 +343,23 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
 
 
     /**
-     * 查询教练日程
-     * 修正：状态过滤条件，并返回 lockedByUserId
+     * 查询教练日程（动态计算课程状态，不落库）
      */
     @Override
     public List<CoachScheduleVo> getCoachSchedule(CoachScheduleQueryDto dto) {
         log.info("查询教练日程 - coachUserId: {}, {} 至 {}",
                 dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
 
-        // 【关键修改】查询锁定的时段记录
-        // 状态1=LOCKED(用户下单锁定) 且 锁定类型1=用户下单锁定
+        // 1. 查询平台预约时段（状态=锁定 且 锁定类型=用户下单）
         List<CoachSlotRecord> slotRecords = slotRecordMapper.selectList(
                 new LambdaQueryWrapper<CoachSlotRecord>()
                         .eq(CoachSlotRecord::getCoachUserId, dto.getCoachUserId())
                         .between(CoachSlotRecord::getBookingDate, dto.getStartDate(), dto.getEndDate())
-                        .eq(CoachSlotRecord::getStatus, CoachSlotRecordStatusEnum.LOCKED.getCode()) // 状态=锁定
-                        .eq(CoachSlotRecord::getLockedType, CoachSlotLockType.USER_ORDER_LOCK.getCode()) // 用户下单锁定
+                        .eq(CoachSlotRecord::getStatus, CoachSlotRecordStatusEnum.LOCKED.getCode())
+                        .eq(CoachSlotRecord::getLockedType, CoachSlotLockType.USER_ORDER_LOCK.getCode())
         );
 
+        // 2. 批量获取学员信息
         List<Long> studentIds = slotRecords.stream()
                 .map(CoachSlotRecord::getLockedByUserId)
                 .filter(Objects::nonNull)
@@ -384,10 +384,18 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         Map<Long, UserInfoVo> finalUserMap = userMap;
         Map<Long, String> finalPhoneMap = phoneMap;
 
-        // 【关键修改】构建平台日程时添加 lockedByUserId
+        // 3. 构建平台预约日程列表（动态计算课程状态）
         List<CoachScheduleVo> schedules = slotRecords.stream()
                 .map(record -> {
                     UserInfoVo user = finalUserMap.get(record.getLockedByUserId());
+
+                    // 【关键】动态计算课程状态
+                    CourseStatusEnum statusEnum = CourseStatusEnum.calculatePlatformStatus(
+                            record.getBookingDate(),
+                            record.getStartTime(),
+                            record.getEndTime()
+                    );
+
                     return CoachScheduleVo.builder()
                             .scheduleDate(record.getBookingDate())
                             .startTime(record.getStartTime())
@@ -398,34 +406,61 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
                             .venue(record.getVenue())
                             .remark(record.getRemark())
                             .bookingId(record.getCoachSlotRecordId())
-                            .lockedByUserId(record.getLockedByUserId()) // 新增：返回锁定用户ID
+                            .lockedByUserId(record.getLockedByUserId())
+                            // 返回动态计算的课程状态
+                            .courseStatus(statusEnum.getCode())
+                            .courseStatusDesc(statusEnum.getDescription())
                             .build();
                 })
                 .collect(Collectors.toList());
 
-        // 4. 处理自定义日程 (自定义日程通常由教练输入，直接从数据库字段映射)
+        // 4. 处理自定义日程（动态计算课程状态）
         if (dto.getIncludeCustomSchedule()) {
             List<CoachCustomSchedule> customSchedules = customScheduleMapper.selectByDateRange(
                     dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
 
             schedules.addAll(customSchedules.stream()
-                    .map(custom -> CoachScheduleVo.builder()
-                            .scheduleDate(custom.getScheduleDate())
-                            .startTime(custom.getStartTime())
-                            .endTime(custom.getEndTime())
-                            .scheduleType("CUSTOM_EVENT")
-                            .studentName(custom.getStudentName())
-                            .venue(custom.getVenueName())
-                            .remark(custom.getRemark())
-                            .customScheduleId(custom.getCoachCustomScheduleId())
-                            .lockedByUserId(null) // 自定义日程没有 lockedByUserId
-                            .build())
+                    .map(custom -> {
+                        // 【关键】动态计算课程状态（考虑数据库的取消/完成状态）
+                        CourseStatusEnum statusEnum = CourseStatusEnum.calculateCustomStatus(
+                                custom.getStatus(),
+                                custom.getScheduleDate(),
+                                custom.getStartTime(),
+                                custom.getEndTime()
+                        );
+
+                        return CoachScheduleVo.builder()
+                                .scheduleDate(custom.getScheduleDate())
+                                .startTime(custom.getStartTime())
+                                .endTime(custom.getEndTime())
+                                .scheduleType("CUSTOM_EVENT")
+                                .studentName(custom.getStudentName())
+                                .studentPhone(custom.getStudentPhone())
+                                .venue(custom.getVenueName())
+                                .remark(custom.getRemark())
+                                .customScheduleId(custom.getCoachCustomScheduleId())
+                                // 返回动态计算的课程状态
+                                .courseStatus(statusEnum.getCode())
+                                .courseStatusDesc(statusEnum.getDescription())
+                                .build();
+                    })
                     .toList());
         }
 
-        // 5. 排序逻辑 (必须在所有数据收集完后执行)
-        schedules.sort(Comparator.comparing(CoachScheduleVo::getScheduleDate)
-                .thenComparing(CoachScheduleVo::getStartTime));
+        // 5. 排序：按日期、时间、状态
+        schedules.sort(Comparator
+                .comparing(CoachScheduleVo::getScheduleDate)
+                .thenComparing(CoachScheduleVo::getStartTime)
+                .thenComparing(s -> {
+                    // 状态排序：上课中 > 待上课 > 已完成 > 已取消
+                    return switch (s.getCourseStatus()) {
+                        case 2 -> 1;  // 上课中
+                        case 1 -> 2;  // 待上课
+                        case 3 -> 3;  // 已完成
+                        case 4 -> 4;  // 已取消
+                        default -> 5;
+                    };
+                }));
 
         return schedules;
     }
@@ -815,6 +850,7 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         CoachCustomSchedule schedule = new CoachCustomSchedule();
         schedule.setCoachUserId(dto.getCoachUserId());
         schedule.setStudentName(dto.getStudentName());
+        schedule.setStudentPhone(dto.getStudentPhone());
         schedule.setScheduleDate(dto.getScheduleDate());
         schedule.setStartTime(dto.getStartTime());
         schedule.setEndTime(dto.getEndTime());

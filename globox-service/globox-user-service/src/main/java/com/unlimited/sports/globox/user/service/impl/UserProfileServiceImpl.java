@@ -16,7 +16,7 @@ import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.dubbo.social.dto.UserRelationStatusDto;
 import com.unlimited.sports.globox.dubbo.user.RegionDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.RegionDto;
-import com.unlimited.sports.globox.model.auth.dto.SetUsernameRequest;
+import com.unlimited.sports.globox.model.auth.dto.SetGloboxNoRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateStarCardPortraitRequest;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserProfileRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserRacketRequest;
@@ -27,7 +27,7 @@ import com.unlimited.sports.globox.model.auth.entity.UserProfile;
 import com.unlimited.sports.globox.model.auth.entity.UserRacket;
 import com.unlimited.sports.globox.model.auth.entity.UserStyleTag;
 import com.unlimited.sports.globox.model.auth.enums.GenderEnum;
-import com.unlimited.sports.globox.model.auth.vo.SetUsernameResultVo;
+import com.unlimited.sports.globox.model.auth.vo.SetGloboxNoResultVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardPortraitVo;
 import com.unlimited.sports.globox.model.auth.vo.StarCardVo;
 import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
@@ -119,8 +119,8 @@ public class UserProfileServiceImpl implements UserProfileService {
     @DubboReference(group = "rpc")
     private RegionDubboService regionDubboService;
 
-    @Value("${user.username.cooldown-seconds:5184000}")
-    private long usernameCooldownSeconds;
+    @Value("${user.globox-no.cooldown-seconds:5184000}")
+    private long globoxNoCooldownSeconds;
 
     @Override
     public UserProfile getUserProfileById(Long userId) {
@@ -1102,18 +1102,16 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public R<SetUsernameResultVo> setUsername(Long userId, SetUsernameRequest request) {
+    public R<SetGloboxNoResultVo> setGloboxNo(Long userId, SetGloboxNoRequest request) {
         if (userId == null) {
             return R.error(UserAuthCode.USER_NOT_EXIST);
         }
-        if (request == null || !StringUtils.hasText(request.getUsername())) {
+        if (request == null || !StringUtils.hasText(request.getGloboxNo())) {
             return R.error(UserAuthCode.INVALID_PARAM);
         }
 
-        String username = request.getUsername().trim();
-        String usernameLower = username.toLowerCase(Locale.ROOT);
-
-        if (!username.matches("^[A-Za-z0-9]{4,20}$")) {
+        String globoxNo = request.getGloboxNo().trim();
+        if (!globoxNo.matches("^\\d{9}$")) {
             return R.error(UserAuthCode.USERNAME_INVALID_FORMAT);
         }
 
@@ -1122,82 +1120,63 @@ public class UserProfileServiceImpl implements UserProfileService {
             return R.error(UserAuthCode.USER_NOT_EXIST);
         }
 
-        String existingUsername = profile.getUsername();
-        String existingUsernameLower = profile.getUsernameLower();
-        LocalDateTime lastChanged = profile.getLastUsernameChangedAt();
-        boolean isFirstTime = !StringUtils.hasText(existingUsername);
+        String existingGloboxNo = profile.getGloboxNo();
+        LocalDateTime lastChanged = profile.getLastGloboxNoChangedAt();
+        boolean isFirstTime = !StringUtils.hasText(existingGloboxNo);
 
-        if (!isFirstTime) {
-            boolean sameNameIgnoreCase = existingUsername.equalsIgnoreCase(username);
-            if (sameNameIgnoreCase || (StringUtils.hasText(existingUsernameLower)
-                    && existingUsernameLower.equals(usernameLower))) {
-                if (sameNameIgnoreCase && !StringUtils.hasText(existingUsernameLower)) {
-                    try {
-                        profile.setUsernameLower(usernameLower);
-                        userProfileMapper.updateById(profile);
-                    } catch (DuplicateKeyException e) {
-                        log.warn("球盒号已被占用：userId={}, username={}, usernameLower={}",
-                                userId, username, usernameLower);
-                        return R.error(UserAuthCode.USERNAME_ALREADY_TAKEN);
-                    }
-                }
-                LocalDateTime cooldownUntil = lastChanged != null
-                        ? lastChanged.plusSeconds(usernameCooldownSeconds)
-                        : null;
-                return R.ok(SetUsernameResultVo.builder()
-                        .username(existingUsername)
-                        .cooldownUntil(cooldownUntil)
-                        .build());
-            }
+        if (!isFirstTime && existingGloboxNo.equals(globoxNo)) {
+            LocalDateTime cooldownUntil = lastChanged != null
+                    ? lastChanged.plusSeconds(globoxNoCooldownSeconds)
+                    : null;
+            return R.ok(SetGloboxNoResultVo.builder()
+                    .globoxNo(existingGloboxNo)
+                    .cooldownUntil(cooldownUntil)
+                    .build());
         }
 
         if (!isFirstTime && lastChanged != null) {
-            LocalDateTime cooldownExpire = lastChanged.plusSeconds(usernameCooldownSeconds);
+            LocalDateTime cooldownExpire = lastChanged.plusSeconds(globoxNoCooldownSeconds);
             if (LocalDateTime.now().isBefore(cooldownExpire)) {
                 log.warn("球盒号修改冷却期未到：userId={}, lastChanged={}, cooldownExpire={}",
                         userId, lastChanged, cooldownExpire);
-                SetUsernameResultVo result = SetUsernameResultVo.builder()
-                        .username(profile.getUsername())
+                SetGloboxNoResultVo result = SetGloboxNoResultVo.builder()
+                        .globoxNo(profile.getGloboxNo())
                         .cooldownUntil(cooldownExpire)
                         .build();
-                return R.<SetUsernameResultVo>error(UserAuthCode.USERNAME_COOLDOWN_NOT_EXPIRED)
+                return R.<SetGloboxNoResultVo>error(UserAuthCode.USERNAME_COOLDOWN_NOT_EXPIRED)
                         .message("球盒号修改冷却期未到，请稍后再试")
                         .data(result);
             }
         }
 
         try {
-            // Pre-check uniqueness for clearer error feedback (exclude self)
             LambdaQueryWrapper<UserProfile> uniqueCheck = new LambdaQueryWrapper<>();
-            uniqueCheck.eq(UserProfile::getUsernameLower, usernameLower)
+            uniqueCheck.eq(UserProfile::getGloboxNo, globoxNo)
                     .ne(UserProfile::getUserId, userId);
             Long exists = userProfileMapper.selectCount(uniqueCheck);
             if (exists != null && exists > 0) {
-                log.warn("球盒号已被占用：userId={}, username={}, usernameLower={}",
-                        userId, username, usernameLower);
+                log.warn("球盒号已被占用：userId={}, globoxNo={}", userId, globoxNo);
                 return R.error(UserAuthCode.USERNAME_ALREADY_TAKEN);
             }
 
-            profile.setUsername(username);
-            profile.setUsernameLower(usernameLower);
-            profile.setLastUsernameChangedAt(LocalDateTime.now());
+            profile.setGloboxNo(globoxNo);
+            profile.setLastGloboxNoChangedAt(LocalDateTime.now());
             userProfileMapper.updateById(profile);
 
-            LocalDateTime cooldownUntil = profile.getLastUsernameChangedAt()
-                    .plusSeconds(usernameCooldownSeconds);
-            return R.ok(SetUsernameResultVo.builder()
-                    .username(username)
+            LocalDateTime cooldownUntil = profile.getLastGloboxNoChangedAt()
+                    .plusSeconds(globoxNoCooldownSeconds);
+            return R.ok(SetGloboxNoResultVo.builder()
+                    .globoxNo(globoxNo)
                     .cooldownUntil(cooldownUntil)
                     .build());
         } catch (DuplicateKeyException e) {
-            log.warn("球盒号已被占用：userId={}, username={}, usernameLower={}",
-                    userId, username, usernameLower);
+            log.warn("球盒号已被占用：userId={}, globoxNo={}", userId, globoxNo);
             return R.error(UserAuthCode.USERNAME_ALREADY_TAKEN);
         }
     }
 
     @Override
-    public R<UserSearchResultVo> searchUsersByUsername(String keyword, Integer page, Integer pageSize) {
+    public R<UserSearchResultVo> searchUsersByGloboxNo(String keyword, Integer page, Integer pageSize) {
         if (!StringUtils.hasText(keyword)) {
             return R.ok(UserSearchResultVo.builder()
                     .users(Collections.emptyList())
@@ -1207,27 +1186,27 @@ public class UserProfileServiceImpl implements UserProfileService {
                     .build());
         }
 
-        String keywordLower = keyword.trim().toLowerCase(Locale.ROOT);
-        String keywordLowerEscaped = keywordLower.replace("'", "''");
+        String keywordValue = keyword.trim();
+        String keywordEscaped = keywordValue.replace("'", "''");
         int currentPage = (page != null && page > 0) ? page : 1;
         int size = (pageSize != null && pageSize > 0 && pageSize <= 100) ? pageSize : 20;
 
         Page<UserProfile> profilePage = new Page<>(currentPage, size);
         LambdaQueryWrapper<UserProfile> query = new LambdaQueryWrapper<>();
         query.and(wrapper -> wrapper
-                .eq(UserProfile::getUsernameLower, keywordLower)
+                .eq(UserProfile::getGloboxNo, keywordValue)
                 .or()
-                .likeRight(UserProfile::getUsernameLower, keywordLower)
+                .likeRight(UserProfile::getGloboxNo, keywordValue)
         );
-        query.isNotNull(UserProfile::getUsername);
+        query.isNotNull(UserProfile::getGloboxNo);
         query.eq(UserProfile::getCancelled, false);
-        query.last("ORDER BY CASE WHEN username_lower = '" + keywordLowerEscaped + "' THEN 0 ELSE 1 END, user_id ASC");
+        query.last("ORDER BY CASE WHEN globox_no = '" + keywordEscaped + "' THEN 0 ELSE 1 END, user_id ASC");
 
         Page<UserProfile> result = userProfileMapper.selectPage(profilePage, query);
         List<UserSearchItemVo> items = result.getRecords().stream()
                 .map(profileItem -> UserSearchItemVo.builder()
                         .userId(profileItem.getUserId())
-                        .username(profileItem.getUsername())
+                        .globoxNo(profileItem.getGloboxNo())
                         .nickName(profileItem.getNickName())
                         .avatarUrl(profileItem.getAvatarUrl())
                         .build())

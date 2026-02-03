@@ -30,12 +30,14 @@ public interface ICoachCourseTypeService {
     Long saveOrUpdateCourseType(CoachCourseTypeDto dto);
 
     /**
-     * 删除课程类型（软删除）
+     * 停用/启用课程
      *
-     * @param coachUserId 教练ID
-     * @param courseTypeId 课程类型ID
+     * @param coachUserId
+     * @param courseTypeId
+     * @param status
+     * @return
      */
-    void deleteCourseType(Long coachUserId, Long courseTypeId);
+    CoachCourseType updateCourseTypeStatus(Long coachUserId, Long courseTypeId, Integer status);
 
     /**
      * 获取教练的所有课程类型

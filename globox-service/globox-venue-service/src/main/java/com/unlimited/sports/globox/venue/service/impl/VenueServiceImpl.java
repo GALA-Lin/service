@@ -660,4 +660,18 @@ public class VenueServiceImpl implements IVenueService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public Integer getMaxAdvanceDays(Long venueId) {
+        Venue venue = venueMapper.selectOne(new LambdaQueryWrapper<Venue>()
+                .eq(Venue::getVenueId, venueId)
+                .eq(Venue::getStatus, VenueStatus.NORMAL.getValue()));
+
+        if (venue == null) {
+            throw new GloboxApplicationException(VenueCode.VENUE_NOT_EXIST);
+        }
+
+        Integer maxAdvanceDays = venue.getMaxAdvanceDays();
+        return maxAdvanceDays != null ? maxAdvanceDays : 0;
+    }
+
 }

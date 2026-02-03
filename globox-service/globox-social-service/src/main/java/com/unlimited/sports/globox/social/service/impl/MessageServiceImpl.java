@@ -359,7 +359,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
             String redisKey = REDIS_MESSAGE_QUEUE + fromUserId + "_" + toUserId;
             List<MessageEntity> messageEntities = (List<MessageEntity>) redisTemplate.opsForValue().get(redisKey);
 
-            if (messageEntities == null || messageEntities.size() == 0) {
+            if (messageEntities == null || messageEntities.isEmpty()) {
                 return 0;
             }
 
@@ -454,7 +454,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
 
     private void updateConversationAfterMessage(MessageEntity messageEntity, Long conversationId) {
         try {
-            // 更新会话的最后消息信息
+            // 更新最后消息
             conversationService.updateLastMessage(
                     conversationId,
                     messageEntity.getMessageId(),
@@ -462,22 +462,16 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                     messageEntity.getMessageType()
             );
 
-            // 只有当消息状态为未读时，才增加接收方的未读计数
-            if (!messageEntity.getIsRead() && messageEntity.getStatus() != MessageStatusEnum.READ) {
-                conversationService.incrementUnreadCount(
-                        conversationId,
-                        messageEntity.getFromUserId(),
-                        messageEntity.getToUserId()
-                );
-                log.info("消息未读，增加接收方未读计数，conversationId: {}", conversationId);
-            } else {
-                log.info("消息已读，不增加未读计数，conversationId: {}", conversationId);
-            }
+            // 直接增加接收方的未读计数（新消息默认未读）
+            conversationService.incrementUnreadCount(
+                    conversationId,
+                    messageEntity.getFromUserId(),
+                    messageEntity.getToUserId()
+            );
 
             log.info("会话更新成功，conversationId: {}", conversationId);
         } catch (Exception e) {
             log.error("更新会话最后消息异常", e);
-            // 这里不抛出异常，因为消息已经发送成功，只是会话更新失败
         }
     }
 
@@ -543,7 +537,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, MessageEntity
                     messageEntity.setToUserId(Long.valueOf(toAccountNode.asText()));
 
                     // 解析消息内容和类型
-                    if (msgBodyNode.isArray() && msgBodyNode.size() > 0) {
+                    if (msgBodyNode.isArray() && !msgBodyNode.isEmpty()) {
                         com.fasterxml.jackson.databind.JsonNode body = msgBodyNode.get(0);
                         String msgType = body.path("MsgType").asText();
                         messageEntity.setMessageType(convertTencentMsgTypeToEnum(msgType));

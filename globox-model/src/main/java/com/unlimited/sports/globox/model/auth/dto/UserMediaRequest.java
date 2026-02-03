@@ -14,7 +14,7 @@ import javax.validation.constraints.Pattern;
 public class UserMediaRequest {
 
     @NotNull(message = "媒体类型不能为空")
-    @Pattern(regexp = "^(IMAGE|VIDEO)$", message = "媒体类型必须是 IMAGE 或 VIDEO")
+    @Pattern(regexp = "(?i)^(IMAGE|VIDEO)$", message = "媒体类型必须是 IMAGE 或 VIDEO")
     @Schema(description = "媒体类型", example = "IMAGE", required = true, allowableValues = {"IMAGE", "VIDEO"})
     private String mediaType;
 

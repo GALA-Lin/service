@@ -57,7 +57,7 @@ public enum SocialCode implements ResultCode {
     USER_NOTE_STATISTIC_ERROR(3040,"获取用户帖子统计失败"),
 
 
-    ;
+    RALLY_NTRP_MIN_GT_MAX(3060, "NTRP最小值不能大于最大值" );
 
     private final Integer code;
     private final String message;

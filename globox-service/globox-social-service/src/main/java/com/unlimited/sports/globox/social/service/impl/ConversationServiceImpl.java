@@ -46,63 +46,61 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
 
     @Override
     public PaginationResult<ConversationVo> getConversationVoList(Long userId, Integer page, Integer pageSize) {
-        // 计算分页偏移量
         int offset = (page - 1) * pageSize;
         List<Conversation> pagedConversations =
                 conversationMapper.selectByUserIdWithPagination(userId, offset, pageSize);
 
         List<ConversationVo> conversationVoList = pagedConversations.stream()
-                // 保险起见，仍然校验是否参与该会话
-                .filter(conversation ->
-                        Objects.equals(conversation.getSenderUserId(), userId)
-                                || Objects.equals(conversation.getReceiveUserId(), userId)
-                )
+                .filter(conversation -> {
+                    // 验证用户是否在会话中
+                    return conversation.getPeerUserId(userId) != null;
+                })
                 .flatMap(conversation -> {
                     try {
-                        UserInfoVo userInfoVo = getUserInfoVo(userId, conversation);
+                        // 获取对方用户ID
+                        Long peerUserId = conversation.getPeerUserId(userId);
+
+                        // 获取对方用户信息
+                        RpcResult<UserInfoVo> rpcResult = userDubboService.getUserInfo(peerUserId);
+                        Assert.rpcResultOk(rpcResult);
+                        UserInfoVo peerUserInfo = rpcResult.getData();
+
+                        // 获取当前用户的未读数
+                        Long unreadCount = conversation.getUnreadCountForUser(userId);
+
                         ConversationVo vo = ConversationVo.builder()
-                            .conversationId(String.valueOf(conversation.getConversationId()))
-                            .conversationType(conversation.getConversationType())
-                            .receiveUserId(choice(userId, conversation))
-                            .conversationNameReceiver(userInfoVo.getNickName())
-                            .conversationAvatarReceiver(userInfoVo.getAvatarUrl())
-                            .unreadCountSender(conversation.getUnreadCountSender())
-                            .unreadCountReceiver(conversation.getUnreadCountReceiver())
-                            .isBlocked(conversation.getIsBlocked())
-                            .isPinnedSender(conversation.getIsPinnedSender())
-                            .isPinnedReceiver(conversation.getIsPinnedReceiver())
-                            .isDeletedSender(conversation.getIsDeletedSender())
-                            .isDeletedReceiver(conversation.getIsDeletedReceiver())
-                            .lastMessageId(conversation.getLastMessageId())
-                            .lastMessageContent(conversation.getLastMessageContent())
-                            .lastMessageType(conversation.getLastMessageType())
-                            .lastMessageAt(conversation.getLastMessageAt())
-                            .createdAt(conversation.getCreatedAt())
-                            .updatedAt(conversation.getUpdatedAt())
-                            .build();
+                                .conversationId(String.valueOf(conversation.getConversationId()))
+                                .conversationType(conversation.getConversationType())
+                                .receiveUserId(peerUserId)
+                                .conversationNameReceiver(peerUserInfo.getNickName())
+                                .conversationAvatarReceiver(peerUserInfo.getAvatarUrl())
+                                .unreadCountSender(conversation.getUnreadCountSender())
+                                .unreadCountReceiver(conversation.getUnreadCountReceiver())
+                                .isBlocked(conversation.getIsBlocked())
+                                .isPinnedSender(conversation.getIsPinnedSender())
+                                .isPinnedReceiver(conversation.getIsPinnedReceiver())
+                                .isDeletedSender(conversation.getIsDeletedSender())
+                                .isDeletedReceiver(conversation.getIsDeletedReceiver())
+                                .lastMessageId(conversation.getLastMessageId())
+                                .lastMessageContent(conversation.getLastMessageContent())
+                                .lastMessageType(conversation.getLastMessageType())
+                                .lastMessageAt(conversation.getLastMessageAt())
+                                .createdAt(conversation.getCreatedAt())
+                                .updatedAt(conversation.getUpdatedAt())
+                                .build();
 
                         return Stream.of(vo);
                     } catch (Exception e) {
-                        log.error(
-                                "构建 ConversationVo 失败，conversationId={}, userId={}",
-                                conversation.getConversationId(),
-                                userId,
-                                e
-                        );
+                        log.error("构建 ConversationVo 失败，conversationId={}, userId={}",
+                                conversation.getConversationId(), userId, e);
                         return Stream.empty();
                     }
                 })
                 .collect(Collectors.toList());
 
-        // 总数查询不影响 item 构建
         Long total = conversationMapper.countByUserId(userId);
 
-        return PaginationResult.build(
-                conversationVoList,
-                total != null ? total : 0L,
-                page,
-                pageSize
-        );
+        return PaginationResult.build(conversationVoList, total != null ? total : 0L, page, pageSize);
     }
 
     @Override
@@ -283,98 +281,57 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
     @Transactional(rollbackFor = Exception.class)
     public Boolean clearUnreadCount(Long userId) {
         try {
-
-            // 1. 获取用户的所有会话列表
+            // 获取用户的所有会话
             List<Conversation> conversations = conversationMapper.selectByUserId(userId);
 
             if (conversations == null || conversations.isEmpty()) {
                 return true;
             }
 
-            long totalCleared = conversations.stream()
-                    .mapToLong(conversation -> {
-                        try {
-                            // 查询该会话下用户作为接收方的未读消息
-                            List<MessageEntity> unreadMessageEntities;
+            long totalCleared = 0;
+            long totalMessagesMarked = 0;
 
-                            if (conversation.getSenderUserId().equals(userId)) {
-                                // 当前用户是发送方，查询发送方是自己、接收方是对方的未读消息
-                                unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                        userId,
-                                        conversation.getReceiveUserId()
-                                );
-                            } else {
-                                // 当前用户是接收方，查询发送方是对方、接收方是自己的未读消息
-                                unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                        conversation.getSenderUserId(),
-                                        userId
-                                );
+            for (Conversation conversation : conversations) {
+                try {
+                    // 获取对方用户ID
+                    Long peerUserId = conversation.getPeerUserId(userId);
+                    if (peerUserId == null) {
+                        log.warn("用户{}不在会话{}中，跳过", userId, conversation.getConversationId());
+                        continue;
+                    }
+
+                    // 查询对方发给我的未读消息
+                    List<MessageEntity> unreadMessages = messageMapper.selectUnreadMessages(
+                            peerUserId,  // 发送方：对方
+                            userId       // 接收方：我
+                    );
+
+                    // 标记消息为已读
+                    if (unreadMessages != null && !unreadMessages.isEmpty()) {
+                        for (MessageEntity message : unreadMessages) {
+                            if (!message.getIsRead()) {
+                                message.setIsRead(true);
+                                message.setStatus(MessageStatusEnum.READ);
+                                message.setReadTime(LocalDateTime.now());
+                                message.setUpdatedAt(LocalDateTime.now());
+                                messageMapper.updateById(message);
+                                totalMessagesMarked++;
                             }
-
-                            // 将所有未读消息标记为已读
-                            long messagesMarked = 0;
-                            if (unreadMessageEntities != null && !unreadMessageEntities.isEmpty()) {
-                                messagesMarked = unreadMessageEntities.stream()
-                                        .filter(message -> !message.getIsRead())
-                                        .peek(message -> {
-                                            message.setIsRead(true);
-                                            message.setStatus(MessageStatusEnum.READ);
-                                            message.setReadTime(LocalDateTime.now());
-                                            message.setUpdatedAt(LocalDateTime.now());
-                                            messageMapper.updateById(message);
-                                        })
-                                        .count();
-
-                                log.info("将会话{}下的{}条未读消息标记为已读",
-                                        conversation.getConversationId(), unreadMessageEntities.size());
-                            } else {
-                                log.info("会话{}下没有未读消息", conversation.getConversationId());
-                            }
-
-                            // 清除该会话的未读计数
-                            int cleared = conversationMapper.clearUnreadCount(conversation.getConversationId(), userId);
-                            if (cleared > 0) {
-                                log.info("清除会话{}的未读计数成功", conversation.getConversationId());
-                                return 1L; // 统计清除计数的会话数
-                            } else {
-                                log.info("会话{}的未读计数已经是0", conversation.getConversationId());
-                                return 0L;
-                            }
-                        } catch (Exception e) {
-                            log.error("清除会话{}的未读计数失败", conversation.getConversationId(), e);
-                            return 0L; // 继续处理其他会话
                         }
-                    })
-                    .sum();
+                        log.info("会话{}下的{}条未读消息已标记为已读",
+                                conversation.getConversationId(), unreadMessages.size());
+                    }
 
-            // 统计总的消息标记数
-            long totalMessagesMarked = conversations.stream()
-                    .mapToLong(conversation -> {
-                        try {
-                            List<MessageEntity> unreadMessageEntities;
-                            if (conversation.getSenderUserId().equals(userId)) {
-                                unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                        userId,
-                                        conversation.getReceiveUserId()
-                                );
-                            } else {
-                                unreadMessageEntities = messageMapper.selectUnreadMessages(
-                                        conversation.getSenderUserId(),
-                                        userId
-                                );
-                            }
+                    // 清除会话未读计数
+                    int cleared = conversationMapper.clearUnreadCount(conversation.getConversationId(), userId);
+                    if (cleared > 0) {
+                        totalCleared++;
+                    }
 
-                            if (unreadMessageEntities != null && !unreadMessageEntities.isEmpty()) {
-                                return unreadMessageEntities.stream()
-                                        .filter(message -> !message.getIsRead())
-                                        .count();
-                            }
-                            return 0L;
-                        } catch (Exception e) {
-                            return 0L;
-                        }
-                    })
-                    .sum();
+                } catch (Exception e) {
+                    log.error("清除会话{}的未读计数失败", conversation.getConversationId(), e);
+                }
+            }
 
             log.info("用户{}清除所有会话未读计数完成，共清除{}个会话的计数，标记{}条消息为已读",
                     userId, totalCleared, totalMessagesMarked);
@@ -386,51 +343,45 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         }
     }
 
-
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Boolean markConversationRead(Long conversationId, Long userId) {
+        log.info("开始标记会话已读: conversationId={}, userId={}", conversationId, userId);
         try {
-            // 1. 获取会话详情，确定用户角色
             Conversation conversation = conversationMapper.selectById(conversationId);
             if (conversation == null) {
                 log.info("会话不存在: {}", conversationId);
                 return false;
             }
 
-            // 2. 标记会话已读（清除未读计数）
-            int result = conversationMapper.markConversationRead(conversationId, userId);
-
-            // 3. 查询该会话下用户作为接收方的未读消息
-            List<MessageEntity> unreadMessageEntities;
-
-            if (conversation.getSenderUserId().equals(userId)) {
-                // 当前用户是发送方，不需要标记消息已读（发送方的消息本来就是已读的）
-                log.info("用户{}是会话{}的发送方，无需标记消息已读", userId, conversationId);
-                return result > 0;
-            } else {
-                // 当前用户是接收方，查询发送方是对方、接收方是当前用户的未读消息
-                unreadMessageEntities = messageMapper.selectUnreadMessages(
-                        conversation.getSenderUserId(),    // 发送方是对方
-                        conversation.getReceiveUserId()    // 接收方是当前用户
-                );
+            // 获取对方用户ID
+            Long peerUserId = conversation.getPeerUserId(userId);
+            if (peerUserId == null) {
+                log.error("用户{}不在会话{}中", userId, conversationId);
+                return false;
             }
 
-            // 4. 将所有未读消息标记为已读
-            if (unreadMessageEntities != null && !unreadMessageEntities.isEmpty()) {
-                for (MessageEntity messageEntity : unreadMessageEntities) {
-                    if (!messageEntity.getIsRead() && messageEntity.getToUserId().equals(userId)) {
-                        // 直接通过Mapper更新消息状态
-                        messageEntity.setIsRead(true);
-                        messageEntity.setStatus(MessageStatusEnum.READ);
-                        messageEntity.setReadTime(LocalDateTime.now());
-                        messageEntity.setUpdatedAt(LocalDateTime.now());
-                        messageMapper.updateById(messageEntity);
+            // 标记会话已读（清除未读计数）
+            int result = conversationMapper.markConversationRead(conversationId, userId);
+
+            // 查询对方发给我的未读消息
+            List<MessageEntity> unreadMessages = messageMapper.selectUnreadMessages(
+                    peerUserId,  // 发送方：对方
+                    userId       // 接收方：我
+            );
+
+            // 将未读消息标记为已读
+            if (unreadMessages != null && !unreadMessages.isEmpty()) {
+                for (MessageEntity message : unreadMessages) {
+                    if (!message.getIsRead() && message.getToUserId().equals(userId)) {
+                        message.setIsRead(true);
+                        message.setStatus(MessageStatusEnum.READ);
+                        message.setReadTime(LocalDateTime.now());
+                        message.setUpdatedAt(LocalDateTime.now());
+                        messageMapper.updateById(message);
                     }
                 }
-                log.info("会话{}下的{}条未读消息已标记为已读", conversationId, unreadMessageEntities.size());
-            } else {
-                log.info("会话{}下没有未读消息", conversationId);
+                log.info("会话{}下的{}条未读消息已标记为已读", conversationId, unreadMessages.size());
             }
 
             return result > 0;
@@ -508,22 +459,24 @@ public class ConversationServiceImpl extends ServiceImpl<ConversationMapper, Con
         try {
             Conversation conversation = conversationMapper.selectById(conversationId);
             if (conversation == null) {
+                log.error("会话不存在: {}", conversationId);
                 return false;
             }
 
-            // 判断发送方和接收方
-            if (conversation.getSenderUserId().equals(fromUserId) &&
-                    conversation.getReceiveUserId().equals(toUserId)) {
-                // 发送方是sender，接收方是receiver
-                int result = conversationMapper.incrementReceiverUnread(conversationId);
-                return result > 0;
-            } else if (conversation.getSenderUserId().equals(toUserId) &&
-                    conversation.getReceiveUserId().equals(fromUserId)) {
-                // 发送方是receiver，接收方是sender
+            // 使用辅助方法判断接收方角色
+            if (conversation.isSenderRole(toUserId)) {
+                // 接收方是 sender 角色，增加 sender 的未读
                 int result = conversationMapper.incrementSenderUnread(conversationId);
+                log.info("增加sender未读计数: conversationId={}, result={}", conversationId, result);
+                return result > 0;
+            } else if (conversation.getPeerUserId(toUserId) != null) {
+                // 接收方是 receiver 角色，增加 receiver 的未读
+                int result = conversationMapper.incrementReceiverUnread(conversationId);
+                log.info("增加receiver未读计数: conversationId={}, result={}", conversationId, result);
                 return result > 0;
             }
 
+            log.error("用户{}不在会话{}中", toUserId, conversationId);
             return false;
 
         } catch (Exception e) {

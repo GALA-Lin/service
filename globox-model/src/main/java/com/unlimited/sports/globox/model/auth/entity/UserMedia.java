@@ -1,7 +1,9 @@
 package com.unlimited.sports.globox.model.auth.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -71,6 +73,13 @@ public class UserMedia {
     private LocalDateTime updatedAt;
 
     /**
+     * 是否已删除：0-否，1-是
+     */
+    @TableLogic
+    @TableField("deleted")
+    private Integer deleted = 0;
+
+    /**
      * 媒体类型枚举
      */
     public enum MediaType {
@@ -86,4 +95,3 @@ public class UserMedia {
         DISABLED
     }
 }
-

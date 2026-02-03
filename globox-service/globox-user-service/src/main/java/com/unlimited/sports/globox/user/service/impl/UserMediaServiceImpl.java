@@ -6,22 +6,22 @@ import com.unlimited.sports.globox.common.enums.FileTypeEnum;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.prop.CosProperties;
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.common.result.RpcResult;
+import com.unlimited.sports.globox.common.result.SocialCode;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.utils.FilePathUtil;
 import com.unlimited.sports.globox.common.utils.FileValidationUtil;
 import com.unlimited.sports.globox.cos.CosFileUploadUtil;
+import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.model.auth.dto.UpdateUserMediaRequest;
 import com.unlimited.sports.globox.model.auth.dto.UserMediaRequest;
 import com.unlimited.sports.globox.model.auth.entity.UserMedia;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
-import com.unlimited.sports.globox.user.vo.VideoUploadVo;
-import com.unlimited.sports.globox.common.result.RpcResult;
-import com.unlimited.sports.globox.common.result.SocialCode;
-import com.unlimited.sports.globox.dubbo.social.SocialRelationDubboService;
 import com.unlimited.sports.globox.user.mapper.UserMediaMapper;
 import com.unlimited.sports.globox.user.service.FileUploadService;
 import com.unlimited.sports.globox.user.service.UserMediaService;
+import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
@@ -34,6 +34,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -66,17 +67,17 @@ public class UserMediaServiceImpl implements UserMediaService {
     private SocialRelationDubboService socialRelationDubboService;
 
     @Override
+    // 查询自己的媒体列表
     public R<List<UserMediaVo>> getUserMediaList(Long userId, String mediaType) {
         if (userId == null) {
             return R.error(UserAuthCode.USER_NOT_EXIST);
         }
 
-        // 1. 构建查询条件
         LambdaQueryWrapper<UserMedia> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(UserMedia::getUserId, userId)
-                .eq(UserMedia::getStatus, UserMedia.Status.ACTIVE);
+                .eq(UserMedia::getStatus, UserMedia.Status.ACTIVE)
+                .eq(UserMedia::getDeleted, 0);
 
-        // 2. 如果指定了媒体类型，添加过滤条件
         if (StringUtils.hasText(mediaType)) {
             try {
                 UserMedia.MediaType type = UserMedia.MediaType.valueOf(mediaType.toUpperCase());
@@ -86,13 +87,10 @@ public class UserMediaServiceImpl implements UserMediaService {
             }
         }
 
-        // 3. 按排序字段升序排序
         queryWrapper.orderByAsc(UserMedia::getSort);
 
-        // 4. 查询媒体列表
         List<UserMedia> mediaList = userMediaMapper.selectList(queryWrapper);
 
-        // 5. 转换为VO
         List<UserMediaVo> voList = mediaList.stream()
                 .map(media -> {
                     UserMediaVo vo = new UserMediaVo();
@@ -106,12 +104,12 @@ public class UserMediaServiceImpl implements UserMediaService {
     }
 
     @Override
+    // 查询他人媒体列表（含拉黑校验）
     public R<List<UserMediaVo>> getUserMediaList(Long targetUserId, String mediaType, Long viewerId) {
         if (targetUserId == null) {
             return R.error(UserAuthCode.USER_NOT_EXIST);
         }
 
-        // 1. 拉黑校验：如果查看者和目标用户不是同一人，需要检查拉黑关系
         if (viewerId != null && !viewerId.equals(targetUserId)) {
             try {
                 RpcResult<Boolean> blockedResult = socialRelationDubboService.isBlocked(viewerId, targetUserId);
@@ -120,17 +118,15 @@ public class UserMediaServiceImpl implements UserMediaService {
                     return R.error(SocialCode.USER_BLOCKED);
                 }
             } catch (Exception e) {
-                log.error("检查拉黑关系失败: viewerId={}, targetUserId={}", viewerId, targetUserId, e);
-                // RPC调用失败时，为了不影响用户体验，允许继续查询（降级处理）
+                log.error("检查拉黑关系失败 viewerId={}, targetUserId={}", viewerId, targetUserId, e);
             }
         }
 
-        // 2. 构建查询条件（与查看自己的逻辑相同）
         LambdaQueryWrapper<UserMedia> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(UserMedia::getUserId, targetUserId)
-                .eq(UserMedia::getStatus, UserMedia.Status.ACTIVE);
+                .eq(UserMedia::getStatus, UserMedia.Status.ACTIVE)
+                .eq(UserMedia::getDeleted, 0);
 
-        // 3. 如果指定了媒体类型，添加过滤条件
         if (StringUtils.hasText(mediaType)) {
             try {
                 UserMedia.MediaType type = UserMedia.MediaType.valueOf(mediaType.toUpperCase());
@@ -140,13 +136,10 @@ public class UserMediaServiceImpl implements UserMediaService {
             }
         }
 
-        // 4. 按排序字段升序排序
         queryWrapper.orderByAsc(UserMedia::getSort);
 
-        // 5. 查询媒体列表
         List<UserMedia> mediaList = userMediaMapper.selectList(queryWrapper);
 
-        // 6. 转换为VO
         List<UserMediaVo> voList = mediaList.stream()
                 .map(media -> {
                     UserMediaVo vo = new UserMediaVo();
@@ -161,6 +154,7 @@ public class UserMediaServiceImpl implements UserMediaService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    // 保存用户媒体列表（全量替换）
     public R<String> updateUserMedia(Long userId, UpdateUserMediaRequest request) {
         if (userId == null) {
             return R.error(UserAuthCode.USER_NOT_EXIST);
@@ -168,34 +162,22 @@ public class UserMediaServiceImpl implements UserMediaService {
 
         List<UserMediaRequest> mediaList = request.getMediaList();
 
-        // 1. 空列表 = 清空所有媒体
         if (CollectionUtils.isEmpty(mediaList)) {
             LambdaQueryWrapper<UserMedia> deleteQuery = new LambdaQueryWrapper<>();
             deleteQuery.eq(UserMedia::getUserId, userId);
-            userMediaMapper.delete(deleteQuery);
+            UserMedia updateEntity = new UserMedia();
+            updateEntity.setDeleted(1);
+            updateEntity.setStatus(UserMedia.Status.DISABLED);
+            userMediaMapper.update(updateEntity, deleteQuery);
             log.info("用户媒体列表已清空：userId={}", userId);
             return R.ok("媒体列表已清空");
         }
 
-        // 2. 校验媒体类型和数量限制
         int videoCount = 0;
         Set<Integer> sortSet = new HashSet<>();
 
         for (UserMediaRequest mediaReq : mediaList) {
-            // 2.1 校验媒体类型
             if (!StringUtils.hasText(mediaReq.getMediaType())) {
-                throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
-            }
-
-            try {
-                UserMedia.MediaType type = UserMedia.MediaType.valueOf(mediaReq.getMediaType().toUpperCase());
-                if (type == UserMedia.MediaType.VIDEO) {
-                    videoCount++;
-                    if (!StringUtils.hasText(mediaReq.getCoverUrl())) {
-                        throw new GloboxApplicationException(UserAuthCode.VIDEO_COVER_REQUIRED);
-                    }
-                }
-            } catch (IllegalArgumentException e) {
                 throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
             }
 
@@ -203,7 +185,18 @@ public class UserMediaServiceImpl implements UserMediaService {
                 throw new GloboxApplicationException(UserAuthCode.MEDIA_URL_REQUIRED);
             }
 
-            // 2.2 校验排序值不能重复
+            try {
+                UserMedia.MediaType type = UserMedia.MediaType.valueOf(mediaReq.getMediaType().toUpperCase());
+                if (type == UserMedia.MediaType.VIDEO) {
+                    videoCount++;
+                    if (!StringUtils.hasText(mediaReq.getCoverUrl()) || isVideoCover(mediaReq.getCoverUrl(), mediaReq.getUrl())) {
+                        mediaReq.setCoverUrl(buildSnapshotUrl(mediaReq.getUrl()));
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                throw new GloboxApplicationException(UserAuthCode.INVALID_PARAM);
+            }
+
             int sortValue = mediaReq.getSort() != null ? mediaReq.getSort() : 0;
             if (sortSet.contains(sortValue)) {
                 throw new GloboxApplicationException(UserAuthCode.MEDIA_SORT_DUPLICATE);
@@ -211,7 +204,6 @@ public class UserMediaServiceImpl implements UserMediaService {
             sortSet.add(sortValue);
         }
 
-        // 2.3 校验数量限制
         if (mediaList.size() > MAX_MEDIA_COUNT) {
             throw new GloboxApplicationException(UserAuthCode.MEDIA_COUNT_EXCEEDED);
         }
@@ -219,12 +211,13 @@ public class UserMediaServiceImpl implements UserMediaService {
             throw new GloboxApplicationException(UserAuthCode.VIDEO_COUNT_EXCEEDED);
         }
 
-        // 3. 全量替换：先删除用户所有现有媒体记录
         LambdaQueryWrapper<UserMedia> deleteQuery = new LambdaQueryWrapper<>();
         deleteQuery.eq(UserMedia::getUserId, userId);
-        userMediaMapper.delete(deleteQuery);
+        UserMedia updateEntity = new UserMedia();
+        updateEntity.setDeleted(1);
+        updateEntity.setStatus(UserMedia.Status.DISABLED);
+        userMediaMapper.update(updateEntity, deleteQuery);
 
-        // 4. 批量插入新记录
         for (UserMediaRequest mediaReq : mediaList) {
             UserMedia userMedia = new UserMedia();
             userMedia.setUserId(userId);
@@ -235,6 +228,7 @@ public class UserMediaServiceImpl implements UserMediaService {
             userMedia.setSize(mediaReq.getSize());
             userMedia.setSort(mediaReq.getSort() != null ? mediaReq.getSort() : 0);
             userMedia.setStatus(UserMedia.Status.ACTIVE);
+            userMedia.setDeleted(0);
             userMediaMapper.insert(userMedia);
         }
 
@@ -242,13 +236,28 @@ public class UserMediaServiceImpl implements UserMediaService {
         return R.ok("媒体列表更新成功");
     }
 
+    private static boolean isVideoCover(String coverUrl, String videoUrl) {
+        if (!StringUtils.hasText(coverUrl)) {
+            return false;
+        }
+        if (StringUtils.hasText(videoUrl) && coverUrl.equals(videoUrl)) {
+            return true;
+        }
+        String lower = coverUrl.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".m4v");
+    }
+
+    private static String buildSnapshotUrl(String fileUrl) {
+        String separator = fileUrl.contains("?") ? "&" : "?";
+        return fileUrl + separator + "ci-process=snapshot&time=0&format=jpg";
+    }
+
     @Override
+    // 上传媒体图片
     public R<FileUploadVo> uploadMediaImage(MultipartFile file) {
         try {
-            // 调用文件上传服务上传图片
             String fileUrl = fileUploadService.uploadFile(file, FileTypeEnum.USER_MEDIA_IMAGE);
 
-            // 构建返回结果
             FileUploadVo vo = new FileUploadVo(
                     fileUrl,
                     file.getOriginalFilename(),
@@ -267,6 +276,7 @@ public class UserMediaServiceImpl implements UserMediaService {
     }
 
     @Override
+    // 上传媒体视频
     public R<VideoUploadVo> uploadMediaVideo(MultipartFile file) {
         try {
             if (file == null || file.isEmpty()) {
@@ -315,7 +325,6 @@ public class UserMediaServiceImpl implements UserMediaService {
                     cosProperties.getRegion()
             );
 
-            // 构建返回结果
             VideoUploadVo vo = new VideoUploadVo(
                     fileUrl,
                     file.getOriginalFilename(),
@@ -334,4 +343,3 @@ public class UserMediaServiceImpl implements UserMediaService {
         }
     }
 }
-

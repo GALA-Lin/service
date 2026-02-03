@@ -12,7 +12,7 @@ import com.unlimited.sports.globox.model.social.dto.MessageDto;
 import com.unlimited.sports.globox.model.social.entity.*;
 import com.unlimited.sports.globox.model.social.vo.ConversationVo;
 import com.unlimited.sports.globox.model.social.vo.MessageListVo;
-import com.unlimited.sports.globox.model.social.vo.MessageVo;
+import com.unlimited.sports.globox.social.mapper.ConversationMapper;
 import com.unlimited.sports.globox.social.service.ConversationService;
 import com.unlimited.sports.globox.social.service.MessageService;
 import com.unlimited.sports.globox.social.service.TencentCloudImService;
@@ -42,6 +42,9 @@ import static com.unlimited.sports.globox.common.result.UserAuthCode.TOKEN_EXPIR
 @Tag(name = "聊天模块", description = "单聊、会话、消息相关接口")
 @SecurityRequirement(name = "bearerAuth")
 public class ChatController {
+
+    @Autowired
+    private ConversationMapper conversationMapper;
 
     @Autowired
     private TencentCloudImService tencentCloudImService;
@@ -310,7 +313,7 @@ public class ChatController {
             }
 
             // 如果当前发送方是被屏蔽者
-            if (blockedByUserId != null && !blockedByUserId.equals(messageDto.getFromUserId())) {
+            if (blockedByUserId != null) {
                 log.warn("用户{}尝试向屏蔽了TA的用户{}发送消息",
                         messageDto.getFromUserId(), messageDto.getToUserId());
                 return R.<Map<String, Object>>error().message("你已被对方屏蔽，无法发送消息");
@@ -543,7 +546,9 @@ public class ChatController {
             if (!conversation.getSenderUserId().equals(userId) && !conversation.getReceiveUserId().equals(userId)) {
                 return R.<MessageListVo>error().message("无权访问此会话");
             }
-
+            // 标记会话已读
+            int cleared = conversationMapper.clearUnreadCount(conversation.getConversationId(), userId);
+            log.warn("用户：{}标记会话已读条数：{}",userId,cleared );
             MessageListVo messageListByConversation = messageService.getMessageListByConversation(conversationId,
                     page,
                     pageSize,
@@ -564,18 +569,12 @@ public class ChatController {
      * GET /social/chat/unread/count
      */
     @GetMapping("/unread/count")
-    @Operation(summary = "获取未读消息数量", description = "获取当前用户所有会话的未读消息总数和每个会话的未读数")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "查询成功"),
-            @ApiResponse(responseCode = "2021", description = "无效的Token")
-    })
     public R<Map<String, Object>> getUnreadCount(
-            @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long userId) {
         try {
             Map<String, Object> result = new HashMap<>();
 
-            // 获取用户所有会话，查询每个会话的未读数量
+            // 获取用户所有会话
             PaginationResult<Conversation> conversationResult =
                     conversationService.getConversationList(userId, 1, 1000);
 
@@ -588,8 +587,8 @@ public class ChatController {
                     Map<String, Object> convInfo = new HashMap<>();
                     convInfo.put("conversationId", conv.getConversationId());
 
-                    Long unreadCount = conv.getSenderUserId().equals(userId) ?
-                            conv.getUnreadCountSender() : conv.getUnreadCountReceiver();
+                    // 使用辅助方法获取未读数
+                    Long unreadCount = conv.getUnreadCountForUser(userId);
 
                     convInfo.put("unreadCount", unreadCount);
                     conversationUnreadList.add(convInfo);

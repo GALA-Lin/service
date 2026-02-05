@@ -129,7 +129,10 @@ public class AuthController {
         return authService.setPassword(request);
     }
 
-    @PostMapping("/password/login")
+    /**
+     * 暂不开放密码相关接口
+     */
+//    @PostMapping("/password/login")
     @Operation(summary = "手机号密码登录", description = "使用手机号+密码登录，用户必须已设置密码。\n" +
             "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
             "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
@@ -156,7 +159,10 @@ public class AuthController {
         return authService.appleLogin(request);
     }
 
-    @PostMapping("/password/reset")
+    /**
+     * 暂不开放密码相关接口
+     */
+//    @PostMapping("/password/reset")
     @Operation(summary = "找回密码", description = "通过验证码重置密码，重置后清除所有Refresh Token")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "重置成功"),
@@ -168,7 +174,10 @@ public class AuthController {
         return authService.resetPassword(request);
     }
 
-    @PostMapping("/password/change")
+    /**
+     * 暂不开放密码相关接口
+     */
+//    @PostMapping("/password/change")
     @Operation(summary = "修改密码", description = "已登录用户修改密码，需要验证旧密码，修改后清除所有Refresh Token。\n" +
             "注意：如果该接口非 App 也会调用，必须携带 X-Client-Type 请求头，否则会按 App 校验 jti（可能导致失败）。")
     @SecurityRequirement(name = "bearerAuth")

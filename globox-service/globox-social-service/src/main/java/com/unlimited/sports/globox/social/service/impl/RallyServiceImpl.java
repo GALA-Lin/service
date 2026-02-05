@@ -51,6 +51,8 @@ import java.time.LocalDateTime;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.unlimited.sports.globox.model.social.entity.RallyPostsStatusEnum.fromCode;
+
 
 /**
  * 社交活动服务实现类
@@ -108,7 +110,7 @@ public class RallyServiceImpl implements RallyService {
         }
         log.info("筛选地址 - areaList:{}", areaList);
         List<RallyPosts> rallyPostsList = rallyPostsMapper.getRallyPostsList(areaList, rallyQueryDto.getTimeRange(), rallyQueryDto.getGenderLimit(),rallyQueryDto.getNtrpMin(),rallyQueryDto.getNtrpMax(),rallyQueryDto.getActivityType(), offset, rallyQueryDto.getPageSize());
-        syncRallyStatus(rallyPostsList);
+
         List<RallyPostsVo> rallyPostsVos = rallyPostsToRallyPostsVo(rallyPostsList);
         Long count = rallyPostsMapper.countRallyPostsList(areaList, rallyQueryDto.getTimeRange(), rallyQueryDto.getGenderLimit(),rallyQueryDto.getNtrpMin(),rallyQueryDto.getNtrpMax(),rallyQueryDto.getActivityType());
         PaginationResult<RallyPostsVo> rallyList = PaginationResult.build(
@@ -137,15 +139,6 @@ public class RallyServiceImpl implements RallyService {
         boolean isOwner = false;
         if (rallyPosts == null) {
             return null;
-        }
-
-        // 单条数据检查并同步状态
-        if (rallyPosts.getRallyStatus() != RallyPostsStatusEnum.CANCELLED.getCode()
-                && rallyPosts.getRallyStatus() != RallyPostsStatusEnum.COMPLETED.getCode()
-                && isRallyExpired(rallyPosts)) {
-
-            rallyPosts.setRallyStatus(RallyPostsStatusEnum.COMPLETED.getCode());
-            rallyPostsMapper.updateById(rallyPosts);
         }
 
         if (rallyPosts.getInitiatorId().equals(rallyApplicantId)){
@@ -340,6 +333,15 @@ public class RallyServiceImpl implements RallyService {
             log.error("[约球取消] 发送参与者通知失败 - rallyId={}", rallyId, e);
         }
     }
+    private boolean isRallyExpired(RallyPosts rally) {
+        if (rally.getRallyEventDate() == null || rally.getRallyStartTime() == null) {
+            return false;
+        }
+        // 合并日期和开始时间
+        LocalDateTime startDateTime = LocalDateTime.of(rally.getRallyEventDate(), rally.getRallyStartTime());
+        // 如果当前时间已经过了开始时间，则视为过期/已完成
+        return startDateTime.isBefore(LocalDateTime.now());
+    }
 
     /**
      * 申请参加社交活动
@@ -356,6 +358,9 @@ public class RallyServiceImpl implements RallyService {
                         .eq(RallyApplication::getRallyPostId, postId)
                         .eq(RallyApplication::getApplicantId, userId)
         );
+        if(isRallyExpired(rallyPostsMapper.selectById(postId))){
+            throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_JOIN_HAS_EXPIRED.getCode(), RallyResultEnum.RALLY_POSTS_JOIN_HAS_EXPIRED.getMessage());
+        }
         //判断是否已经申请且未取消
         if (rallyApplicationOlder != null && rallyApplicationOlder.getStatus() != RallyApplyStatusEnum.CANCELLED.getCode()) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_JOIN_HAS_APPLIED.getCode(), RallyResultEnum.RALLY_POSTS_JOIN_HAS_APPLIED.getMessage());
@@ -401,7 +406,7 @@ public class RallyServiceImpl implements RallyService {
         }
         // 判断Ntrp是否符合要求
         double userNtrp = applicantInfo.getUserNtrpLevel();
-        if (userNtrp < rallyPosts.getRallyNtrpMin() || userNtrp > rallyPosts.getRallyNtrpMax()) {
+        if (userNtrp <= rallyPosts.getRallyNtrpMin() || userNtrp >= rallyPosts.getRallyNtrpMax()) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_JOIN_NTRP_LIMIT.getMessage());
         }
 
@@ -843,7 +848,7 @@ public class RallyServiceImpl implements RallyService {
                             .ntrpMax(rallyPosts.getRallyNtrpMax())
                             .rallyTotalPeople(rallyPosts.getRallyTotalPeople())
                             .rallyStatusCode(rallyPosts.getRallyStatus())
-                            .rallyStatus(getRallyStatus(rallyPosts))
+                            .rallyStatus(fromCode(rallyPosts.getRallyStatus()).getDescription())
                             .rallyParticipants(rallyParticipantVos(rallyPosts.getRallyPostId()))
                             .createdAt(rallyPosts.getRallyCreatedAt())
                             .currentPeopleCount(rallyPosts.getRallyTotalPeople() - rallyPosts.getRallyRemainingPeople())
@@ -1081,75 +1086,6 @@ public class RallyServiceImpl implements RallyService {
         List<RallyPostsVo> rallyPostsVos = rallyPostsToRallyPostsVo(cancelledList);
         int total = rallyPostsMapper.countCancelledActivities(userId);
         return PaginationResult.build(rallyPostsVos, total, page, pageSize);
-    }
-
-
-    /**
-     * 获取 rallyPosts 的状态
-     * @param rallyPosts rallyPosts
-     * @return 状态描述
-     */
-    private String getRallyStatus(RallyPosts rallyPosts) {
-        int rallyStatus = rallyPosts.getRallyStatus();
-        // 如果数据库已经是 COMPLETED，直接返回
-        if (rallyStatus == RallyPostsStatusEnum.COMPLETED.getCode()) {
-            return RallyPostsStatusEnum.COMPLETED.getDescription();
-        }
-
-        // 如果数据库已经是 CANCELLED，直接返回
-        if (rallyStatus == RallyPostsStatusEnum.CANCELLED.getCode()) {
-            return RallyPostsStatusEnum.CANCELLED.getDescription();
-        }
-
-        // 如果日期已过且状态不是已取消，则判定为已完成
-        if (isRallyExpired(rallyPosts)) {
-            return RallyPostsStatusEnum.COMPLETED.getDescription();
-        }
-
-        return RallyPostsStatusEnum.fromCode(rallyStatus).getDescription();
-    }
-
-    /**
-     * 判断球局是否已过期/已开始
-     */
-    private boolean isRallyExpired(RallyPosts rally) {
-        if (rally.getRallyEventDate() == null || rally.getRallyStartTime() == null) {
-            return false;
-        }
-        // 合并日期和开始时间
-        LocalDateTime startDateTime = LocalDateTime.of(rally.getRallyEventDate(), rally.getRallyStartTime());
-        // 如果当前时间已经过了开始时间，则视为过期/已完成
-        return startDateTime.isBefore(LocalDateTime.now());
-    }
-
-    /**
-     * 查询时动态更新数据库状态
-     * @param rallyPostsList
-     */
-    private void syncRallyStatus(List<RallyPosts> rallyPostsList) {
-        if (ObjectUtils.isEmpty(rallyPostsList)) return;
-
-        List<Long> expiredIds = rallyPostsList.stream()
-                .filter(rally -> rally.getRallyStatus() != RallyPostsStatusEnum.CANCELLED.getCode()
-                        && rally.getRallyStatus() != RallyPostsStatusEnum.COMPLETED.getCode()
-                        && isRallyExpired(rally))
-                .map(RallyPosts::getRallyPostId)
-                .collect(Collectors.toList());
-        log.info("过期球局： {}", expiredIds);
-        if (!expiredIds.isEmpty()) {
-            // 批量更新数据库为已完成状态
-            rallyPostsMapper.update(null, Wrappers.<RallyPosts>lambdaUpdate()
-                    .set(RallyPosts::getRallyStatus, RallyPostsStatusEnum.COMPLETED.getCode())
-                    .set(RallyPosts::getRallyUpdatedAt, LocalDateTime.now())
-                    .in(RallyPosts::getRallyPostId, expiredIds));
-            log.info("过期球局已更新为已完成状态 - {}", expiredIds);
-            // 同步内存中的状态，确保本次请求返回的数据是最新的
-            rallyPostsList.forEach(rally -> {
-                if (expiredIds.contains(rally.getRallyPostId())) {
-                    rally.setRallyStatus(RallyPostsStatusEnum.COMPLETED.getCode());
-                }
-            });
-        }
     }
 
     /**

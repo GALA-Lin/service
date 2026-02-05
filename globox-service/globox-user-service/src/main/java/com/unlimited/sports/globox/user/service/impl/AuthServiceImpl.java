@@ -74,7 +74,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 /**
@@ -271,7 +270,8 @@ public class AuthServiceImpl implements AuthService {
         AuthUser authUser = loginResult.authUser();
         boolean created = loginResult.created();
         boolean reactivated = loginResult.reactivated();
-        boolean isNewUser = created || reactivated;
+        boolean appFirstLogin = loginResult.appFirstLogin();
+        boolean isNewUser = created || reactivated || appFirstLogin;
 
         // 7. 生成JWT Token
         String clientTypeHeader = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
@@ -425,8 +425,8 @@ public class AuthServiceImpl implements AuthService {
                     .avatarUrl(resolveAvatarUrlForResponse(userProfile != null ? userProfile.getAvatarUrl() : null, clientType))
                     .build();
 
-            // 已绑定直接登录（除非是重新激活的账号）
-            boolean isNewUser = reactivated;
+            // 已绑定直接登录（除非是重新激活的账号或第一次登录 app 的账号）
+            boolean isNewUser = reactivated || loginResult.appFirstLogin;
 
             // 构建响应（token 为纯 JWT 字符串）
             WechatLoginResponse response = WechatLoginResponse.builder()
@@ -447,7 +447,6 @@ public class AuthServiceImpl implements AuthService {
             // 5. 未绑定：判断客户端类型
             boolean isApp = isAppClient();
 
-            
             if (isApp) {
                 log.info("app wechat identity miss: identifier={}, openid={}, unionid={}", identifier, openid, unionid);
                 // App端：直接创建新用户并登录 - 使用统一方法
@@ -459,7 +458,8 @@ public class AuthServiceImpl implements AuthService {
                 AuthUser authUser = loginResult.authUser();
                 boolean created = loginResult.created();
                 boolean reactivated = loginResult.reactivated();
-                boolean isNewUser = created || reactivated;
+                boolean appFirstLogin = loginResult.appFirstLogin();
+                boolean isNewUser = created || reactivated || appFirstLogin;
 
                 boolean isThirdParty = isThirdPartyClient();
 
@@ -567,13 +567,13 @@ public class AuthServiceImpl implements AuthService {
         // 1. 验证临时凭证并解析
         String tempTokenValue = redisService.getWechatTempToken(tempToken);
         Assert.isNotEmpty(tempTokenValue, UserAuthCode.TEMP_TOKEN_EXPIRED);
-        
+
         // 解析临时凭证（格式：identifier|openid|clientType）
         String[] parts = tempTokenValue.split("\\|");
         String identifier = parts[0];
         String openid = parts.length > 1 ? parts[1] : null;
         String savedClientType = parts.length > 2 ? parts[2] : null;
-        
+
         log.info("wechatBindPhone: identifier={}, openid={}, clientType={}", identifier, openid, savedClientType);
 
         // 2. 验证手机号格式
@@ -628,7 +628,7 @@ public class AuthServiceImpl implements AuthService {
             wechatCheckQuery.eq(AuthIdentity::getIdentityType, AuthIdentity.IdentityType.WECHAT)
                     .eq(AuthIdentity::getIdentifier, identifier);
             AuthIdentity existingWechatIdentity = authIdentityMapper.selectOne(wechatCheckQuery);
-            
+
             if (existingWechatIdentity == null) {
                 AuthIdentity wechatIdentity = new AuthIdentity();
                 wechatIdentity.setIdentityId(UUID.randomUUID().toString());
@@ -1715,8 +1715,9 @@ public class AuthServiceImpl implements AuthService {
      * @param authUser    用户对象
      * @param created     是否为新创建的用户
      * @param reactivated 是否为重新激活的用户
+     * @param appFirstLogin 是否为第一次登录 app 的用户
      */
-    private record LoginUserResult(AuthUser authUser, boolean created, boolean reactivated) {
+    private record LoginUserResult(AuthUser authUser, boolean created, boolean reactivated, boolean appFirstLogin) {
     }
 
     /**
@@ -1756,6 +1757,9 @@ public class AuthServiceImpl implements AuthService {
         newUser.setRole(AuthUser.UserRole.USER);
         newUser.setStatus(AuthUser.UserStatus.ACTIVE);
         newUser.setCancelled(false);
+        if(isAppClient()) {
+            newUser.setAppFirstLogin(false);
+        }
         int insertResult = authUserMapper.insert(newUser);
         Assert.isTrue(insertResult > 0, UserAuthCode.USER_NOT_EXIST);
         Long userId = newUser.getUserId();
@@ -1777,20 +1781,20 @@ public class AuthServiceImpl implements AuthService {
         // 4. 创建用户资料
         UserProfile profile = new UserProfile();
         profile.setUserId(userId);
-        
+
         // 使用提供的nickname和avatarUrl，如果没有则使用默认值
         if (profileInit != null && StringUtils.hasText(profileInit.nickname())) {
             profile.setNickName(profileInit.nickname());
         } else {
             profile.setNickName(buildDefaultNickname(type, identifier, userId));
         }
-        
+
         if (profileInit != null && StringUtils.hasText(profileInit.avatarUrl())) {
             profile.setAvatarUrl(normalizeAvatarForStorage(profileInit.avatarUrl()));
         } else {
             profile.setAvatarUrl(normalizeAvatarForStorage(null));
         }
-        
+
         applyDefaultProfileValues(profile);
         userProfileMapper.insert(profile);
 
@@ -1798,7 +1802,7 @@ public class AuthServiceImpl implements AuthService {
         importTencentIMAccount(userId, profile.getNickName(), profile.getAvatarUrl());
 
         log.info("新用户注册成功：userId={}, type={}, identifier={}", userId, type, identifier);
-        return new LoginUserResult(newUser, true, false);
+        return new LoginUserResult(newUser, true, false, true);
     }
 
     /**
@@ -1816,7 +1820,7 @@ public class AuthServiceImpl implements AuthService {
         query.eq(AuthIdentity::getIdentityType, type)
                 .eq(AuthIdentity::getIdentifier, identifier);
         AuthIdentity existingIdentity = authIdentityMapper.selectOne(query);
-        
+
         if (existingIdentity != null) {
             // 如果expectedUserId为null，表示该身份不应该存在任何绑定
             if (expectedUserId == null) {
@@ -1852,13 +1856,18 @@ public class AuthServiceImpl implements AuthService {
             throw new GloboxApplicationException(UserAuthCode.USER_ACCOUNT_DISABLED);
         }
         boolean reactivated = false;
+        boolean appFirstLogin = false;
         if (Boolean.TRUE.equals(identity.getCancelled()) || Boolean.TRUE.equals(authUser.getCancelled())) {
             reactivateCancelledAccount(authUser.getUserId(), defaultNickname);
             authUser.setCancelled(false);
             authUser.setStatus(AuthUser.UserStatus.ACTIVE);
             reactivated = true;
+        } else if (isAppClient() && authUser.getAppFirstLogin()) {
+            appFirstLogin = true;
+            authUser.setAppFirstLogin(false);
+            authUserMapper.updateById(authUser);
         }
-        return new LoginUserResult(authUser, false, reactivated);
+        return new LoginUserResult(authUser, false, reactivated, appFirstLogin);
     }
 
     private void reactivateCancelledAccount(Long userId, String defaultNickname) {
@@ -2130,11 +2139,11 @@ public class AuthServiceImpl implements AuthService {
                 RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE));
         // 1. 验证 identityToken 不为空
         Assert.isNotEmpty(identityToken, UserAuthCode.INVALID_PARAM);
-        
+
         // 2. 验证 identityToken 并提取 sub（Apple 用户唯一标识）
         String appleSub = appleService.verifyAndExtractSub(identityToken);
         Assert.isNotEmpty(appleSub, UserAuthCode.INVALID_PARAM);
-        
+
         // 3. 调用统一登录方法
         LoginUserResult loginResult = loginOrRegisterByIdentity(
                 AuthIdentity.IdentityType.APPLE,
@@ -2144,7 +2153,8 @@ public class AuthServiceImpl implements AuthService {
         AuthUser authUser = loginResult.authUser();
         boolean created = loginResult.created();
         boolean reactivated = loginResult.reactivated();
-        boolean isNewUser = created || reactivated;
+        boolean appFirstLogin = loginResult.appFirstLogin();
+        boolean isNewUser = created || reactivated || appFirstLogin;
 
         // 4. 生成 JWT Token（复用 phoneLogin 的逻辑）
         Map<String, Object> claims = new HashMap<>();

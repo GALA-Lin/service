@@ -154,6 +154,11 @@ public class OrderRefundServiceImpl implements OrderRefundService {
             Assert.isTrue(reqItemIds.size() == allItemCount, OrderCode.COACH_ONLY_REFUND_ALL);
         }
 
+        // 活动订单只能整单退款
+        if (order.getSellerType().equals(SellerTypeEnum.VENUE) && order.getActivity()) {
+            Assert.isTrue(reqItemIds.size() == allItemCount, OrderCode.ACTIVITY_ONLY_REFUND_ALL);
+        }
+
         // 是否可自动退款
         boolean autoRefund;
         if (order.getSellerType().equals(SellerTypeEnum.VENUE)) {

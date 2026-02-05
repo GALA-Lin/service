@@ -1,16 +1,11 @@
 package com.unlimited.sports.globox.social.dubbo;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.unlimited.sports.globox.common.utils.JsonUtils;
 import com.unlimited.sports.globox.dubbo.governance.dto.ContentSnapshotResultDto;
 import com.unlimited.sports.globox.dubbo.social.SocialForGovernanceDubboService;
-import com.unlimited.sports.globox.model.social.entity.MessageEntity;
-import com.unlimited.sports.globox.model.social.entity.SocialNote;
-import com.unlimited.sports.globox.model.social.entity.SocialNoteComment;
-import com.unlimited.sports.globox.model.social.entity.SocialNoteMedia;
-import com.unlimited.sports.globox.social.mapper.MessageMapper;
-import com.unlimited.sports.globox.social.mapper.SocialNoteCommentMapper;
-import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
-import com.unlimited.sports.globox.social.mapper.SocialNoteMediaMapper;
+import com.unlimited.sports.globox.model.social.entity.*;
+import com.unlimited.sports.globox.social.mapper.*;
 import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -35,6 +30,11 @@ public class SocialForGovernanceDubboServiceImpl implements SocialForGovernanceD
 
     @Autowired
     private MessageMapper messageMapper;
+
+    @Autowired
+    private ConversationMapper conversationMapper;
+    @Autowired
+    private JsonUtils jsonUtils;
 
     @Override
     public ContentSnapshotResultDto getNoteSnapshot(Long id) {
@@ -65,11 +65,15 @@ public class SocialForGovernanceDubboServiceImpl implements SocialForGovernanceD
 
     @Override
     public ContentSnapshotResultDto getIMMessageSnapshot(Long id) {
-        MessageEntity messageEntity = messageMapper.selectById(id);
-
+        Conversation conversation = conversationMapper.selectById(id);
+        List<MessageEntity> messageEntities = messageMapper.selectList(
+                Wrappers.<MessageEntity>lambdaQuery()
+                        .eq(MessageEntity::getConversationId, conversation)
+                        .orderByDesc(MessageEntity::getSendTime)
+                        .last(" LIMIT 20"));
         return ContentSnapshotResultDto.builder()
                 .id(id)
-                .content(messageEntity.getContent())
+                .content(jsonUtils.objectToJson(messageEntities))
                 .build();
     }
 }

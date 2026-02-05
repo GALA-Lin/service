@@ -29,15 +29,16 @@ public class AuthUser {
      */
     private UserStatus status;
 
-    /**
-     * 是否已注销
-     */
-    private Boolean cancelled;
     
     /**
      * 用户角色
      */
     private UserRole role;
+
+    /**
+     * 是否 app 首次登录
+     */
+    private Boolean appFirstLogin;
     
     /**
      * 创建时间
@@ -48,6 +49,11 @@ public class AuthUser {
      * 更新时间
      */
     private LocalDateTime updatedAt;
+
+    /**
+     * 是否已注销
+     */
+    private Boolean cancelled;
     
     /**
      * 账号状态枚举

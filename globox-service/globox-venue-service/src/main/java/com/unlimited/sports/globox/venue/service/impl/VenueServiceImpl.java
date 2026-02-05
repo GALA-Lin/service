@@ -138,8 +138,8 @@ public class VenueServiceImpl implements IVenueService {
                 .map(type -> CourtType.fromValue(type).getDescription())
                 .toList();
 
-        // 动态计算最低价格
-        BigDecimal minPrice = calculateMinPrice(venue.getTemplateId());
+        // 动态计算最低价格（从该场馆的所有场地中获取最低价格）
+        BigDecimal minPrice = calculateMinPrice(venueId);
 
         return VenueDetailVo.builder()
                 .venueId(venue.getVenueId())
@@ -525,20 +525,42 @@ public class VenueServiceImpl implements IVenueService {
 
     /**
      * 动态计算场馆最低价格
-     * 从价格模板中获取所有价格类型（工作日、周末、节假日），取最小值
+     * 从该场馆的所有场地绑定的价格模板中，获取所有价格类型（工作日、周末、节假日），取最小值
      * 如果查不到价格则默认999
      *
-     * @param templateId 价格模板ID
+     * @param venueId 场馆ID
      * @return 最低价格
      */
-    private BigDecimal calculateMinPrice(Long templateId) {
-        if (templateId == null) {
+    private BigDecimal calculateMinPrice(Long venueId) {
+        if (venueId == null) {
             return new BigDecimal("999");
         }
 
+        // 查询该场馆下所有的场地
+        List<Court> courts = courtMapper.selectList(
+                new LambdaQueryWrapper<Court>()
+                        .eq(Court::getVenueId, venueId)
+        );
+
+        if (courts == null || courts.isEmpty()) {
+            return new BigDecimal("999");
+        }
+
+        // 收集所有场地的模板ID
+        List<Long> templateIds = courts.stream()
+                .map(Court::getTemplateId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (templateIds.isEmpty()) {
+            return new BigDecimal("999");
+        }
+
+        // 查询这些模板的所有价格时段
         List<VenuePriceTemplatePeriod> periods = venuePriceTemplatePeriodMapper.selectList(
                 new LambdaQueryWrapper<VenuePriceTemplatePeriod>()
-                        .eq(VenuePriceTemplatePeriod::getTemplateId, templateId)
+                        .in(VenuePriceTemplatePeriod::getTemplateId, templateIds)
                         .eq(VenuePriceTemplatePeriod::getIsEnabled, 1)
         );
 

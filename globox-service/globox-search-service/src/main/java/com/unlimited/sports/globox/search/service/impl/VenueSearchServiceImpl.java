@@ -44,6 +44,7 @@ import org.springframework.data.geo.Point;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -552,14 +553,16 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 );
             }
 
+            log.info("原价格 min{} max{}",vo.getPriceMax(),vo.getPriceMin());
             return VenueSearchDocument.builder()
                     .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.VENUE,vo.getVenueId()))
                     .venueId(vo.getVenueId())
                     .name(vo.getVenueName())
                     .description(vo.getVenueDescription())
                     .region(vo.getRegion())
-                    .priceMin(vo.getPriceMin() != null ? vo.getPriceMin().doubleValue() : null)
-                    .priceMax(vo.getPriceMax() != null ? vo.getPriceMax().doubleValue() : null)
+                    // 价格维度转换：数据库存储的是30分钟的价格，ES中存储为1小时的价格（乘以2）
+                    .priceMin(vo.getPriceMin() != null ? vo.getPriceMin().multiply(new BigDecimal("2")).doubleValue() : null)
+                    .priceMax(vo.getPriceMax() != null ? vo.getPriceMax().multiply(new BigDecimal("2")).doubleValue() : null)
                     .rating(vo.getRating() != null ? vo.getRating().doubleValue() : null)
                     .ratingCount(vo.getRatingCount())
                     .coverUrl(vo.getCoverUrl())
@@ -606,7 +609,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         // 距离保留2位小数
         BigDecimal formattedDistance = distance;
         if (distance != null) {
-            formattedDistance = distance.setScale(2, java.math.RoundingMode.HALF_UP);
+            formattedDistance = distance.setScale(2, RoundingMode.HALF_UP);
         }
 
         // 构建VenueItemVo

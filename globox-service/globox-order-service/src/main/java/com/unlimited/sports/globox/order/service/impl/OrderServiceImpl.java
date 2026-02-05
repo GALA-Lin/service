@@ -873,7 +873,6 @@ public class OrderServiceImpl implements OrderService {
 
         // 7) 组装 item VO
         AtomicBoolean orderRefundable = new AtomicBoolean(false);
-//        AtomicBoolean orderItemRefundGlag = SellerTypeEnum.COACH.equals(orders.getSellerType()) ? new AtomicBoolean(true) : new AtomicBoolean(false);
         AtomicBoolean orderItemRefundGlag = new AtomicBoolean(SellerTypeEnum.COACH.equals(orders.getSellerType()));
 
         switch (orders.getOrderStatus()) {

@@ -306,9 +306,11 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             List<ChangxiaoerLockSlotRequest.PlaceOrder> placeOrders = new ArrayList<>();
             for (SlotLockRequest slot : slotRequests) {
                 String courtId = slot.getThirdPartyCourtId();
+                // 将23:59:59转换为24:00（场小二平台要求）
+                String formattedEndTime = formatEndTime(slot.getEndTime());
                 ChangxiaoerLockSlotRequest.TimeRange timeRange = ChangxiaoerLockSlotRequest.TimeRange.builder()
                         .startTime(slot.getStartTime())
-                        .endTime(slot.getEndTime())
+                        .endTime(formattedEndTime)
                         .build();
 
                 // 从已计算的价格中查询该时段的价格
@@ -350,6 +352,9 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             String apiBaseUrl = getApiBaseUrl(config);
             String url = apiBaseUrl + String.format(API_PATH_BOOKING_ORDERS, config.getThirdPartyVenueId());
 
+            log.info("[changxiaoer] 锁场API - URL: {}", url);
+            log.info("[changxiaoer] 锁场API - Request: {}", JSON.toJSONString(lockRequest));
+
             ResponseEntity<ChangxiaoerResponse<Object>> responseEntity = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
@@ -359,6 +364,7 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
 
             //  解析响应
             ChangxiaoerResponse<Object> response = responseEntity.getBody();
+            log.info("[changxiaoer] 锁场API - Response: {}", JSON.toJSONString(response));
             if (response == null || response.getFlag() == null || !response.getFlag()) {
                 log.error("[changxiaoer] 批量锁场失败: errorMessage={}, venueId={}",
                         response != null ? response.getErrorMessage() : "响应为空", config.getVenueId());
@@ -370,31 +376,40 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             redisService.deleteObject(cacheKey);
             log.info("[changxiaoer] 槽位缓存已清除: venueId={}, date={}", config.getVenueId(), firstDate);
 
-            // 锁场成功后，查询batchNo（通过第一个槽位的时间段）
+            // 查询batchNo
             String batchNo = queryBatchNo(config, slotRequests.get(0).getThirdPartyCourtId(),
                     slotRequests.get(0), dateStr, token, authInfo.getAdminId());
 
+            // 构建返回的Map
+            Map<SlotLockRequest, String> resultMap = new LinkedHashMap<>();
             if (batchNo == null || batchNo.isEmpty()) {
-                log.error("[changxiaoer] 锁场成功但查询batchNo失败");
-                // 返回失败结果，不抛异常
-                return LockSlotsResult.builder()
-                        .bookingIds(new LinkedHashMap<>())
-                        .slotPrices(new ArrayList<>())
-                        .build();
-            }
-
-            log.info("[changxiaoer] 获取到batchNo: {}", batchNo);
-
-            // 构建返回的Map，每个slotRequest都对应同一个batchNo
-            Map<SlotLockRequest, String> resultMap = slotRequests.stream()
+                log.error("[changxiaoer] 锁场成功但查询batchNo失败，返回空的bookingIds但保留价格信息");
+                // batchNo查询失败，bookingIds为空，但仍返回价格信息
+            } else {
+                // 安全校验：通过订单详情接口校验remark，确保获取到的是正确的订单
+                // batchNo + remark 双重校验，两者都必须匹配
+                if (remark == null || remark.isEmpty()) {
+                    log.error("[changxiaoer] 锁场remark为空，无法进行安全校验: batchNo={}", batchNo);
+                    // remark为空，无法校验，返回空的bookingIds
+                } else if (!verifyBatchNoRemark(config, batchNo, remark, token, authInfo.getAdminId())) {
+                    log.error("[changxiaoer] batchNo+remark双重校验失败，可能获取到了错误的订单: batchNo={}, expectedRemark={}", 
+                            batchNo, remark);
+                    // 校验失败，返回空的bookingIds
+                } else {
+                    log.info("[changxiaoer] batchNo+remark双重校验通过: batchNo={}, remark={}", batchNo, remark);
+                    // 每个slotRequest都对应同一个batchNo
+                    resultMap = slotRequests.stream()
                             .collect(Collectors.toMap(
                                     slotRequest -> slotRequest,
                                     slotRequest -> batchNo
                             ));
+                }
+            }
 
-            log.info("[changxiaoer] 批量锁场成功: venueId={}, 返回batchNo映射和价格: {}", config.getVenueId(), resultMap.size());
+            log.info("[changxiaoer] 批量锁场成功: venueId={}, 返回batchNo映射数: {}, 价格数: {}",
+                    config.getVenueId(), resultMap.size(), slotPrices.size());
 
-            // 构建LockSlotsResult返回
+            // 构建LockSlotsResult返回（即使batchNo为空，也要返回价格）
             return LockSlotsResult.builder()
                     .bookingIds(resultMap)
                     .slotPrices(slotPrices)
@@ -421,6 +436,18 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
 
+            // 获取期望的remark（用于完整匹配，确保只解锁自己锁的槽位）
+            String expectedRemark = slotRequests.stream()
+                    .map(SlotLockRequest::getThirdPartyRemark)
+                    .filter(r -> r != null && !r.isEmpty())
+                    .findFirst()
+                    .orElse(null);
+
+            if (expectedRemark == null) {
+                log.error("[changxiaoer] 解锁失败: thirdPartyRemark为空, venueId={}", config.getVenueId());
+                throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
+            }
+
             // 获取认证信息
             ThirdPartyAuthInfo authInfo = tokenService.getAuthInfo(config, this);
             String token = authInfo.getToken();
@@ -439,13 +466,13 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             }
             log.info("[changxiaoer] 找到batchNo: {}", batchNo);
 
-            // 2. 查询orderNo
-            String orderNo = queryOrderNo(config, batchNo, token, adminId);
+            // 2. 查询orderNo并校验remark（batchNo + remark 双重校验）
+            String orderNo = queryOrderNoWithRemarkValidation(config, batchNo, expectedRemark, token, adminId);
             if (orderNo == null || orderNo.isEmpty()) {
-                log.error("[changxiaoer] 无法从batchNo查询到orderNo: batchNo={}", batchNo);
+                log.error("[changxiaoer] 无法从batchNo查询到orderNo或remark校验失败: batchNo={}, expectedRemark={}", batchNo, expectedRemark);
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
-            log.info("[changxiaoer] 找到orderNo: {}", orderNo);
+            log.info("[changxiaoer] batchNo+remark双重校验通过, orderNo: {}", orderNo);
 
             // 3. 查询订单详情，获取所有periodOrders（包含detailId和槽位信息）
             Map<String, String> slotToDetailIdMap = queryOrderDetails(config, batchNo, token, adminId);
@@ -472,18 +499,9 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
 
-            // 5. 判断是全部解锁还是部分解锁
-            boolean isUnlockAll = (detailIdsToDelete.size() == slotToDetailIdMap.size());
-            if (isUnlockAll) {
-                log.info("[changxiaoer] 执行全部解锁: 解锁全部{}个槽位", detailIdsToDelete.size());
-                // 全部解锁：detailIds传空数组
-                deleteOrder(config, orderNo, new ArrayList<>(), adminId, token);
-            } else {
-                log.info("[changxiaoer] 执行部分解锁: 解锁{}个槽位（共{}个）",
-                        detailIdsToDelete.size(), slotToDetailIdMap.size());
-                // 部分解锁：detailIds传具体的ID列表
-                deleteOrder(config, orderNo, detailIdsToDelete, adminId, token);
-            }
+            // 5. Away球场只支持全部解锁（部分退款已在UnlockSlotConsumer中拦截）
+            log.info("[changxiaoer] 执行全部解锁: 解锁全部{}个槽位", detailIdsToDelete.size());
+            deleteOrder(config, orderNo, new ArrayList<>(), adminId, token);
 
             // 6. 清除槽位缓存
             String cacheKey = AwayVenueCacheConstants.buildSlotsCacheKey(config.getVenueId(), bookingDate);
@@ -570,8 +588,10 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
                         Long placeId = place.getLong("placeId");
                         String startTime = timeRange.getString("startTime");
                         String endTime = timeRange.getString("endTime");
+                        // 标准化时间格式：将24:00转换为23:59:59（用于与本地数据匹配）
+                        String normalizedEndTime = normalizeTimeForMatch(endTime);
 
-                        String slotKey = placeId + "|" + startTime + "|" + endTime;
+                        String slotKey = placeId + "|" + startTime + "|" + normalizedEndTime;
                         slotToDetailIdMap.put(slotKey, detailId);
                     }
                 }
@@ -594,11 +614,15 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
                                 SlotLockRequest slotRequest, String dateStr, String token, String adminId) {
         try {
             String apiBaseUrl = getApiBaseUrl(config);
-            String baseUrl = apiBaseUrl + String.format(API_PATH_PERIODS_USAGES, config.getThirdPartyVenueId());
+            String baseUrl = apiBaseUrl + String.format(API_PATH_TIMETABLES, config.getThirdPartyVenueId());
+
+            // 构建查询参数（使用新接口）
             String listUrl = UriComponentsBuilder.fromHttpUrl(baseUrl)
-                    .queryParam("finished", FINISHED)
-                    .queryParam("pageNum", PAGE_NUM)
-                    .queryParam("pageSize", PAGE_SIZE)
+                    .queryParam("basicsId", config.getThirdPartyVenueId())
+                    .queryParam("lockBeginDay", dateStr)
+                    .queryParam("lockSitePatternType", LOCK_SITE_PATTERN_TYPE)
+                    .queryParam("usage_start_date", dateStr)
+                    .queryParam("usage_end_date", dateStr)
                     .queryParam("adminId", adminId)
                     .toUriString();
 
@@ -607,7 +631,6 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<?> requestEntity = new HttpEntity<>(headers);
 
-            log.info("[changxiaoer] 查询锁场记录API - URL: {}", listUrl);
             ResponseEntity<String> responseEntity = restTemplate.exchange(
                     listUrl,
                     HttpMethod.GET,
@@ -619,52 +642,64 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
                 log.error("[changxiaoer] 查询锁场记录失败: 响应为空");
                 return null;
             }
+
             JSONObject jsonResponse = JSON.parseObject(responseBody);
             if (jsonResponse.getBoolean("flag") == null || !jsonResponse.getBoolean("flag")) {
                 log.error("[changxiaoer] 查询锁场记录失败: {}", jsonResponse.getString("errorMessage"));
                 return null;
             }
-            JSONObject data = jsonResponse.getJSONObject("data");
-            if (data == null || data.getJSONArray("list") == null) {
-                log.error("[changxiaoer] 查询锁场记录失败: data或list为空");
+
+            JSONArray dataArray = jsonResponse.getJSONArray("data");
+            if (dataArray == null || dataArray.isEmpty()) {
+                log.error("[changxiaoer] 查询锁场记录失败: data数组为空");
                 return null;
             }
-            // 匹配时间段找出batchNo
-            String timeRange = slotRequest.getStartTime() + "-" + slotRequest.getEndTime();
 
-            return data.getJSONArray("list").stream()
-                    .map(item -> (JSONObject) item)
-                    .filter(record -> record.getJSONArray("placePeriods") != null)
-                    .filter(record -> {
-                        JSONArray placePeriods = record.getJSONArray("placePeriods");
-                        return placePeriods.stream()
-                                .map(periodObj -> (JSONObject) periodObj)
-                                .anyMatch(period -> {
-                                    JSONObject timeRangeObj = period.getJSONObject("timeRange");
-                                    JSONObject place = period.getJSONObject("place");
-                                    String usageDate = period.getString("usageDate");
+            // 匹配时间段找出batchNo（将本地的23:59:59转换为24:00用于匹配）
+            String formattedEndTime = formatEndTime(slotRequest.getEndTime());
+            String timeRange = slotRequest.getStartTime() + "-" + formattedEndTime;
 
-                                    if (timeRangeObj == null || place == null) return false;
-                                    if (!timeRangeObj.containsKey("startTime") || !timeRangeObj.containsKey("endTime"))
-                                        return false;
+            // 新接口返回按场地分组的数据，先找到对应场地
+            for (int i = 0; i < dataArray.size(); i++) {
+                JSONObject placeData = dataArray.getJSONObject(i);
+                String placeId = placeData.get("placeId") != null ? placeData.get("placeId").toString() : null;
 
-                                    String startTime = timeRangeObj.getString("startTime");
-                                    String endTime = timeRangeObj.getString("endTime");
-                                    String rangeStr = startTime + "-" + endTime;
-
-                                    return thirdPartyCourtId.equals(place.getString("placeId"))
-                                            && rangeStr.equals(timeRange)
-                                            && dateStr.equals(usageDate);
-                                });
-                    })
-                    .map(record -> record.getString("batchNo"))
-                    .filter(batchNo -> batchNo != null && !batchNo.isEmpty())
-                    .findFirst()
-                    .orElseGet(() -> {
-                        log.warn("[changxiaoer] 未找到时间段对应的batchNo: courtId={}, timeRange={}, date={}",
-                                thirdPartyCourtId, timeRange, dateStr);
+                // 匹配场地ID
+                if (placeId != null && placeId.equals(thirdPartyCourtId)) {
+                    // 在该场地的usages中查找匹配的时间段
+                    JSONArray usages = placeData.getJSONArray("usages");
+                    if (usages == null || usages.isEmpty()) {
+                        log.warn("[changxiaoer] 场地{}的usages为空", placeId);
                         return null;
-                    });
+                    }
+
+                    for (int j = 0; j < usages.size(); j++) {
+                        JSONObject usage = usages.getJSONObject(j);
+                        JSONObject timeRangeObj = usage.getJSONObject("timeRange");
+
+                        if (timeRangeObj == null) {
+                            continue;
+                        }
+
+                        String startTime = timeRangeObj.getString("startTime");
+                        String endTime = timeRangeObj.getString("endTime");
+                        String rangeStr = startTime + "-" + endTime;
+                        String batchNo = usage.getString("batchNo");
+
+                        // 匹配时间段
+                        if (rangeStr.equals(timeRange)) {
+                            log.info("[changxiaoer] 获取到batchNo: {}", batchNo);
+                            return batchNo;
+                        }
+                    }
+
+                    log.warn("[changxiaoer] 场地{}中未找到匹配的时间段: {}", placeId, timeRange);
+                    return null;
+                }
+            }
+
+            log.warn("[changxiaoer] 未找到场地: courtId={}", thirdPartyCourtId);
+            return null;
 
         } catch (Exception e) {
             log.error("[changxiaoer] 查询batchNo异常", e);
@@ -673,9 +708,16 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
     }
 
     /**
-     * 通过batchNo查询订单详情，获取orderId
+     * 通过batchNo查询订单详情，获取orderId并校验remark（batchNo + remark 双重校验）
+     * @param config 配置
+     * @param batchNo 批次号
+     * @param expectedRemark 期望的remark（必须完整匹配）
+     * @param token Token
+     * @param adminId 管理员ID
+     * @return orderId，如果remark不匹配则返回null
      */
-    private String queryOrderNo(VenueThirdPartyConfig config, String batchNo, String token, String adminId) {
+    private String queryOrderNoWithRemarkValidation(VenueThirdPartyConfig config, String batchNo, 
+                                                     String expectedRemark, String token, String adminId) {
         try {
             String apiBaseUrl = getApiBaseUrl(config);
             String batchUrl = apiBaseUrl + String.format(API_PATH_BATCHES, config.getThirdPartyVenueId(), batchNo)
@@ -715,18 +757,93 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
             }
 
             JSONObject orderInfo = batchData.getJSONArray("orderInfos").getJSONObject(0);
+            
+            // 双重校验：校验remark必须完整匹配
+            String actualRemark = orderInfo.getString("remark");
+            if (!expectedRemark.equals(actualRemark)) {
+                log.error("[changxiaoer] batchNo+remark双重校验失败: batchNo={}, 期望remark={}, 实际remark={}", 
+                        batchNo, expectedRemark, actualRemark);
+                return null;
+            }
+            
             String orderId = orderInfo.getString("orderNo");
-
             if (orderId == null || orderId.isEmpty()) {
                 log.error("[changxiaoer] 订单详情中没有orderNo, batchNo={}", batchNo);
                 return null;
             }
 
+            log.info("[changxiaoer] batchNo+remark双重校验通过: batchNo={}, remark={}, orderNo={}", batchNo, actualRemark, orderId);
             return orderId;
 
         } catch (Exception e) {
             log.error("[changxiaoer] 查询orderId异常: batchNo={}", batchNo, e);
             return null;
+        }
+    }
+
+    /**
+     * 校验batchNo对应的订单remark是否匹配（batchNo + remark 双重校验）
+     * @param config 配置
+     * @param batchNo 批次号
+     * @param expectedRemark 期望的remark（必须非空）
+     * @param token Token
+     * @param adminId 管理员ID
+     * @return true表示校验通过（batchNo存在且remark完全匹配），false表示校验失败
+     */
+    private boolean verifyBatchNoRemark(VenueThirdPartyConfig config, String batchNo, 
+                                         String expectedRemark, String token, String adminId) {
+        try {
+            String apiBaseUrl = getApiBaseUrl(config);
+            String batchUrl = apiBaseUrl + String.format(API_PATH_BATCHES, config.getThirdPartyVenueId(), batchNo)
+                    + "?adminId=" + adminId;
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Token", token);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<?> requestEntity = new HttpEntity<>(headers);
+
+            ResponseEntity<String> responseEntity = restTemplate.exchange(
+                    batchUrl,
+                    HttpMethod.GET,
+                    requestEntity,
+                    String.class
+            );
+
+            String responseBody = responseEntity.getBody();
+            if (responseBody == null) {
+                log.error("[changxiaoer] 校验batchNo+remark失败: 响应为空, batchNo={}", batchNo);
+                return false;
+            }
+
+            JSONObject jsonResponse = JSON.parseObject(responseBody);
+            if (jsonResponse.getBoolean("flag") == null || !jsonResponse.getBoolean("flag")) {
+                log.error("[changxiaoer] 校验batchNo+remark失败: {}", jsonResponse.getString("errorMessage"));
+                return false;
+            }
+
+            JSONObject data = jsonResponse.getJSONObject("data");
+            if (data == null || data.getJSONArray("orderInfos") == null || data.getJSONArray("orderInfos").isEmpty()) {
+                log.error("[changxiaoer] 校验batchNo+remark失败: 订单详情为空, batchNo={}", batchNo);
+                return false;
+            }
+
+            // 获取订单的remark并进行精确匹配校验
+            JSONObject orderInfo = data.getJSONArray("orderInfos").getJSONObject(0);
+            String actualRemark = orderInfo.getString("remark");
+            
+            // 双重校验：batchNo已经匹配（能查到订单），现在校验remark必须完全匹配
+            if (expectedRemark.equals(actualRemark)) {
+                log.info("[changxiaoer] batchNo+remark双重校验通过: batchNo={}, remark={}", batchNo, actualRemark);
+                return true;
+            } else {
+                log.error("[changxiaoer] batchNo+remark双重校验失败: batchNo={}, 期望remark={}, 实际remark={}", 
+                        batchNo, expectedRemark, actualRemark);
+                return false;
+            }
+
+        } catch (Exception e) {
+            log.error("[changxiaoer] 校验batchNo+remark异常: batchNo={}", batchNo, e);
+            return false;
         }
     }
 
@@ -908,5 +1025,29 @@ public class ChangxiaoerAdapter implements ThirdPartyPlatformAdapter {
     @Override
     public String getPlatformCode() {
         return PLATFORM_CODE;
+    }
+
+    /**
+     * 格式化结束时间：将23:59:59转换为24:00（场小二平台要求）
+     * @param endTime 原始结束时间
+     * @return 格式化后的结束时间
+     */
+    private String formatEndTime(String endTime) {
+        if ("23:59:59".equals(endTime) || "23:59".equals(endTime)) {
+            return "24:00";
+        }
+        return endTime;
+    }
+
+    /**
+     * 标准化时间用于匹配：将24:00转换为23:59:59（用于与本地数据匹配）
+     * @param time 原始时间
+     * @return 标准化后的时间
+     */
+    private String normalizeTimeForMatch(String time) {
+        if ("24:00".equals(time)) {
+            return "23:59:59";
+        }
+        return time;
     }
 }

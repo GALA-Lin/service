@@ -3,9 +3,11 @@ package com.unlimited.sports.globox.user.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.common.utils.Assert;
 import com.unlimited.sports.globox.common.utils.HttpRequestUtils;
 import com.unlimited.sports.globox.common.utils.JwtUtil;
-import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.common.utils.RequestContextHolder;
+import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.MerchantLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.MerchantLoginResponse;
 import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
@@ -192,6 +194,47 @@ public class MerchantAuthServiceImpl implements MerchantAuthService {
 
         log.info("【商家Token刷新】成功：accountId={}, account={}", accountId, merchantAccount.getAccount());
         return response;
+    }
+
+    /**
+     * 商家修改密码
+     */
+    @Override
+    public String changePassword(ChangePasswordRequest request) {
+        String oldPassword = request.getOldPassword();
+        String newPassword = request.getNewPassword();
+        String confirmPassword = request.getConfirmPassword();
+
+        String authHeader = RequestContextHolder.getHeader("Authorization");
+        String token = JwtUtil.extractTokenFromHeader(authHeader);
+        Assert.isNotEmpty(token, UserAuthCode.TOKEN_INVALID);
+        if (!JwtUtil.validateToken(token, merchantJwtSecret)) {
+            throw new GloboxApplicationException(UserAuthCode.TOKEN_INVALID);
+        }
+
+        Long accountId = Long.parseLong(JwtUtil.getSubject(token, merchantJwtSecret));
+        MerchantAccount merchantAccount = merchantAccountMapper.selectById(accountId);
+        Assert.isNotEmpty(merchantAccount, UserAuthCode.MERCHANT_ACCOUNT_NOT_EXIST);
+
+        if (merchantAccount.getStatus() == MerchantStatus.DISABLED) {
+            throw new GloboxApplicationException(UserAuthCode.MERCHANT_ACCOUNT_DISABLED);
+        }
+
+        boolean matches = PasswordUtils.matches(oldPassword, merchantAccount.getPasswordHash());
+        if (!matches) {
+            throw new GloboxApplicationException(UserAuthCode.MERCHANT_PASSWORD_ERROR);
+        }
+
+        Assert.isTrue(PasswordUtils.isValidPassword(newPassword), UserAuthCode.PASSWORD_TOO_WEAK);
+        Assert.isTrue(newPassword.equals(confirmPassword), UserAuthCode.PASSWORD_MISMATCH);
+
+        merchantAccount.setPasswordHash(PasswordUtils.encode(newPassword));
+        merchantAccountMapper.updateById(merchantAccount);
+
+        redisService.deleteAllRefreshTokens(accountId);
+
+        log.info("商家密码修改成功：accountId={}", accountId);
+        return "密码修改成功，请重新登录";
     }
 
     /**

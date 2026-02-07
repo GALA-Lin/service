@@ -49,13 +49,6 @@ public interface RedisService {
     long getSmsRateLimitSeconds(String phone);
 
     /**
-     * 记录短信发送（设置60秒限流）
-     *
-     * @param phone 手机号
-     */
-    void recordSmsSent(String phone);
-
-    /**
      * 增加验证码错误次数
      *
      * @param phone 手机号
@@ -219,4 +212,6 @@ public interface RedisService {
      * @return 自增后的值
      */
     long increment(String key, long expireSeconds);
+
+    void clearSmsRateLimit(String phone);
 }

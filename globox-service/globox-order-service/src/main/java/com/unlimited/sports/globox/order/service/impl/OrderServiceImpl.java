@@ -8,6 +8,8 @@ import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.enums.order.*;
 import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.message.order.OrderAutoCancelMessage;
+import com.unlimited.sports.globox.common.message.order.OrderAutoCompleteMessage;
+import com.unlimited.sports.globox.common.message.order.OrderPaidMessage;
 import com.unlimited.sports.globox.common.message.order.UnlockSlotMessage;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.PaginationResult;
@@ -15,6 +17,7 @@ import com.unlimited.sports.globox.common.result.RpcResult;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
 import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.Assert;
+import com.unlimited.sports.globox.common.utils.LocalDateUtils;
 import com.unlimited.sports.globox.common.utils.RequestContextHolder;
 import com.unlimited.sports.globox.common.utils.IdGenerator;
 import com.unlimited.sports.globox.dubbo.coach.CoachDubboService;
@@ -44,6 +47,7 @@ import org.springframework.util.ObjectUtils;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -291,7 +295,7 @@ public class OrderServiceImpl implements OrderService {
 
         Orders order = Orders.builder()
                 .orderNo(orderNo)
-                .sourcePlatform(resultDto.getSourcePlatform())
+                .sourcePlatform(SourcePlatformEnum.from(resultDto.getSourcePlatform()))
                 .buyerId(userId)
                 .sellerName(resultDto.getCoachName())
                 .sellerType(SellerTypeEnum.COACH)
@@ -340,6 +344,9 @@ public class OrderServiceImpl implements OrderService {
 
         orderStatusLogsMapper.insert(statusLogs);
 
+        // 0 元公益订单：直接置为已支付
+        boolean zeroPay = markZeroPayIfNeeded(order, userId, createdAt);
+
         OrderAutoCancelMessage orderAutoCancelMessage = OrderAutoCancelMessage.builder()
                 .bookingDate(resultDto.getBookingDate())
                 .orderNo(order.getOrderNo())
@@ -355,6 +362,18 @@ public class OrderServiceImpl implements OrderService {
 
                     @Override
                     public void afterCommit() {
+                        if (zeroPay) {
+                            afterPaidActionsForZeroPay(
+                                    order,
+                                    false,
+                                    resultDto.getBookingDate(),
+                                    resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getRecordId).toList(),
+                                    null,
+                                    SellerTypeEnum.COACH,
+                                    resultDto.getSlotQuotes().stream().map(CoachSlotQuote::getEndTime).toList());
+                            return;
+                        }
+
                         // 发送消息，定时关闭订单
                         mqService.sendDelay(
                                 OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_CANCEL,
@@ -387,6 +406,7 @@ public class OrderServiceImpl implements OrderService {
 
         CreateOrderResultVo vo = new CreateOrderResultVo();
         vo.setOrderNo(orderNo);
+        vo.setNeedPay(!zeroPay);
         return vo;
     }
 
@@ -505,7 +525,7 @@ public class OrderServiceImpl implements OrderService {
 
         Orders order = Orders.builder()
                 .orderNo(orderNo)
-                .sourcePlatform(result.getSourcePlatform())
+                .sourcePlatform(SourcePlatformEnum.from(result.getSourcePlatform()))
                 .buyerId(userId)
                 .sellerName(result.getSellerName())
                 .sellerType(SellerTypeEnum.VENUE)
@@ -555,6 +575,9 @@ public class OrderServiceImpl implements OrderService {
 
         orderStatusLogsMapper.insert(statusLogs);
 
+        // 0 元公益订单：直接置为已支付
+        boolean zeroPay = markZeroPayIfNeeded(order, userId, createdAt);
+
         // 7）如果是活动订单，插入订单-活动绑定表
         if (isActivity) {
             PricingActivityResultDto activityResultDto = (PricingActivityResultDto) result;
@@ -578,6 +601,28 @@ public class OrderServiceImpl implements OrderService {
 
                     @Override
                     public void afterCommit() {
+                        if (zeroPay) {
+                            Long activityId = null;
+                            if (isActivity) {
+                                OrderActivities orderActivities = orderActivitiesMapper.selectOne(
+                                        Wrappers.<OrderActivities>lambdaQuery()
+                                                .eq(OrderActivities::getOrderNo, orderNo));
+                                if (!ObjectUtils.isEmpty(orderActivities)) {
+                                    activityId = orderActivities.getActivityId();
+                                }
+                            }
+
+                            afterPaidActionsForZeroPay(
+                                    order,
+                                    isActivity,
+                                    result.getBookingDate(),
+                                    result.getRecordQuote().stream().map(RecordQuote::getRecordId).toList(),
+                                    activityId,
+                                    SellerTypeEnum.VENUE,
+                                    result.getRecordQuote().stream().map(RecordQuote::getEndTime).toList());
+                            return;
+                        }
+
                         int orderDelay = delay;
                         if (order.getActivity()) {
                             orderDelay = activityDelay;
@@ -614,6 +659,7 @@ public class OrderServiceImpl implements OrderService {
 
         CreateOrderResultVo vo = new CreateOrderResultVo();
         vo.setOrderNo(orderNo);
+        vo.setNeedPay(!zeroPay);
         return vo;
     }
 
@@ -965,6 +1011,7 @@ public class OrderServiceImpl implements OrderService {
         boolean isCancelable = orders.getPaymentStatus() == OrdersPaymentStatusEnum.UNPAID
                 && orders.getOrderStatus() == OrderStatusEnum.PENDING;
         boolean isRefundable = orderItemRefundGlag.get() && orderRefundable.get() && !isCancelable;
+        boolean isPartialRefundable = isPartialRefundable(isRefundable, orders);
 
 
         // 8) 返回
@@ -977,6 +1024,7 @@ public class OrderServiceImpl implements OrderService {
                 .amount(orders.getPayAmount())
                 .isCancelable(isCancelable)
                 .isRefundable(isRefundable)
+                .isPartialRefundable(isPartialRefundable)
                 .bookingDate(bookingDate)
                 .currentOrderStatus(orders.getOrderStatus())
                 .orderLevelExtraCharges(orderLevelExtraCharges)
@@ -997,6 +1045,26 @@ public class OrderServiceImpl implements OrderService {
         }
 
         return detailsVo;
+    }
+
+    private static boolean isPartialRefundable(boolean isRefundable, Orders orders) {
+        boolean isPartialRefundable = isRefundable;
+        if (isPartialRefundable
+                && orders.getSellerType().equals(SellerTypeEnum.VENUE)
+                && orders.getSourcePlatform().equals(SourcePlatformEnum.HOME)
+                && orders.getActivity()) {
+            isPartialRefundable = false;
+        }
+        if (isPartialRefundable
+                && orders.getSellerType().equals(SellerTypeEnum.VENUE)
+                && orders.getSourcePlatform().equals(SourcePlatformEnum.AWAY)) {
+            isPartialRefundable = false;
+        }
+        if (isPartialRefundable
+                && orders.getSellerType().equals(SellerTypeEnum.COACH)) {
+            isPartialRefundable = false;
+        }
+        return isPartialRefundable;
     }
 
 
@@ -1095,6 +1163,96 @@ public class OrderServiceImpl implements OrderService {
                 .orderStatusName(OrderStatusEnum.CANCELLED.getDescription())
                 .cancelledAt(LocalDateTime.now())
                 .build();
+    }
+
+
+    /**
+     * 0 元直接置为已支付 + 写 PAY 日志
+     */
+    private boolean markZeroPayIfNeeded(Orders order, Long userId, LocalDateTime paidAt) {
+        boolean zeroPay = order.getPayAmount() != null
+                && order.getPayAmount().compareTo(BigDecimal.ZERO) == 0;
+        if (!zeroPay) {
+            return false;
+        }
+
+        OrderStatusEnum oldOrderStatus = order.getOrderStatus();
+        order.setPaymentStatus(OrdersPaymentStatusEnum.PAID);
+        order.setOrderStatus(OrderStatusEnum.PAID);
+        order.setPaymentType(PaymentTypeEnum.NONE);
+        order.setPaidAt(paidAt);
+        ordersMapper.updateById(order);
+
+        OrderStatusLogs payLog = OrderStatusLogs.builder()
+                .orderNo(order.getOrderNo())
+                .orderId(order.getId())
+                .orderItemId(null)
+                .action(OrderActionEnum.PAY)
+                .oldOrderStatus(oldOrderStatus)
+                .newOrderStatus(order.getOrderStatus())
+                .operatorType(OperatorTypeEnum.USER)
+                .operatorId(userId)
+                .operatorName("USER_" + userId)
+                .remark("公益订单免支付")
+                .build();
+        payLog.setCreatedAt(paidAt);
+        orderStatusLogsMapper.insert(payLog);
+        return true;
+    }
+
+    /**
+     * 已支付通知商家/教练 + 自动完成
+     */
+    private void afterPaidActionsForZeroPay(Orders order,
+            boolean isActivity,
+            LocalDate bookingDate,
+            List<Long> recordIds,
+            Long activityId,
+            SellerTypeEnum sellerType,
+            List<LocalTime> endTimes) {
+        OrderPaidMessage paidMessage = OrderPaidMessage.builder()
+                .orderNo(order.getOrderNo())
+                .userId(order.getBuyerId())
+                .venueId(order.getSellerId())
+                .build();
+
+        if (sellerType == SellerTypeEnum.VENUE) {
+            if (isActivity && activityId != null) {
+                paidMessage.setIsActivity(true);
+                paidMessage.setRecordIds(List.of(activityId));
+            } else {
+                paidMessage.setIsActivity(false);
+                paidMessage.setRecordIds(recordIds);
+            }
+
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
+                    OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_MERCHANT,
+                    paidMessage);
+        } else if (sellerType == SellerTypeEnum.COACH) {
+            paidMessage.setIsActivity(false);
+            paidMessage.setRecordIds(recordIds);
+            mqService.send(
+                    OrderMQConstants.EXCHANGE_TOPIC_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
+                    OrderMQConstants.ROUTING_ORDER_PAYMENT_CONFIRMED_NOTIFY_COACH,
+                    paidMessage);
+        }
+
+        LocalTime localTime = endTimes.stream()
+                .max(LocalTime::compareTo)
+                .orElse(LocalTime.of(23, 0));
+        long delayMillis = LocalDateUtils.delayMillis(bookingDate, localTime);
+        int delaySeconds = Math.toIntExact(delayMillis / 1000);
+
+        OrderAutoCompleteMessage autoCompleteMessage = OrderAutoCompleteMessage.builder()
+                .orderNo(order.getOrderNo())
+                .retryCount(0)
+                .build();
+        mqService.sendDelay(
+                OrderMQConstants.EXCHANGE_TOPIC_ORDER_AUTO_COMPLETE,
+                OrderMQConstants.ROUTING_ORDER_AUTO_COMPLETE,
+                autoCompleteMessage,
+                delaySeconds);
     }
 
 

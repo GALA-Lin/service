@@ -1,4 +1,4 @@
-package com.unlimited.sports.globox;
+package com.unlimited.sports.globox.notification;
 
 
 import org.springframework.boot.SpringApplication;
@@ -10,7 +10,7 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  */
 
 @EnableDiscoveryClient
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = "com.unlimited.sports.globox")
 public class NotificationApplication {
     public static void main(String[] args) {
         SpringApplication.run(NotificationApplication.class, args);

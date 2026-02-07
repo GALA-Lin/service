@@ -5,11 +5,7 @@ import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.merchant.service.RefundRuleService;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthContext;
 import com.unlimited.sports.globox.merchant.util.MerchantAuthUtil;
-import com.unlimited.sports.globox.model.merchant.dto.BindRefundRuleDto;
-import com.unlimited.sports.globox.model.merchant.dto.CreateRefundRuleDto;
-import com.unlimited.sports.globox.model.merchant.dto.QueryRefundRuleDto;
-import com.unlimited.sports.globox.model.merchant.dto.UpdateRefundRuleDto;
-import com.unlimited.sports.globox.model.merchant.vo.RefundRuleSimpleVo;
+import com.unlimited.sports.globox.model.merchant.dto.*;
 import com.unlimited.sports.globox.model.merchant.vo.RefundRuleVo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,11 +13,13 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import static com.unlimited.sports.globox.common.constants.RequestHeaderConstants.HEADER_MERCHANT_ACCOUNT_ID;
-import static com.unlimited.sports.globox.merchant.util.MerchantConstants.*;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ID;
+import static com.unlimited.sports.globox.merchant.util.MerchantConstants.HEADER_MERCHANT_ROLE;
 
 /**
- * @since 2025/12/31 12:05
  * 退款规则管理Controller
+ *
+ * @since 2025/12/31
  */
 @Slf4j
 @RestController
@@ -44,9 +42,9 @@ public class RefundRuleController {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        // 退款规则管理通常需要较高权限
-        if (context.isStaff()) {
-            merchantAuthUtil.validatePermission(context, PERMISSION_ORDER_MANAGE);
+        // 如果指定了场馆，验证场馆访问权限
+        if (dto.getVenueId() != null) {
+            merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
         }
 
         RefundRuleVo result = refundRuleService.createRefundRule(context.getMerchantId(), dto);
@@ -65,10 +63,6 @@ public class RefundRuleController {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        if (context.isStaff()) {
-            merchantAuthUtil.validatePermission(context, PERMISSION_ORDER_MANAGE);
-        }
-
         RefundRuleVo result = refundRuleService.updateRefundRule(context.getMerchantId(), dto);
         return R.ok(result);
     }
@@ -77,7 +71,7 @@ public class RefundRuleController {
      * 删除退款规则
      */
     @DeleteMapping("/{ruleId}")
-    public R<Long> deleteRefundRule(
+    public R<Void> deleteRefundRule(
             @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
             @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
@@ -85,12 +79,8 @@ public class RefundRuleController {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        if (context.isStaff()) {
-            merchantAuthUtil.validatePermission(context, PERMISSION_ORDER_MANAGE);
-        }
-
         refundRuleService.deleteRefundRule(context.getMerchantId(), ruleId);
-        return R.ok(ruleId);
+        return R.ok();
     }
 
     /**
@@ -113,7 +103,7 @@ public class RefundRuleController {
      * 分页查询退款规则列表
      */
     @GetMapping
-    public R<Page<RefundRuleSimpleVo>> queryRefundRules(
+    public R<Page<RefundRuleVo>> queryRefundRules(
             @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
             @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
@@ -121,15 +111,20 @@ public class RefundRuleController {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        Page<RefundRuleSimpleVo> result = refundRuleService.queryRefundRules(context.getMerchantId(), dto);
+        // 如果指定了场馆，验证场馆访问权限
+        if (dto.getVenueId() != null) {
+            merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+        }
+
+        Page<RefundRuleVo> result = refundRuleService.queryRefundRules(context.getMerchantId(), dto);
         return R.ok(result);
     }
 
     /**
-     * 绑定退款规则到场馆
+     * 绑定普通退款规则到场馆
      */
-    @PostMapping("/bind")
-    public R<Void> bindRefundRule(
+    @PostMapping("/bind-normal")
+    public R<Void> bindNormalRefundRule(
             @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
             @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
             @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
@@ -140,11 +135,26 @@ public class RefundRuleController {
         // 验证场馆访问权限
         merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
 
-        if (context.isStaff()) {
-            merchantAuthUtil.validatePermission(context, PERMISSION_ORDER_MANAGE);
-        }
+        refundRuleService.bindRefundRuleToVenue(context.getMerchantId(), dto, false);
+        return R.ok();
+    }
 
-        refundRuleService.bindRefundRule(context.getMerchantId(), dto);
+    /**
+     * 绑定活动退款规则到场馆
+     */
+    @PostMapping("/bind-activity")
+    public R<Void> bindActivityRefundRule(
+            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
+            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
+            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
+            @RequestBody @Validated BindRefundRuleDto dto) {
+
+        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
+
+        // 验证场馆访问权限
+        merchantAuthUtil.validateVenueAccess(context, dto.getVenueId());
+
+        refundRuleService.bindRefundRuleToVenue(context.getMerchantId(), dto, true);
         return R.ok();
     }
 
@@ -160,32 +170,7 @@ public class RefundRuleController {
 
         MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
 
-        if (context.isStaff()) {
-            merchantAuthUtil.validatePermission(context, PERMISSION_ORDER_MANAGE);
-        }
-
         refundRuleService.setDefaultRule(context.getMerchantId(), ruleId);
-        return R.ok();
-    }
-
-    /**
-     * 启用/禁用退款规则
-     */
-    @PostMapping("/{ruleId}/toggle-status")
-    public R<Void> toggleRuleStatus(
-            @RequestHeader(HEADER_MERCHANT_ACCOUNT_ID) Long employeeId,
-            @RequestHeader(HEADER_MERCHANT_ID) Long merchantId,
-            @RequestHeader(HEADER_MERCHANT_ROLE) String roleStr,
-            @PathVariable Long ruleId,
-            @RequestParam Boolean enabled) {
-
-        MerchantAuthContext context = merchantAuthUtil.validateAndGetContext(employeeId, merchantId, roleStr);
-
-        if (context.isStaff()) {
-            merchantAuthUtil.validatePermission(context, PERMISSION_ORDER_MANAGE);
-        }
-
-        refundRuleService.toggleRuleStatus(context.getMerchantId(), ruleId, enabled);
         return R.ok();
     }
 }

@@ -43,7 +43,7 @@ public class Orders extends BaseEntity implements Serializable {
     /**
      * VENUE 订单场地归属：1=home平台，2=away平台
      */
-    private Integer sourcePlatform;
+    private SourcePlatformEnum sourcePlatform;
 
     /**
      * 购买方用户 ID

@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.social.util;
 
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.tencentyun.TLSSigAPIv2;
+import com.unlimited.sports.globox.common.utils.RandomNumberUtils;
 import com.unlimited.sports.globox.model.social.entity.TencentCloudImApiEnum;
 import com.unlimited.sports.globox.model.social.entity.TencentCloudImConstantEnum;
 import com.unlimited.sports.globox.model.social.entity.TencentImResult;
@@ -60,9 +61,8 @@ public class TencentCloudImUtil {
  
     /**
      * 获取腾讯im请求路径
-     * TODO 修改生成 admin 的逻辑 by dk
      */
-    private String getHttpsUrl(String imServiceApi, Integer random) {
+    private String getHttpsUrl(String imServiceApi, Long random) {
         return String.format("%s%s?sdkappid=%s&identifier=%s&usersig=%s&random=%s&contenttype=json",
                 imProperties.getImServerBaseUrl(), imServiceApi, imProperties.getAppId(), imProperties.getIdentifier(), this.getTxCloudUserSig(imProperties.getIdentifier()), random);
     }
@@ -72,25 +72,24 @@ public class TencentCloudImUtil {
      * @param userId 用户id
      */
     public void accountImport(String userId) {
-        accountImport(userId, null);
+        accountImport(userId, null, null);
     }
- 
+
     public void accountImport(String userId, String userName) {
         accountImport(userId, userName, null);
     }
  
     public String accountImport(String userId, String userName, String faceUrl) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
-        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ACCOUNT_IMPORT.getUrl(), random);
+        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ACCOUNT_IMPORT.getUrl(), RandomNumberUtils.randomUInt32());
         JSONObject jsonObject = new JSONObject();
-        jsonObject.put("Identifier", userId);
+        jsonObject.put("UserID", userId);
         if (StringUtils.isNotEmpty(userName)) {
             jsonObject.put("Nick", userName);
         }
         if (StringUtils.isNotEmpty(faceUrl)) {
             jsonObject.put("FaceUrl", faceUrl);
         }
-        log.info("腾讯云im导入单个账号，请求参数：{}", jsonObject.toString());
+        log.info("腾讯云im导入单个账号，请求参数：{}", jsonObject);
         String result = doPost(httpsUrl, jsonObject);
         log.info("腾讯云im导入单个账号，返回结果：{}", result);
         return result;
@@ -101,8 +100,7 @@ public class TencentCloudImUtil {
      * @param userIds 用户id集合
      */
     public void multiAccountImport(List<String> userIds) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
-        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.MULTI_ACCOUNT_IMPORT.getUrl(), random);
+        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.MULTI_ACCOUNT_IMPORT.getUrl(), RandomNumberUtils.randomUInt32());
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("Accounts", userIds);
         log.info("腾讯云im导入多个账号，请求参数：{}", jsonObject.toString());
@@ -115,8 +113,7 @@ public class TencentCloudImUtil {
      * @param userIds 用户id集合
      */
     public void accountDeleteBatch(List<String> userIds) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
-        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ACCOUNT_DELETE.getUrl(), random);
+        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ACCOUNT_DELETE.getUrl(), RandomNumberUtils.randomUInt32());
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("DeleteItem", getUserIdJsonList(userIds));
         log.info("腾讯云im删除账号，请求参数：{}", jsonObject.toString());
@@ -129,8 +126,7 @@ public class TencentCloudImUtil {
      * @param userIds 用户id集合
      */
     public String accountCheck(List<String> userIds) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
-        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ACCOUNT_CHECK.getUrl(), random);
+        String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ACCOUNT_CHECK.getUrl(), RandomNumberUtils.randomUInt32());
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("CheckItem", getUserIdJsonList(userIds));
         log.info("腾讯云im查询账号，请求参数：{}", jsonObject.toString());
@@ -156,7 +152,7 @@ public class TencentCloudImUtil {
      * @param msgContent 消息内容
      */
     public String sendMsg(Integer syncOtherMachine, String fromUserId, String toUserId, String msgType, String msgContent) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.SEND_MSG.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("SyncOtherMachine", syncOtherMachine);
@@ -183,7 +179,7 @@ public class TencentCloudImUtil {
      * @param msgContent 消息内容
      */
     public String batchSendMsg(Integer syncOtherMachine, String fromUserId, List<String> toUserIds, String msgType, String msgContent) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.BATCH_SEND_MSG.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("SyncOtherMachine", syncOtherMachine);
@@ -233,7 +229,7 @@ public class TencentCloudImUtil {
      * @return 单聊消息列表
      */
     public String adminGetRoamMsg(String fromUserId, String toUserId, Integer maxCnt, Long startTime, Long endTime, String lastMsgKey) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ADMIN_GET_ROAM_MSG.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("From_Account", fromUserId);
@@ -257,7 +253,7 @@ public class TencentCloudImUtil {
      * @param msgKey MsgKey
      */
     public void adminMsgWithDraw(String fromUserId, String toUserId, String msgKey) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ADMIN_MSG_WITH_DRAW.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("From_Account", fromUserId);
@@ -274,7 +270,7 @@ public class TencentCloudImUtil {
      * @param peerUserId 发送消息的用户
      */
     public void adminSetMsgRead(String reportUserId, String peerUserId) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.ADMIN_SET_MSG_READ.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("Report_Account", reportUserId);
@@ -291,7 +287,7 @@ public class TencentCloudImUtil {
      * @return 未读消息数量
      */
     public Integer getC2CUnreadMsgNum(String fromUserId, String toUserId) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.GET_C2C_UNREAD_MSG_NUM.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("From_Account", fromUserId);
@@ -321,7 +317,7 @@ public class TencentCloudImUtil {
      * @param msgBody 消息内容
      */
     public void importMsg(String fromUserId, String toUserId, Integer msgRandom, Long msgTime, List<JSONObject> msgBody) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.IMPORT_MSG.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("From_Account", fromUserId);
@@ -341,7 +337,7 @@ public class TencentCloudImUtil {
      * @return 会话列表
      */
     public String getContactList(String userId, Integer limit) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.CONTACT_GET_LIST.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("From_Account", userId);
@@ -358,7 +354,7 @@ public class TencentCloudImUtil {
      * @param peerUserId 对方用户ID
      */
     public void deleteContact(String userId, String peerUserId) {
-        Integer random = RandomUtils.nextInt(0, 999999999);
+        Long random = RandomNumberUtils.randomUInt32();
         String httpsUrl = getHttpsUrl(TencentCloudImApiEnum.CONTACT_DELETE.getUrl(), random);
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("From_Account", userId);

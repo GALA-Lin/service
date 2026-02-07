@@ -26,12 +26,15 @@ import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import com.unlimited.sports.globox.venue.util.TimeSlotSplitUtil;
 
 /**
  * aitennis平台适配器
@@ -164,43 +167,111 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
 
     /**
      * 将aitennis的CourtEvent数据转换为统一的DTO格式
+     * aitennis返回的是1小时级别的slot，需要拆分成30分钟，价格平分 如果是半个小时的,就不需要拆分
      */
     private List<ThirdPartyCourtSlotDto> convertEventsToDto(List<AitennisCourtEvent> events) {
         // 按照场地ID分组
-        return events.stream()
-                .collect(Collectors.groupingBy(AitennisCourtEvent::getCourtId))
-                .entrySet().stream()
+        Map<String, List<AitennisCourtEvent>> groupedEvents = events.stream()
+                .collect(Collectors.groupingBy(AitennisCourtEvent::getCourtId));
+
+        // 对分组后的场地排序，并转换为 DTO
+        return groupedEvents.entrySet().stream()
+                .sorted((e1, e2) -> {
+                    // 先按 court_sort 排序，如果相同则按 court_id 排序
+                    List<AitennisCourtEvent> events1 = e1.getValue();
+                    List<AitennisCourtEvent> events2 = e2.getValue();
+
+                    Integer sort1 = events1.isEmpty() ? 0 : events1.get(0).getCourtSort();
+                    Integer sort2 = events2.isEmpty() ? 0 : events2.get(0).getCourtSort();
+
+                    // 优先按 court_sort 排序
+                    int sortCompare = Integer.compare(sort1 != null ? sort1 : 0, sort2 != null ? sort2 : 0);
+                    if (sortCompare != 0) {
+                        return sortCompare;
+                    }
+
+                    // court_sort 相同时按 court_id 排序
+                    return e1.getKey().compareTo(e2.getKey());
+                })
                 .map(entry -> {
                     String courtId = entry.getKey();
                     List<AitennisCourtEvent> courtEvents = entry.getValue();
                     // 获取场地名称（同一场地的所有事件名称相同）
                     String courtName = courtEvents.isEmpty() ? "" : courtEvents.get(0).getCourtName();
-                    // 转换时间槽
+                    // 转换时间槽并按开始时间排序
+                    // aitennis返回的槽位可能是1小时或30分钟，需要根据时长判断是否拆分和价格处理
                     List<ThirdPartySlotDto> slots = courtEvents.stream()
-                            .map(event -> {
+                            .flatMap(event -> {
                                 // 判断是否可用：type为rent_price表示可租赁
                                 boolean available = "rent_price".equals(event.getType());
 
                                 // 获取价格（从items中提取）
-                                BigDecimal price = BigDecimal.ZERO;
+                                BigDecimal eventPrice = BigDecimal.ZERO;
                                 if (event.getItems() != null && !event.getItems().isEmpty()) {
                                     AitennisEventItem firstItem = event.getItems().get(0);
                                     if (firstItem.getData() != null && firstItem.getData().getPrice() != null) {
                                         try {
-                                            price = new BigDecimal(firstItem.getData().getPrice());
+                                            eventPrice = new BigDecimal(firstItem.getData().getPrice());
                                         } catch (NumberFormatException e) {
                                             log.warn("[aitennis] 价格格式错误: {}", firstItem.getData().getPrice());
+                                            return Stream.empty();
                                         }
                                     }
                                 }
 
-                                return ThirdPartySlotDto.builder()
-                                        .startTime(formatTime(event.getStartTime()))
-                                        .endTime(formatTime(event.getEndTime()))
-                                        .available(available)
-                                        .price(price)
-                                        .build();
+                                // 解析时间，处理24:00特殊情况
+                                // 先检查原始值是否为2400/2359，再做格式转换
+                                boolean isEndTime2400 = "2400".equals(event.getEndTime()) || "2359".equals(event.getEndTime());
+                                String startTimeStr = formatTime(event.getStartTime());
+                                String endTimeStr = formatTime(event.getEndTime());
+                                LocalTime startTime = LocalTime.parse(startTimeStr.length() > 5 ? startTimeStr.substring(0, 5) : startTimeStr);
+                                // 24:00/23:59:59需要特殊处理，转换为23:59用于LocalTime解析
+                                LocalTime endTime = isEndTime2400 ? LocalTime.of(23, 59) : LocalTime.parse(endTimeStr.length() > 5 ? endTimeStr.substring(0, 5) : endTimeStr);
+                                
+                                // 计算槽位时长（分钟），24:00按24*60计算
+                                long endMinutes = isEndTime2400 ? 24 * 60 : endTime.getHour() * 60 + endTime.getMinute();
+                                long startMinutes = startTime.getHour() * 60 + startTime.getMinute();
+                                long durationMinutes = endMinutes - startMinutes;
+
+                                List<ThirdPartySlotDto> resultSlots = new ArrayList<>();
+                                DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+
+                                if (durationMinutes == 60) {
+                                    // 1小时槽位：拆分成两个30分钟，价格平分
+                                    BigDecimal halfHourPrice = eventPrice.divide(new BigDecimal(2), 2, RoundingMode.HALF_UP);
+                                    LocalTime midTime = startTime.plusMinutes(30);
+                                    // 第一个30分钟槽位
+                                    resultSlots.add(ThirdPartySlotDto.builder()
+                                            .startTime(startTime.format(timeFormatter))
+                                            .endTime(midTime.format(timeFormatter))
+                                            .available(available)
+                                            .price(halfHourPrice)
+                                            .build());
+                                    // 第二个30分钟槽位（24:00/2400统一输出为23:59:59）
+                                    String secondSlotEndTime = isEndTime2400 ? "23:59:59" : endTime.format(timeFormatter);
+                                    resultSlots.add(ThirdPartySlotDto.builder()
+                                            .startTime(midTime.format(timeFormatter))
+                                            .endTime(secondSlotEndTime)
+                                            .available(available)
+                                            .price(halfHourPrice)
+                                            .build());
+                                } else if (durationMinutes == 30) {
+                                    // 30分钟槽位：直接使用，价格不变（24:00/2400统一输出为23:59:59）
+                                    String slotEndTime = isEndTime2400 ? "23:59:59" : endTime.format(timeFormatter);
+                                    resultSlots.add(ThirdPartySlotDto.builder()
+                                            .startTime(startTime.format(timeFormatter))
+                                            .endTime(slotEndTime)
+                                            .available(available)
+                                            .price(eventPrice)
+                                            .build());
+                                } else {
+                                    // 其他时长（如share_play、rent_court等占用多个小时的情况）：跳过，不生成槽位
+                                    // 这些通常是活动或已预订的场地，available=false，不需要显示
+                                    return Stream.empty();
+                                }
+                                return resultSlots.stream();
                             })
+                            .sorted(Comparator.comparing(slot -> LocalTime.parse(slot.getStartTime()))) // 按开始时间排序
                             .collect(Collectors.toList());
 
                     return ThirdPartyCourtSlotDto.builder()
@@ -214,14 +285,18 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
 
     /**
      * 将时间格式从 "0700" 转换为 "07:00"
+     * 特殊处理：2400 转换为 23:59:59（表示午夜），2359 也转换为 23:59:59（与我们系统一致）
      */
     private String formatTime(String time) {
         if (time == null || time.length() != 4) {
             return time;
         }
+        // 2400 或 2359 统一转换为 23:59:59（我们系统用 23:59:59 表示午夜）
+        if ("2400".equals(time) || "2359".equals(time)) {
+            return "23:59:59";
+        }
         return time.substring(0, 2) + ":" + time.substring(2, 4);
     }
-
 
     @Override
     public LockSlotsResult lockSlots(VenueThirdPartyConfig config, List<SlotLockRequest> slotRequests, String remark) {
@@ -243,39 +318,64 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
             log.info("[aitennis] 锁场 - 查询到总事件数: {}", allEvents.size());
             // 从响应中找到时间段对应的 rent_price 类型的项目，获取其 rent_price_id
             // 支持跨场地锁定：遍历所有 slotRequests，根据每个槽位的 thirdPartyCourtId 查找对应的 rent_price_id
+            // 重要：当多个30分钟槽位对应同一个aitennis的rent_price时，需要合并为一次锁场请求
+            // 但锁场时间应该使用我们请求的时间段，而不是aitennis的完整1小时时间段
+            // 使用Map按rent_price_id分组，记录每个rent_price_id对应的所有槽位请求时间
+            Map<String, List<SlotLockRequest>> rentPriceIdToSlotsMap = new LinkedHashMap<>();
+            for (SlotLockRequest slotRequest : slotRequests) {
+                String courtId = slotRequest.getThirdPartyCourtId();
+                String formattedStartTime = unformatTime(slotRequest.getStartTime());
+                String formattedEndTime = unformatTime(slotRequest.getEndTime());
+                // Away API返回的是小时粒度的events（如2100-2200）
+                // 但我们需要锁定30分钟粒度的槽位（如2100-2130）
+                // 所以应该找时间段有重叠的events，而不是精确匹配
+                AitennisCourtEvent rentPriceEvent = allEvents.stream()
+                        .filter(event -> event.getCourtId().equals(courtId)
+                                && EVENT_TYPE_RENT_PRICE.equals(event.getType())
+                                && event.getItems() != null
+                                && !event.getItems().isEmpty()
+                                && isTimeOverlap(formattedStartTime, formattedEndTime, event.getStartTime(), event.getEndTime()))
+                        .findFirst()
+                        .orElse(null);
+                if (rentPriceEvent == null) {
+                    log.error("[aitennis] 槽位不可用或已被预订: courtId={}, 请求时段: {}-{}, 原始时间: {}-{}",
+                            courtId, formattedStartTime, formattedEndTime, slotRequest.getStartTime(), slotRequest.getEndTime());
+                    throw new GloboxApplicationException(VenueCode.SLOT_NOT_AVAILABLE);
+                }
+                String rentPriceId = rentPriceEvent.getItems().get(0).getId();
+                // 按rent_price_id分组，收集同一rent_price_id下的所有槽位请求
+                rentPriceIdToSlotsMap.computeIfAbsent(rentPriceId, k -> new ArrayList<>()).add(slotRequest);
+            }
+            
+            // 构建锁场请求，合并同一rent_price_id下的多个30分钟槽位为连续时间段
             List<String> rentPriceIds = new ArrayList<>();
-            List<AitennisLockRequest.RentPriceInfo> rentPriceInfos = slotRequests.stream()
-                    .map(slotRequest -> {
-                        String courtId = slotRequest.getThirdPartyCourtId();
-                        String formattedStartTime = unformatTime(slotRequest.getStartTime());
-                        String formattedEndTime = unformatTime(slotRequest.getEndTime());
-                        // Away API返回的是小时粒度的events（如2100-2200）
-                        // 但我们需要锁定30分钟粒度的槽位（如2100-2130）
-                        // 所以应该找时间段有重叠的events，而不是精确匹配
-                        AitennisCourtEvent rentPriceEvent = allEvents.stream()
-                                .filter(event -> event.getCourtId().equals(courtId)
-                                        && EVENT_TYPE_RENT_PRICE.equals(event.getType())
-                                        && event.getItems() != null
-                                        && !event.getItems().isEmpty()
-                                        && isTimeOverlap(formattedStartTime, formattedEndTime, event.getStartTime(), event.getEndTime()))
-                                .findFirst()
-                                .orElse(null);
-                        if (rentPriceEvent == null) {
-                            log.error("[aitennis] 槽位不可用或已被预订: courtId={}, 请求时段: {}-{}, 原始时间: {}-{}",
-                                    courtId, formattedStartTime, formattedEndTime, slotRequest.getStartTime(), slotRequest.getEndTime());
-                            throw new GloboxApplicationException(VenueCode.SLOT_NOT_AVAILABLE);
-                        }
-                        String rentPriceId = rentPriceEvent.getItems().get(0).getId();
-                        rentPriceIds.add(rentPriceId);
-                        return AitennisLockRequest.RentPriceInfo.builder()
-                                .id(rentPriceId)
-                                .startTime(slotRequest.getStartTime())
-                                .endTime(slotRequest.getEndTime())
-                                .build();
-                    })
-                    .collect(Collectors.toList());
+            List<AitennisLockRequest.RentPriceInfo> rentPriceInfos = new ArrayList<>();
+            for (Map.Entry<String, List<SlotLockRequest>> entry : rentPriceIdToSlotsMap.entrySet()) {
+                String rentPriceId = entry.getKey();
+                List<SlotLockRequest> slots = entry.getValue();
+                rentPriceIds.add(rentPriceId);
+                // 找出这些槽位的最早开始时间和最晚结束时间，合并为一个连续时间段
+                String minStartTime = slots.stream()
+                        .map(s -> unformatTime(s.getStartTime()))
+                        .min(String::compareTo)
+                        .orElse("0000");
+                String maxEndTime = slots.stream()
+                        .map(s -> unformatTime(s.getEndTime()))
+                        .max(String::compareTo)
+                        .orElse("2400");
+                // 转换为锁场请求格式，23:59:59转为24:00
+                String lockStartTime = formatTime(minStartTime);
+                String lockEndTime = "2400".equals(maxEndTime) || "2359".equals(maxEndTime) 
+                        ? "24:00" : formatTime(maxEndTime);
+                rentPriceInfos.add(AitennisLockRequest.RentPriceInfo.builder()
+                        .id(rentPriceId)
+                        .startTime(lockStartTime)
+                        .endTime(lockEndTime)
+                        .build());
+                log.info("[aitennis] 锁场请求项: rentPriceId={}, 时间={}-{}, 槽位数={}", rentPriceId, lockStartTime, lockEndTime, slots.size());
+            }
 
-            log.info("[aitennis] 所有槽位可用性校验通过，准备锁场: slotCount={}", slotRequests.size());
+            log.info("[aitennis] 所有槽位可用性校验通过，准备锁场: slotCount={}, 去重后锁场项数={}", slotRequests.size(), rentPriceInfos.size());
             AitennisLockRequest lockRequest = AitennisLockRequest.builder()
                     .rentPriceId(rentPriceIds)
                     .purpose(LOCK_PURPOSE)
@@ -290,6 +390,7 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
             // 锁场成功后，重新查询events获取lock_court事件ID 如果查询失败不影响预定成功,因为away调用不可回滚
             // 后续解锁需要人工干预解锁
             List<AitennisCourtEvent> eventsAfterLock = queryDailyCourtEvents(config, bookingDate);
+            log.info("[锁场后]获取到的每日事件数据:{}",JSON.toJSON(eventsAfterLock));
             if (eventsAfterLock == null) {
                 log.error("[aitennis] 锁场成功但重新查询events失败");
                 // 返回失败结果，不抛异常
@@ -306,13 +407,18 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
                     .collect(Collectors.toSet());
 
             // 找出这些场地的lock_court事件，获取eventId（source_id）
+            // 精确匹配传入的remark，确保拿到正确的lock_id
+            final String expectedRemark = remark;
             List<AitennisCourtEvent> lockCourtEvents = eventsAfterLock.stream()
                     .filter(event -> courtIds.contains(event.getCourtId())
                             && EVENT_TYPE_LOCK_COURT.equals(event.getType())
                             && event.getItems() != null
-                            && !event.getItems().isEmpty())
+                            && !event.getItems().isEmpty()
+                            && event.getItems().stream().anyMatch(item -> 
+                                    item.getData() != null && item.getData().getRemark() != null 
+                                    && item.getData().getRemark().equals(expectedRemark)))
                     .toList();
-
+            log.info("[锁场后]查询到的lockCourtEvents, expectedRemark={}, events={}", expectedRemark, lockCourtEvents);
             if (lockCourtEvents.isEmpty()) {
                 log.error("[aitennis] 锁场成功但未找到lock_court事件");
                 // 返回失败结果，不抛异常
@@ -324,16 +430,39 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
                         .build();
             }
 
-            // 获取eventId（同一批锁场的所有lock_court事件的source_id相同）
-            String eventId = lockCourtEvents.get(0).getItems().get(0).getId();
-            log.info("[aitennis] 获取到eventId: {}", eventId);
-
-            // 构建返回的Map，每个slotRequest都对应同一个eventId
-            Map<SlotLockRequest, String> resultMap = slotRequests.stream()
-                    .collect(Collectors.toMap(
-                            slotRequest -> slotRequest,
-                            slotRequest -> eventId
-                    ));
+            // 根据每个slotRequest的时间匹配对应的lock_court事件，获取eventId
+            Map<SlotLockRequest, String> resultMap = new LinkedHashMap<>();
+            for (SlotLockRequest slotRequest : slotRequests) {
+                String courtId = slotRequest.getThirdPartyCourtId();
+                String requestStartTime = unformatTime(slotRequest.getStartTime());
+                String requestEndTime = unformatTime(slotRequest.getEndTime());
+                
+                // 找到时间匹配的lock_court事件
+                AitennisCourtEvent matchedEvent = lockCourtEvents.stream()
+                        .filter(event -> event.getCourtId().equals(courtId)
+                                && isTimeOverlap(requestStartTime, requestEndTime, event.getStartTime(), event.getEndTime()))
+                        .findFirst()
+                        .orElse(null);
+                
+                if (matchedEvent != null && !matchedEvent.getItems().isEmpty()) {
+                    String eventId = matchedEvent.getItems().get(0).getId();
+                    resultMap.put(slotRequest, eventId);
+                    log.info("[aitennis] 槽位 {}-{} 匹配到eventId: {}", slotRequest.getStartTime(), slotRequest.getEndTime(), eventId);
+                } else {
+                    log.warn("[aitennis] 槽位 {}-{} 未找到匹配的lock_court事件", slotRequest.getStartTime(), slotRequest.getEndTime());
+                }
+            }
+            
+            if (resultMap.isEmpty()) {
+                log.error("[aitennis] 锁场成功但未能匹配任何eventId");
+                String cacheKey = AwayVenueCacheConstants.buildSlotsCacheKey(config.getVenueId(), bookingDate);
+                redisService.deleteObject(cacheKey);
+                return LockSlotsResult.builder()
+                        .bookingIds(new LinkedHashMap<>())
+                        .slotPrices(new ArrayList<>())
+                        .build();
+            }
+            log.info("[aitennis] 获取到eventId映射: {}", resultMap.size());
             // 清除缓存
             String cacheKey = AwayVenueCacheConstants.buildSlotsCacheKey(config.getVenueId(), bookingDate);
             redisService.deleteObject(cacheKey);
@@ -386,10 +515,15 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
 
     /**
      * 将时间格式从 "07:00" 转换为 "0700"
+     * 特殊处理：23:59:59 或 23:59 转换为 2400（表示24:00，与第三方平台一致）
      */
     private String unformatTime(String time) {
         if (time == null) {
             return null;
+        }
+        // 23:59:59 或 23:59 统一转换为 2400（第三方平台用2400表示24:00/午夜）
+        if ("23:59:59".equals(time) || "23:59".equals(time)) {
+            return "2400";
         }
         return time.replace(":", "");
     }
@@ -420,58 +554,46 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
                     .map(SlotLockRequest::getThirdPartyCourtId)
                     .collect(Collectors.toSet());
 
-            // 找出这些场地的所有 lock_court 事件
+            // 获取期望的remark（用于完整匹配，确保只解锁自己锁的槽位）
+            String expectedRemark = slotRequests.stream()
+                    .map(SlotLockRequest::getThirdPartyRemark)
+                    .filter(r -> r != null && !r.isEmpty())
+                    .findFirst()
+                    .orElse(null);
+
+            if (expectedRemark == null) {
+                log.error("[aitennis] 解锁失败: thirdPartyRemark为空, venueId={}", config.getVenueId());
+                throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
+            }
+
+            // 找出这些场地的所有 lock_court 事件，必须完整匹配remark（确保只解锁自己锁的槽位）
             List<AitennisCourtEvent> lockCourtEvents = allEvents.stream()
                     .filter(event -> courtIds.contains(event.getCourtId())
                             && EVENT_TYPE_LOCK_COURT.equals(event.getType())
                             && event.getItems() != null
-                            && !event.getItems().isEmpty())
+                            && !event.getItems().isEmpty()
+                            && event.getItems().stream().anyMatch(item -> 
+                                    item.getData() != null && item.getData().getRemark() != null
+                                    && item.getData().getRemark().equals(expectedRemark)))
                     .toList();
 
             if (lockCourtEvents.isEmpty()) {
-                log.error("[aitennis] 找不到任何lock_court事件");
+                log.error("[aitennis] 找不到remark完整匹配的lock_court事件, expectedRemark={}", expectedRemark);
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
+            
+            log.info("[aitennis] remark完整匹配校验通过: expectedRemark={}, 匹配事件数={}", expectedRemark, lockCourtEvents.size());
 
-            // 提取 source_id（同一批次的所有lock_court事件的source_id应该相同）
+            // 从remark匹配的lock_court事件中获取sourceId（安全：只从我们自己锁的事件中取）
             String sourceId = lockCourtEvents.get(0).getItems().get(0).getId();
-            log.info("[aitennis] 找到{}个lock_court事件, sourceId={}", lockCourtEvents.size(), sourceId);
-
-            // 收集所有 event_id（去重）
-            Set<String> eventIdSet = lockCourtEvents.stream()
-                    .flatMap(event -> event.getItems().stream())
-                    .map(AitennisEventItem::getEventId)
-                    .filter(eventId -> eventId != null && !eventId.isEmpty())
-                    .collect(Collectors.toSet());
-
-            if (eventIdSet.isEmpty()) {
-                log.error("[aitennis] 未找到任何event_id");
+            if (sourceId == null || sourceId.isEmpty()) {
+                log.error("[aitennis] 未能从remark匹配的lock_court事件中获取sourceId");
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
+            log.info("[aitennis] 获取sourceId成功: sourceId={}, expectedRemark={}", sourceId, expectedRemark);
 
-            log.info("[aitennis] 提取成功: sourceId={}, eventIdCount={}", sourceId, eventIdSet.size());
-
-            // 调用 getEventsDetails API，查询事件详情（传递任意一个event_id即可，因为同一批次返回结果相同）
-            // 然后根据 slotRequests 筛选出要解锁的 item id（支持部分解锁）
-            Map<String, Object> filterResult = queryEventDetailsAndFilterWithCount(config,
-                    Collections.singletonList(eventIdSet.iterator().next()), slotRequests);
-
-            @SuppressWarnings("unchecked")
-            List<String> unlockCourtIds = (List<String>) filterResult.get("itemIds");
-            Integer totalItemCount = (Integer) filterResult.get("totalItemCount");
-
-            if (unlockCourtIds.isEmpty()) {
-                log.error("[aitennis] 未找到任何unlock court id");
-                throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
-            }
-
-            // 判断是否全部解锁：要解锁的item数 == 总item数
-            boolean isUnlockAll = (unlockCourtIds.size() == totalItemCount);
-            log.info("[aitennis] 解锁方式: totalItems={}, unlockItems={}, isUnlockAll={}",
-                    totalItemCount, unlockCourtIds.size(), isUnlockAll);
-
-            // 调用 unlockCourts API 进行解锁
-            callUnlockCourtsApi(config, sourceId, unlockCourtIds, isUnlockAll);
+            // Away球场只支持全部解锁（部分退款已在UnlockSlotConsumer中拦截）
+            callUnlockCourtsApi(config, sourceId, Collections.emptyList(), true);
 
             // 清除缓存
             String cacheKey = AwayVenueCacheConstants.buildSlotsCacheKey(config.getVenueId(), bookingDate);
@@ -607,88 +729,6 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
     }
 
     /**
-     * 查询事件详情，获取解锁所需的 id 列表（支持部分解锁）
-     * 根据 slotRequests 筛选出要解锁的 item id
-     *
-     * @param config 配置
-     * @param eventIds 事件ID列表
-     * @param slotRequests 要解锁的槽位列表（已合并连续时段）
-     * @return 要解锁的 item id 列表
-     */
-    private Map<String, Object> queryEventDetailsAndFilterWithCount(VenueThirdPartyConfig config, List<String> eventIds, List<SlotLockRequest> slotRequests) {
-        try {
-            String detailsUrl = getApiBaseUrl(config) + API_PATH_GET_EVENTS_DETAILS;
-            HttpHeaders headers = buildHeaders(config);
-
-            // 构建请求体
-            JSONObject requestBody = new JSONObject();
-            requestBody.put("event_id", eventIds);
-
-            log.info("[aitennis] 查询事件详情API - URL: {}", detailsUrl);
-            log.info("[aitennis] 查询事件详情API - Request: {}", requestBody.toJSONString());
-            HttpEntity<String> requestEntity = new HttpEntity<>(requestBody.toJSONString(), headers);
-            ResponseEntity<String> responseEntity = restTemplate.exchange(
-                    detailsUrl,
-                    HttpMethod.POST,
-                    requestEntity,
-                    String.class
-            );
-            log.info("[aitennis] 查询事件详情API - Response: {}", responseEntity.getBody());
-
-            String responseBody = responseEntity.getBody();
-            if (responseBody == null) {
-                log.error("[aitennis] 查询事件详情失败: 响应为空, eventIds={}", eventIds);
-                return Collections.emptyMap();
-            }
-
-            JSONObject jsonResponse = JSON.parseObject(responseBody);
-            Integer code = jsonResponse.getInteger("code");
-            if (code == null || code != 0) {
-                log.error("[aitennis] 查询事件详情失败: eventIds={}, code={}", eventIds, code);
-                return Collections.emptyMap();
-            }
-
-            JSONObject data = jsonResponse.getJSONObject("data");
-            if (data == null || data.getJSONArray("items") == null || data.getJSONArray("items").isEmpty()) {
-                log.error("[aitennis] 事件详情中没有items, eventIds={}", eventIds);
-                return Collections.emptyMap();
-            }
-
-            int totalItemCount = data.getJSONArray("items").size();
-
-            // 从 items 数组中提取所有 item，并根据 slotRequests 进行筛选（支持部分解锁）
-            List<String> filteredItemIds = data.getJSONArray("items").stream()
-                    .map(item -> (JSONObject) item)
-                    .filter(item -> {
-                        String courtId = item.getString("court_id");
-                        String startTime = formatTime(item.getString("start_time"));
-                        String endTime = formatTime(item.getString("end_time"));
-
-                        // 检查是否在要解锁的槽位列表中
-                        return slotRequests.stream().anyMatch(slot ->
-                                slot.getThirdPartyCourtId().equals(courtId) &&
-                                slot.getStartTime().equals(startTime) &&
-                                slot.getEndTime().equals(endTime)
-                        );
-                    })
-                    .map(item -> item.getString("id"))
-                    .filter(id -> id != null && !id.isEmpty())
-                    .collect(Collectors.toList());
-
-            log.info("[aitennis] 筛选出{}个时段进行解锁（从总共{}个items中筛选）",
-                    filteredItemIds.size(), totalItemCount);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("itemIds", filteredItemIds);
-            result.put("totalItemCount", totalItemCount);
-            return result;
-        } catch (Exception e) {
-            log.error("[aitennis] 查询事件详情异常: eventIds={}", eventIds, e);
-            return Collections.emptyMap();
-        }
-    }
-
-    /**
      * 调用 unlockCourts API 进行解锁
      *
      * @param config 配置
@@ -797,12 +837,12 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
                 log.error("[aitennis] 未获取到事件数据，无法计算价格");
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
-            // 从事件数据中提取价格信息，构建AwaySlotPrice列表
+            // 从事件数据中提取价格信息，构建AwaySlotPrice列表（需要拆分成30分钟槽位）
             List<AwaySlotPrice> slotPrices = events.stream()
                     // 只处理可租赁的事件（type为rent_price）
                     .filter(event -> EVENT_TYPE_RENT_PRICE.equals(event.getType()))
                     .filter(event -> event.getItems() != null && !event.getItems().isEmpty())
-                    .map(event -> {
+                    .flatMap(event -> {
                         try {
                             // 从事件的第一个item中提取价格
                             AitennisEventItem firstItem = event.getItems().get(0);
@@ -812,19 +852,40 @@ public class AitennisAdapter implements ThirdPartyPlatformAdapter {
                                     price = new BigDecimal(firstItem.getData().getPrice());
                                 } catch (NumberFormatException e) {
                                     log.warn("[aitennis] 价格格式错误: {}", firstItem.getData().getPrice());
-                                    return null;
+                                    return Stream.empty();
                                 }
                             }
 
-                            LocalTime startTime = LocalTime.parse(formatTime(event.getStartTime()));
-                            return AwaySlotPrice.builder()
-                                    .startTime(startTime)
-                                    .price(price)
-                                    .thirdPartyCourtId(event.getCourtId())
-                                    .build();
+                            // 解析开始和结束时间，处理24:00特殊情况
+                            String startTimeStr = formatTime(event.getStartTime());
+                            String endTimeStr = formatTime(event.getEndTime());
+                            LocalTime startTime = LocalTime.parse(startTimeStr);
+                            // 24:00需要特殊处理，转换为23:59
+                            boolean isEndTime2400 = "24:00".equals(endTimeStr);
+                            LocalTime endTime = isEndTime2400 ? LocalTime.of(23, 59) : LocalTime.parse(endTimeStr);
+
+                            // 将槽位拆分成30分钟槽位，按实际拆分数量平分价格
+                            List<TimeSlotSplitUtil.TimeSlot> splitSlots = TimeSlotSplitUtil.splitTimeSlots(startTime, endTime);
+                            int halfHourCount = splitSlots.size();
+                            if (halfHourCount <= 0) {
+                                halfHourCount = 1;
+                            }
+                            BigDecimal halfHourPrice = price.divide(BigDecimal.valueOf(halfHourCount), 2, RoundingMode.HALF_UP);
+
+                            // 每个拆分后的槽位使用平分后的价格
+                            List<AwaySlotPrice> splitPrices = new ArrayList<>();
+                            for (TimeSlotSplitUtil.TimeSlot splitSlot : splitSlots) {
+                                splitPrices.add(AwaySlotPrice.builder()
+                                        .startTime(splitSlot.getStartTime())
+                                        .price(halfHourPrice)
+                                        .thirdPartyCourtId(event.getCourtId())
+                                        .build());
+                            }
+                            return splitPrices.stream();
                         } catch (Exception e) {
-                            log.warn("[aitennis] 时间解析失败: {}", event.getStartTime(), e);
-                            return null;
+                            log.warn("[aitennis] 时间解析失败: startTime={}, endTime={}",
+                                    event.getStartTime(), event.getEndTime(), e);
+                            return Stream.empty();
                         }
                     })
                     .filter(Objects::nonNull)

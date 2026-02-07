@@ -108,8 +108,20 @@ public class VenueInitServiceImpl implements IVenueInitService {
         int businessHourCount = createBusinessHours(venueId, dto.getBusinessHours());
         log.info("营业时间配置创建成功：共{}条", businessHourCount);
 
-        // 7. 为所有场地生成槽位模板
-        int totalSlots = createSlotTemplates(courtIds);
+        // 7. 为所有场地生成槽位模板（根据营业时间）
+        // 从营业时间配置中获取REGULAR类型的营业时间
+        LocalTime openTime = LocalTime.of(0, 0);
+        LocalTime closeTime = LocalTime.of(23, 59, 59);
+        for (CreateVenueInitDto.BusinessHourConfigDto config : dto.getBusinessHours()) {
+            if (config.getRuleType() == 1) {  // REGULAR类型
+                openTime = LocalTime.parse(config.getOpenTime());
+                // 处理24:00特殊情况
+                String closeTimeStr = config.getCloseTime();
+                closeTime = "24:00".equals(closeTimeStr) ? LocalTime.of(23, 59, 59) : LocalTime.parse(closeTimeStr);
+                break;
+            }
+        }
+        int totalSlots = createSlotTemplates(courtIds, openTime, closeTime);
         log.info("槽位模板创建成功：共{}个", totalSlots);
 
         // 8. 创建便利设施关系
@@ -278,7 +290,9 @@ public class VenueInitServiceImpl implements IVenueInitService {
             VenuePriceTemplatePeriod period = new VenuePriceTemplatePeriod();
             period.setTemplateId(templateId);
             period.setStartTime(LocalTime.parse(periodDto.getStartTime()));
-            period.setEndTime(LocalTime.parse(periodDto.getEndTime()));
+            // 处理24:00特殊情况
+            String endTimeStr = periodDto.getEndTime();
+            period.setEndTime("24:00".equals(endTimeStr) ? LocalTime.of(23, 59, 59) : LocalTime.parse(endTimeStr));
             period.setWeekdayPrice(periodDto.getWeekdayPrice());
             period.setWeekendPrice(periodDto.getWeekendPrice());
             period.setHolidayPrice(periodDto.getHolidayPrice());
@@ -323,7 +337,9 @@ public class VenueInitServiceImpl implements IVenueInitService {
             // CLOSED_DATE类型不需要时间
             if (config.getRuleType() != 3) {
                 businessHour.setOpenTime(LocalTime.parse(config.getOpenTime()));
-                businessHour.setCloseTime(LocalTime.parse(config.getCloseTime()));
+                // 处理24:00特殊情况
+                String closeTimeStr = config.getCloseTime();
+                businessHour.setCloseTime("24:00".equals(closeTimeStr) ? LocalTime.of(23, 59, 59) : LocalTime.parse(closeTimeStr));
             }
 
             businessHour.setRemark(config.getRemark());
@@ -336,10 +352,10 @@ public class VenueInitServiceImpl implements IVenueInitService {
     }
 
     /**
-     * 为所有场地创建槽位模板（每个场地48个30分钟的槽位）
+     * 为所有场地创建槽位模板（根据营业时间生成）
      */
-    private int createSlotTemplates(List<Long> courtIds) {
-        List<VenueBookingSlotTemplate> allSlots = SlotTemplateGenerator.generateSlotsForMultipleCourts(courtIds);
+    private int createSlotTemplates(List<Long> courtIds, LocalTime openTime, LocalTime closeTime) {
+        List<VenueBookingSlotTemplate> allSlots = SlotTemplateGenerator.generateSlotsForMultipleCourts(courtIds, openTime, closeTime);
 
         for (VenueBookingSlotTemplate slot : allSlots) {
             slotTemplateMapper.insert(slot);

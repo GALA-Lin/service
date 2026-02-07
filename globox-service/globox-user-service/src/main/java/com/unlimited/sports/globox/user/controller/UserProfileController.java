@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.user.controller;
 import com.unlimited.sports.globox.common.constants.RequestHeaderConstants;
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.common.result.UserAuthCode;
+import com.unlimited.sports.globox.model.auth.dto.BindIdentityRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountConfirmRequest;
 import com.unlimited.sports.globox.model.auth.dto.CancelAccountRequest;
 import com.unlimited.sports.globox.model.auth.dto.SetGloboxNoRequest;
@@ -17,6 +18,7 @@ import com.unlimited.sports.globox.model.auth.vo.ProfileOptionsVo;
 import com.unlimited.sports.globox.model.auth.vo.UserProfileVo;
 import com.unlimited.sports.globox.model.auth.vo.UserMediaVo;
 import com.unlimited.sports.globox.model.auth.vo.UserSearchResultVo;
+import com.unlimited.sports.globox.model.auth.vo.UserIdentityVo;
 import com.unlimited.sports.globox.model.venue.vo.FileUploadVo;
 import com.unlimited.sports.globox.user.vo.VideoUploadVo;
 import com.unlimited.sports.globox.user.service.UserProfileService;
@@ -309,6 +311,20 @@ public class UserProfileController {
         return authService.verifyCancelAccount(request);
     }
 
+    @PostMapping("/account/cancel/third-party")
+    @Operation(summary = "第三方注销", description = "微信App/Apple等第三方登录用户注销（无需短信验证码，直接校验并确认）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "注销成功"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2063", description = "账号已被禁用，请联系管理员"),
+            @ApiResponse(responseCode = "2064", description = "账号已注销，请重新注册"),
+            @ApiResponse(responseCode = "2038", description = "不支持的客户端类型"),
+            @ApiResponse(responseCode = "2040", description = "参数无效")
+    })
+    public R<String> verifyCancelAccountThirdParty() {
+        return authService.verifyCancelAccountThirdParty();
+    }
+
     @PostMapping("/account/cancel/confirm")
     @Operation(summary = "注销账号确认", description = "用户确认后正式注销账号")
     @ApiResponses({
@@ -319,6 +335,34 @@ public class UserProfileController {
     })
     public R<String> confirmCancelAccount(@Validated @RequestBody CancelAccountConfirmRequest request) {
         return authService.confirmCancelAccount(request);
+    }
+
+    @PostMapping("/account/identity/bind")
+    @Operation(summary = "绑定账号", description = "已登录用户绑定微信/Apple/手机号身份")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "绑定成功"),
+            @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
+            @ApiResponse(responseCode = "2004", description = "验证码错误或已过期"),
+            @ApiResponse(responseCode = "2005", description = "验证码错误次数过多，请重新获取"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2063", description = "账号已被禁用，请联系管理员"),
+            @ApiResponse(responseCode = "2066", description = "第三方身份已被其他账号绑定"),
+            @ApiResponse(responseCode = "2040", description = "参数无效")
+    })
+    public R<String> bindIdentity(@Validated @RequestBody BindIdentityRequest request) {
+        return authService.bindIdentity(request);
+    }
+
+    @GetMapping("/account/identity")
+    @Operation(summary = "查询已绑定账号", description = "查询当前用户已绑定的登录方式列表")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "查询成功"),
+            @ApiResponse(responseCode = "2049", description = "缺少用户ID请求头"),
+            @ApiResponse(responseCode = "2063", description = "账号已被禁用，请联系管理员"),
+            @ApiResponse(responseCode = "2064", description = "账号已注销，请重新注册")
+    })
+    public R<List<UserIdentityVo>> getBoundIdentities() {
+        return authService.getBoundIdentities();
     }
 
     @PostMapping("/star-card/portrait/upload")

@@ -41,4 +41,10 @@ public class SlotLockRequest {
      * 锁定时由第三方平台返回，解锁时需要传入
      */
     private String thirdPartyBookingId;
+
+    /**
+     * 第三方锁场备注（格式：qiuhe_{时段}_{时间戳}）
+     * 用于解锁时校验，确保只解锁我们系统锁定的场地
+     */
+    private String thirdPartyRemark;
 }

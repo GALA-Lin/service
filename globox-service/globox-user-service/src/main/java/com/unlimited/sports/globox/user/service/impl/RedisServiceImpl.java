@@ -50,8 +50,7 @@ public class RedisServiceImpl implements RedisService {
     @Override
     public boolean canSendSms(String phone) {
         String key = RedisKeyConstants.SMS_RATE_PREFIX + phone;
-        Boolean hasKey = stringRedisTemplate.hasKey(key);
-        return hasKey == null || !hasKey;
+        return Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 60, TimeUnit.SECONDS));
     }
 
     @Override
@@ -59,12 +58,6 @@ public class RedisServiceImpl implements RedisService {
         String key = RedisKeyConstants.SMS_RATE_PREFIX + phone;
         Long expire = stringRedisTemplate.getExpire(key, TimeUnit.SECONDS);
         return expire == null ? -1 : expire;
-    }
-
-    @Override
-    public void recordSmsSent(String phone) {
-        String key = RedisKeyConstants.SMS_RATE_PREFIX + phone;
-        stringRedisTemplate.opsForValue().set(key, "1", 60, TimeUnit.SECONDS);
     }
 
     @Override
@@ -218,6 +211,11 @@ public class RedisServiceImpl implements RedisService {
             stringRedisTemplate.expire(key, expireSeconds, TimeUnit.SECONDS);
         }
         return count == null ? 0 : count;
+    }
+
+    @Override
+    public void clearSmsRateLimit(String phone) {
+        stringRedisTemplate.delete(RedisKeyConstants.SMS_RATE_PREFIX + phone);
     }
 
     @Override

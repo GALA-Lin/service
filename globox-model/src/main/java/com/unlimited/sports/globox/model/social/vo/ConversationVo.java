@@ -67,12 +67,7 @@ public class ConversationVo implements Serializable {
      */
 
     private LocalDateTime lastMessageAt;
-
-    /**
-     * 发送方未读计数
-     */
-
-    private Long unreadCountSender;
+    
 
     /**
      * 接收方未读计数

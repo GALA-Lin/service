@@ -12,6 +12,7 @@ import com.unlimited.sports.globox.model.venue.vo.*;
 import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueMapper;
 import com.unlimited.sports.globox.merchant.mapper.VenueFacilityRelationMapper;
+import com.unlimited.sports.globox.venue.adapter.constant.AwayVenueCacheConstants;
 import com.unlimited.sports.globox.venue.adapter.dto.*;
 import com.unlimited.sports.globox.venue.config.AwayConfig;
 import com.unlimited.sports.globox.venue.dto.ActivityPreviewContext;
@@ -770,14 +771,17 @@ public class BookingServiceImpl implements IBookingService {
                     context.getCourtMap()
             );
             // 锁场时验证价格：检查每个槽位是否都有价格
+            List<String> missingPriceSlots = new ArrayList<>();
             for (VenueBookingSlotTemplate template : templates) {
                 Map<LocalTime, BigDecimal> courtPrices = detailedPricingInfo.getPricesByCourtId()
                         .get(template.getCourtId());
                 if (courtPrices == null || !courtPrices.containsKey(template.getStartTime())) {
-                    log.error("[锁场失败] 槽位缺少价格 - courtId: {}, startTime: {}",
-                            template.getCourtId(), template.getStartTime());
-                    throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
+                    missingPriceSlots.add("courtId: " + template.getCourtId() + ", startTime: " + template.getStartTime());
                 }
+            }
+            if (!missingPriceSlots.isEmpty()) {
+                log.error("[锁场失败] {}个槽位缺少价格 - {}", missingPriceSlots.size(), missingPriceSlots);
+                throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
         }
         // 构建templateId -> record的映射
@@ -1174,11 +1178,23 @@ public class BookingServiceImpl implements IBookingService {
         syncAwaySlots(venueId, bookingDate, thirdPartySlots, courtMap, templateMap);
 
         //  转换第三方数据为CourtSlotVo格式
+        List<String> notFoundCourts = new ArrayList<>();
         List<CourtSlotVo> result = thirdPartySlots.stream()
-                .map(slot -> convertThirdPartyDtoToCourtSlotVo(slot, courtMap, templateMap))
+                .map(slot -> {
+                    CourtSlotVo vo = convertThirdPartyDtoToCourtSlotVo(slot, courtMap, templateMap);
+                    if (vo == null) {
+                        notFoundCourts.add("thirdPartyCourtId: " + slot.getThirdPartyCourtId() +
+                                ", courtName: " + slot.getCourtName());
+                    }
+                    return vo;
+                })
                 .filter(Objects::nonNull)  // 过滤掉无法匹配的场地
                 .collect(Collectors.toList());
 
+        if (!notFoundCourts.isEmpty()) {
+            log.error("本地未找到对应场地，跳过{}个场地 - venueId: {}, 场地列表: {}",
+                    notFoundCourts.size(), venueId, notFoundCourts);
+        }
         log.info("获取Away球场槽位成功 - venueId: {}, 场地数: {}", venueId, result.size());
         return result;
     }
@@ -1195,9 +1211,7 @@ public class BookingServiceImpl implements IBookingService {
         // 根据第三方场地ID查找本地场地信息
         Court court = courtMap.get(dto.getThirdPartyCourtId());
         if (court == null) {
-            // 本地没有对应场地，直接不展示
-            log.error("本地未找到对应场地，跳过该场地 - thirdPartyCourtId: {}, courtName: {}",
-                    dto.getThirdPartyCourtId(), dto.getCourtName());
+            // 本地没有对应场地，直接不展示（错误日志在外层统一打印）
             return null;
         }
 
@@ -1269,8 +1283,21 @@ public class BookingServiceImpl implements IBookingService {
                                                           Map<String, VenueBookingSlotTemplate> templateMap) {
         List<BookingSlotVo> result = new ArrayList<>();
 
-        // 使用工具类拆分时间槽位（自动处理跨午夜）
-        TimeSlotSplitUtil.splitTimeSlots(startTime, endTime, slot -> {
+        // 先获取全部拆分结果，用于判断是否需要linked标记和价格平分
+        List<TimeSlotSplitUtil.TimeSlot> splitSlots = TimeSlotSplitUtil.splitTimeSlots(startTime, endTime);
+        int splitCount = splitSlots.size();
+        boolean isLinked = splitCount > 1;
+
+        // 如果原始槽位>30分钟，按比例平分价格
+        BigDecimal pricePerSlot;
+        if (isLinked && originalSlot.getPrice() != null) {
+            pricePerSlot = originalSlot.getPrice()
+                    .divide(BigDecimal.valueOf(splitCount), 2, RoundingMode.HALF_UP);
+        } else {
+            pricePerSlot = originalSlot.getPrice();
+        }
+
+        for (TimeSlotSplitUtil.TimeSlot slot : splitSlots) {
             LocalTime currentTime = slot.getStartTime();
             LocalTime slotEnd = slot.getEndTime();
 
@@ -1279,31 +1306,35 @@ public class BookingServiceImpl implements IBookingService {
             VenueBookingSlotTemplate template = templateMap.get(templateKey);
 
             if (template != null) {
-                // 创建槽位VO（继承原始槽位的状态和价格）
                 BookingSlotVo slotVo = convertThirdPartySlotDtoToBookingSlotVo(
                         originalSlot,
                         template.getBookingSlotTemplateId(),
                         currentTime,
-                        slotEnd
+                        slotEnd,
+                        pricePerSlot,
+                        isLinked
                 );
                 result.add(slotVo);
             }
-        });
+        }
 
         return result;
     }
 
     /**
-     * 将统一的ThirdPartySlotDto转换为BookingSlotVo（带自定义时间）
+     * 将统一的ThirdPartySlotDto转换为BookingSlotVo（带自定义时间和价格）
      *
      * @param slotDto 统一的第三方槽位DTO
      * @param templateId 本地槽位模版ID
      * @param startTime 自定义开始时间
      * @param endTime 自定义结束时间
+     * @param splitPrice 拆分后的价格（如1小时120拆成2个30分钟各60）
+     * @param linked 是否连续槽位（从更大时间单位拆分而来）
      * @return BookingSlotVo
      */
     private BookingSlotVo convertThirdPartySlotDtoToBookingSlotVo(ThirdPartySlotDto slotDto, Long templateId,
-                                                                   LocalTime startTime, LocalTime endTime) {
+                                                                   LocalTime startTime, LocalTime endTime,
+                                                                   BigDecimal splitPrice, boolean linked) {
         // 判断状态
         boolean isAvailable = Boolean.TRUE.equals(slotDto.getAvailable());
         Integer status = isAvailable ? BookingSlotStatus.AVAILABLE.getValue() : BookingSlotStatus.EXPIRED.getValue();
@@ -1317,8 +1348,9 @@ public class BookingServiceImpl implements IBookingService {
                 .status(status)
                 .statusDesc(statusDesc)
                 .isAvailable(isAvailable)
-                .price(slotDto.getPrice())
+                .price(splitPrice)
                 .isMyBooking(false)  // Away球场默认非本人预订
+                .linked(linked)
                 .build();
     }
 
@@ -1331,7 +1363,10 @@ public class BookingServiceImpl implements IBookingService {
      * @return 唯一Key
      */
     private String buildTemplateKey(Long courtId, LocalTime startTime, LocalTime endTime) {
-        return courtId + "_" + startTime + "_" + endTime;
+        // 如果endTime是00:00:00（表示午夜/次日0点）或23:59:00，统一转换为23:59:59
+        LocalTime normalizedEndTime = (LocalTime.MIDNIGHT.equals(endTime) || LocalTime.of(23, 59).equals(endTime))
+                ? LocalTime.of(23, 59, 59) : endTime;
+        return courtId + "_" + startTime + "_" + normalizedEndTime;
     }
 
     /**
@@ -1373,23 +1408,42 @@ public class BookingServiceImpl implements IBookingService {
             if (court != null && awayCourtSlot.getSlots() != null) {
                 Long courtId = court.getCourtId();
                 awayCourtSlot.getSlots().forEach(slot -> {
-                    String awaySlotKey = courtId + "_" + slot.getStartTime();
-                    awaySlotKeys.add(awaySlotKey);
-                    // 如果本地不存在该槽位，加入待插入列表
-                    if (!localSlotKeys.contains(awaySlotKey)) {
-                        VenueBookingSlotTemplate template = VenueBookingSlotTemplate.builder()
-                                .courtId(courtId)
-                                .startTime(LocalTime.parse(slot.getStartTime()))
-                                .endTime(LocalTime.parse(slot.getEndTime()))
-                                .build();
-                        slotsToInsert.add(template);
-                        log.info("[Away槽位同步] 发现缺失槽位 - courtId: {}, startTime: {}, endTime: {}",
-                                courtId, slot.getStartTime(), slot.getEndTime());
+                    // 处理24:00的情况
+                    String startTimeStr = slot.getStartTime();
+                    String endTimeStr = slot.getEndTime();
+                    if ("24:00".equals(endTimeStr)) {
+                        endTimeStr = "23:59";
                     }
+
+                    LocalTime startTime = LocalTime.parse(startTimeStr);
+                    LocalTime endTime = LocalTime.parse(endTimeStr);
+
+                    // 将槽位拆分成30分钟，并将每个拆分后的槽位加入awaySlotKeys
+                    TimeSlotSplitUtil.splitTimeSlots(startTime, endTime, splitSlot -> {
+                        LocalTime splitStart = splitSlot.getStartTime();
+                        // 如果endTime是00:00:00（表示午夜/次日0点）或23:59:00，统一转换为23:59:59
+                        LocalTime rawEnd = splitSlot.getEndTime();
+                        LocalTime splitEnd = (LocalTime.MIDNIGHT.equals(rawEnd) || LocalTime.of(23, 59).equals(rawEnd))
+                                ? LocalTime.of(23, 59, 59) : rawEnd;
+                        String awaySlotKey = courtId + "_" + splitStart.toString();
+                        awaySlotKeys.add(awaySlotKey);
+
+                        // 如果本地不存在该槽位，加入待插入列表
+                        if (!localSlotKeys.contains(awaySlotKey)) {
+                            VenueBookingSlotTemplate template = VenueBookingSlotTemplate.builder()
+                                    .courtId(courtId)
+                                    .startTime(splitStart)
+                                    .endTime(splitEnd)
+                                    .build();
+                            slotsToInsert.add(template);
+                            log.info("[Away槽位同步] 发现缺失槽位 - courtId: {}, startTime: {}, endTime: {}",
+                                    courtId, splitStart, splitEnd);
+                        }
+                    });
                 });
             }
         });
-        //  批量插入缺失的槽位（单次操作，不在循环中）
+        //  批量插入缺失的槽位
         if (!slotsToInsert.isEmpty()) {
             try {
                 slotsToInsert.forEach(slotTemplateMapper::insert);
@@ -1418,10 +1472,8 @@ public class BookingServiceImpl implements IBookingService {
                 })
                 .toList();
         if (!keysToRemove.isEmpty()) {
-            keysToRemove.forEach(key -> {
-                templateMap.remove(key);
-                log.error("[Away槽位同步] 移除本地多余的槽位 - key: {}", key);
-            });
+            keysToRemove.forEach(templateMap::remove);
+            log.warn("[Away槽位同步] 移除本地多余的槽位 - 移除数量: {}, 槽位列表: {}", keysToRemove.size(), keysToRemove);
         }
         log.info("[Away槽位同步] 完成 - 新增: {}, 移除: {}", slotsToInsert.size(), keysToRemove.size());
     }
@@ -1454,19 +1506,34 @@ public class BookingServiceImpl implements IBookingService {
 
         // 根据 platformCode 获取对应的适配器
         ThirdPartyPlatformAdapter adapter = adapterFactory.getAdapter(platformCode);
+
+        // 检查是否所有场地都配置了第三方id
+        List<String> missingThirdPartyIdCourts = courts.stream()
+                .filter(court -> court.getThirdPartyCourtId() == null)
+                .map(court -> "courtId: " + court.getCourtId() + ", courtName: " + court.getName())
+                .collect(Collectors.toList());
+
+        if (!missingThirdPartyIdCourts.isEmpty()) {
+            log.error("第三方球馆{}:{}中有{}个场地未配置第三方id,预定失败 - 场地列表: {}",
+                    venue.getVenueId(), venue.getName(), missingThirdPartyIdCourts.size(), missingThirdPartyIdCourts);
+            throw new GloboxApplicationException(VenueCode.VENUE_CAN_NOT_BOOKING);
+        }
+
         Map<Long, String> courtThirdPartyIdMap = courts.stream()
                 .collect(Collectors.toMap(
                         Court::getCourtId,
-                        court -> {
-                            String thirdPartyId = court.getThirdPartyCourtId();
-                            if (thirdPartyId == null) {
-                                log.error("第三方球馆{}:{}中的{}:{}未配置第三方id,预定失败",venue.getVenueId(),venue.getName(),court.getCourtId(),court.getName());
-                                throw new GloboxApplicationException(VenueCode.VENUE_CAN_NOT_BOOKING);
-                            }
-                            return thirdPartyId;
-                        },
+                        Court::getThirdPartyCourtId,
                         (existingValue, newValue) -> existingValue
                 ));
+
+        // 生成锁场备注（格式：{LOCK_REMARK_PREFIX}_{时段}_{时间戳}）用于解锁时校验
+        long lockTimestamp = System.currentTimeMillis();
+        String timeSlotRange = templates.stream()
+                .map(t -> t.getStartTime().toString())
+                .sorted()
+                .collect(Collectors.joining(","));
+        String thirdPartyRemark = String.format("%s_%s_%d", AwayVenueCacheConstants.LOCK_REMARK_PREFIX, timeSlotRange, lockTimestamp);
+        log.info("[Away锁场] 生成锁场备注: {}", thirdPartyRemark);
 
         // 构建SlotLockRequest列表
         List<SlotLockRequest> slotLockRequests = templates.stream()
@@ -1485,15 +1552,16 @@ public class BookingServiceImpl implements IBookingService {
         // 调用第三方平台锁场 如果锁场失败,内部会抛出异常
         // 但是如果锁场成功,而拿到的BookingId为空,那视为锁场成功,后续需要人工干预去解锁
         // 出现这种情况(锁场成功后的查询订单id/锁场id 失败),可能是第二次查询超时
-        LockSlotsResult lockResult = adapter.lockSlots(config, slotLockRequests, awayConfig.getBooking().getBookingUserName());
+        LockSlotsResult lockResult = adapter.lockSlots(config, slotLockRequests, thirdPartyRemark);
         log.info("[Away锁场] 第三方平台锁场成功 - venueId: {},  价格信息: {}",
                 venue.getVenueId(),lockResult.getSlotPrices());
-        if(ObjectUtils.isEmpty(lockResult.getBookingIds()) || lockResult.getBookingIds().size() < templates.size()) {
-            // 获取到的id不全或者获取不到
-            log.error("[lockInAway]获取到的bookingIds不全或者获取不到,场馆: {}->{},时间:{}",venue.getVenueId(),venue.getName(),data);
-        }else {
-            // 构建templateId -> thirdPartyBookingId的映射
-            Map<Long, String> templateIdToThirdPartyBookingIdMap = lockResult.getBookingIds().entrySet().stream()
+        
+        // 构建templateId -> thirdPartyBookingId的映射（即使bookingIds为空也要保存remark）
+        Map<Long, String> templateIdToThirdPartyBookingIdMap = new HashMap<>();
+        
+        if(!ObjectUtils.isEmpty(lockResult.getBookingIds())) {
+            List<String> unmatchedTemplates = new ArrayList<>();
+            templateIdToThirdPartyBookingIdMap = lockResult.getBookingIds().entrySet().stream()
                     .map(entry -> {
                         SlotLockRequest slotRequest = entry.getKey();
                         String thirdPartyBookingId = entry.getValue();
@@ -1511,8 +1579,8 @@ public class BookingServiceImpl implements IBookingService {
                                 .orElse(null);
 
                         if (matchedTemplate == null) {
-                            log.error("[Away锁场] 未找到匹配的template - courtId: {}, time: {}-{}",
-                                    slotRequest.getThirdPartyCourtId(), slotRequest.getStartTime(), slotRequest.getEndTime());
+                            unmatchedTemplates.add("courtId: " + slotRequest.getThirdPartyCourtId() +
+                                    ", time: " + slotRequest.getStartTime() + "-" + slotRequest.getEndTime());
                             return null;
                         }
 
@@ -1520,34 +1588,48 @@ public class BookingServiceImpl implements IBookingService {
                     })
                     .filter(Objects::nonNull)
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-            try {
-                updateRecordsThirdPartyBookingId(records, templateIdToThirdPartyBookingIdMap);
-            }catch (Exception e) {
-                log.error("[Away锁场] 成功,但是插入第三方锁场id失败,场馆:{} -> {}",venue.getVenueId(),venue.getName());
-                return lockResult;
-            }
-            log.info("[Away锁场] 已更新{}条records的thirdPartyBookingId", records.size());
 
+            if (!unmatchedTemplates.isEmpty()) {
+                log.error("[Away锁场] 未找到匹配的template - 数量: {}, 列表: {}",
+                        unmatchedTemplates.size(), unmatchedTemplates);
+            }
         }
+        
+        if(templateIdToThirdPartyBookingIdMap.size() < templates.size()) {
+            // 获取到的id不全或者获取不到，锁场失败（解锁时需要bookingId和remark都有效）
+            log.error("[lockInAway]获取到的bookingIds不全或者获取不到,场馆: {}->{},时间:{},获取到:{}/{}",
+                    venue.getVenueId(),venue.getName(),data, templateIdToThirdPartyBookingIdMap.size(), templates.size());
+        }
+        
+        // 保存bookingId和thirdPartyRemark
+        try {
+            updateRecordsThirdPartyBookingIdAndRemark(records, templateIdToThirdPartyBookingIdMap, thirdPartyRemark);
+        }catch (Exception e) {
+            log.error("[Away锁场] 成功,但是插入第三方锁场id/remark失败,场馆:{} -> {}",venue.getVenueId(),venue.getName(), e);
+            return lockResult;
+        }
+        log.info("[Away锁场] 已更新{}条records的thirdPartyBookingId和thirdPartyRemark, remark: {}", records.size(), thirdPartyRemark);
         // 返回LockSlotsResult，包含bookingIds映射和价格信息
         return lockResult;
     }
 
     /**
-     * 批量更新records的thirdPartyBookingId
+     * 批量更新records的thirdPartyBookingId和thirdPartyRemark
      *
      * @param records 要更新的records列表
      * @param templateIdToThirdPartyBookingIdMap templateId -> thirdPartyBookingId的映射
+     * @param thirdPartyRemark 第三方平台锁场备注（用于解锁时校验）
      */
-    private void updateRecordsThirdPartyBookingId(
-        List<VenueBookingSlotRecord> records, Map<Long, String> templateIdToThirdPartyBookingIdMap) {
+    private void updateRecordsThirdPartyBookingIdAndRemark(
+        List<VenueBookingSlotRecord> records, Map<Long, String> templateIdToThirdPartyBookingIdMap, String thirdPartyRemark) {
 
-        // 为每个record设置thirdPartyBookingId
+        // 为每个record设置thirdPartyBookingId和thirdPartyRemark
         records.forEach(record -> {
             String thirdPartyBookingId = templateIdToThirdPartyBookingIdMap.get(record.getSlotTemplateId());
             if (thirdPartyBookingId != null) {
                 record.setThirdPartyBookingId(thirdPartyBookingId);
             }
+            record.setThirdPartyRemark(thirdPartyRemark);
         });
         // 批量更新
         slotRecordService.updateBatchById(records);

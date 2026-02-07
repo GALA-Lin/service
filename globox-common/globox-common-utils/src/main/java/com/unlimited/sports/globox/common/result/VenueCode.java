@@ -25,6 +25,7 @@ public enum VenueCode implements ResultCode {
     VENUE_CAN_NOT_UNLOCK(7008,"无法解锁,请联系商家手动解锁"),
     VENUE_PRICE_NOT_CONFIGURED(7009, "该场地价格未配置,请联系商家或预定其他场地"),
     VENUE_TIME_SLOT_BOOKING_NOT_ALLOWED(7010, "不允许时段预定"),
+    VENUE_MIN_BOOKING_DURATION(7011, "该场馆此时间段最少起订1小时"),
 
     // 活动相关 7021-7040
     ACTIVITY_PARAM_INVALID(7021, "活动信息加载失败，请尝试重新进入页面"),

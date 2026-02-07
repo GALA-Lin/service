@@ -11,6 +11,8 @@ import org.apache.dubbo.config.annotation.DubboService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  **/
 @Slf4j
@@ -37,5 +39,10 @@ public class ChatDubboServiceImpl implements ChatDubboService {
             log.error("用户注册腾讯 IM 失败:{}", e.getMessage(), e);
             return RpcResult.error(SocialCode.IMPORT_USER_TO_IM_FAILED);
         }
+    }
+
+    @Override
+    public void batchAccountImport(List<String> userIdList) {
+        tencentCloudImUtil.multiAccountImport(userIdList);
     }
 }

@@ -71,21 +71,32 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
             Map<Long, Court> courtMap) {
         log.info("[价格转换] Away槽位价格转换为DetailedPricingInfo - 总槽位数: {}, 选中槽位数: {}", awaySlotPrices.size(), templates.size());
 
-        // 构建所有可用槽位的价格映射
+        // 构建 thirdPartyCourtId -> courtId 的反向映射，用于快速查找
+        Map<String, Long> thirdPartyCourtIdToLocalCourtIdMap = courtMap.values().stream()
+                .filter(court -> court.getThirdPartyCourtId() != null)
+                .collect(Collectors.toMap(Court::getThirdPartyCourtId, Court::getCourtId));
+
+        // 诊断日志：显示courtMap中的本地场地信息
+        log.info("[价格转换] 本地场地映射 - courtMap包含{}个场地: {}", courtMap.size(),
+                courtMap.values().stream()
+                        .map(c -> String.format("courtId=%s,thirdPartyCourtId=%s", c.getCourtId(), c.getThirdPartyCourtId()))
+                        .collect(Collectors.joining("; ")));
+
+        // 收集未找到本地场地的第三方场地ID
+        List<String> unmatchedThirdPartyCourtIds = new ArrayList<>();
+
+        // 构建所有可用槽位的价格映射（只包含在courtMap中的场地）
         Map<Long, Map<LocalTime, BigDecimal>> pricesByCourtId = awaySlotPrices.stream()
                 .map(slotPrice -> {
-                    // 找到对应的courtId
-                    Court court = courtMap.values().stream()
-                            .filter(c -> c.getThirdPartyCourtId().equals(slotPrice.getThirdPartyCourtId()))
-                            .findFirst()
-                            .orElse(null);
+                    // 快速查找对应的本地courtId
+                    Long localCourtId = thirdPartyCourtIdToLocalCourtIdMap.get(slotPrice.getThirdPartyCourtId());
 
-                    if (court == null) {
-                        log.warn("[价格转换] 未找到对应的本地场地 - thirdPartyCourtId: {}", slotPrice.getThirdPartyCourtId());
+                    if (localCourtId == null) {
+                        unmatchedThirdPartyCourtIds.add(slotPrice.getThirdPartyCourtId());
                         return null;
                     }
 
-                    return Map.entry(court.getCourtId(), Map.entry(slotPrice.getStartTime(), slotPrice.getPrice()));
+                    return Map.entry(localCourtId, Map.entry(slotPrice.getStartTime(), slotPrice.getPrice()));
                 })
                 .filter(Objects::nonNull)
                 .collect(Collectors.groupingBy(
@@ -96,13 +107,26 @@ public class VenuePriceServiceImpl implements IVenuePriceService {
                         )
                 ));
 
+        // 汇总日志：如果有未匹配的场地，只记录一次警告
+        if (!unmatchedThirdPartyCourtIds.isEmpty()) {
+            // 去重并统计
+            Set<String> uniqueUnmatched = new HashSet<>(unmatchedThirdPartyCourtIds);
+            log.warn("[价格转换] {}个槽位价格未找到对应的本地场地 - 不匹配的第三方场地ID: {}",
+                    unmatchedThirdPartyCourtIds.size(), uniqueUnmatched);
+        }
+
         Map<Long, Long> courtIdToTemplateIdMap = new HashMap<>();
 
         // 计算基础价格：只计算用户选中的模板对应的槽位价格
         BigDecimal basePrice = templates.stream()
                 .map(template -> {
                     Map<LocalTime, BigDecimal> courtPrices = pricesByCourtId.getOrDefault(template.getCourtId(), Collections.emptyMap());
-                    return courtPrices.getOrDefault(template.getStartTime(), BigDecimal.ZERO);
+                    BigDecimal price = courtPrices.getOrDefault(template.getStartTime(), BigDecimal.ZERO);
+                    if (price.compareTo(BigDecimal.ZERO) == 0) {
+                        log.warn("[价格转换] 选中槽位未找到价格 - courtId: {}, startTime: {}, pricesByCourtId包含该场地: {}",
+                                template.getCourtId(), template.getStartTime(), pricesByCourtId.containsKey(template.getCourtId()));
+                    }
+                    return price;
                 })
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 

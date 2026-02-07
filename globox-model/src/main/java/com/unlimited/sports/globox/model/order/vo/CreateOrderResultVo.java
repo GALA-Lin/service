@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import javax.validation.constraints.NotNull;
+import java.io.Serial;
 import java.io.Serializable;
 
 /**
@@ -20,6 +21,7 @@ import java.io.Serializable;
 @Schema(name = "CreateOrderResultVo", description = "创建订单结果返回对象")
 public class CreateOrderResultVo implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     /**
@@ -28,4 +30,10 @@ public class CreateOrderResultVo implements Serializable {
     @NotNull
     @Schema(description = "订单号", example = "202512180001")
     private Long orderNo;
+
+    /**
+     * 是否需要调起支付
+     */
+    @NotNull
+    private Boolean needPay;
 }

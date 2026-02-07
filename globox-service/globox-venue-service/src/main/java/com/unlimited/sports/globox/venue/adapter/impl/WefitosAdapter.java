@@ -28,6 +28,7 @@ import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.PostConstruct;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -35,6 +36,7 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import com.unlimited.sports.globox.venue.util.TimeSlotSplitUtil;
 
 /**
  * Wefitos平台适配器
@@ -146,7 +148,9 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                 .filter(p -> {
                     try {
                         LocalTime s = LocalTime.parse(p.getStartTime(), TIME_FORMATTER);
-                        LocalTime e = LocalTime.parse(p.getEndTime(), TIME_FORMATTER);
+                        // 处理24:00特殊情况
+                        String endTimeStr = p.getEndTime();
+                        LocalTime e = "24:00".equals(endTimeStr) ? LocalTime.of(23, 59) : LocalTime.parse(endTimeStr, TIME_FORMATTER);
                         return (finalT.equals(s) || finalT.isAfter(s)) && finalT.isBefore(e);
                     } catch (Exception ignore) {
                         return false;
@@ -458,6 +462,42 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
     }
 
     /**
+     * 查询单个时段的槽位信息（不合并，保留原始courtId）
+     * 用于lockSlots中获取正确的period-specific courtId
+     */
+    private List<ThirdPartyCourtSlotDto> querySinglePeriodSlots(VenueThirdPartyConfig config, LocalDate date,
+                                                                  String courtProjectId, ThirdPartyAuthInfo authInfo) {
+        try {
+            String clubId = getClubIdFromConfig(config);
+            String apiBaseUrl = getApiBaseUrl(config);
+            String url = apiBaseUrl + API_PATH_RESOURCE_LIST.replace("{clubId}", clubId);
+
+            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            body.add("courtProjectId", courtProjectId);
+            body.add("date", date.format(DATE_FORMATTER));
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.set("X-Requested-With", "XMLHttpRequest");
+            headers.set("Cookie", buildCookieString(authInfo));
+
+            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+
+            ResponseEntity<WefitosResponse<WefitosResourceListData>> responseEntity = restTemplate.exchange(
+                    url, HttpMethod.POST, requestEntity, new ParameterizedTypeReference<>() {});
+
+            WefitosResponse<WefitosResourceListData> response = responseEntity.getBody();
+            if (response == null || response.getData() == null || response.getCn() == null || response.getCn() != 0) {
+                return new ArrayList<>();
+            }
+            return convertToCourtSlots(response.getData());
+        } catch (Exception e) {
+            log.error("[wefitos] 查询单时段槽位异常: courtProjectId={}", courtProjectId, e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
      * 将Wefitos资源转换为统一DTO格式
      */
     private List<ThirdPartyCourtSlotDto> convertToCourtSlots(WefitosResourceListData data) {
@@ -479,12 +519,15 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                         boolean available = timeSlot.getStatus() != null && timeSlot.getStatus() == 1;
 
                         String lockId = null;
+                        String lockRemark = null;
                         if (timeSlot.getStatus() != null && timeSlot.getStatus() == 3) {
-                            if (timeSlot.getLock() != null
-                                    && timeSlot.getLock().getId() != null
-                                    && timeSlot.getLock().getId().getId() != null
-                                    && !timeSlot.getLock().getId().getId().isEmpty()) {
-                                lockId = timeSlot.getLock().getId().getId();
+                            if (timeSlot.getLock() != null) {
+                                if (timeSlot.getLock().getId() != null
+                                        && timeSlot.getLock().getId().getId() != null
+                                        && !timeSlot.getLock().getId().getId().isEmpty()) {
+                                    lockId = timeSlot.getLock().getId().getId();
+                                }
+                                lockRemark = timeSlot.getLock().getRemark();
                             }
                         }
 
@@ -504,6 +547,7 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                                 .available(available)
                                 .price(price)
                                 .lockId(lockId)
+                                .lockRemark(lockRemark)
                                 .build();
                     })
                     .collect(Collectors.toList());
@@ -541,76 +585,137 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
 
-            // 2. 获取第一个槽位的日期和项目ID
+            // 2. 获取第一个槽位的日期，解析正确的courtProjectId
             LocalDate firstDate = slotRequests.get(0).getDate();
-            List<String> courtProjectIds = authInfo.getCourtProjectIds();
 
-            if (courtProjectIds == null || courtProjectIds.isEmpty()) {
-                log.error("[wefitos] 锁定失败: courtProjectIds为空");
+            // 通过startTime确定正确的courtProjectId（不同时段有不同的courtProjectId）
+            List<WefitosCourtProjectListData.CourtProject> projects = fetchCourtProjects(config, authInfo);
+            WefitosCourtProjectListData.CourtProject targetProject = resolveCourtProjectByStartTime(
+                    projects, slotRequests.get(0).getStartTime());
+            if (targetProject == null || targetProject.getId() == null || targetProject.getId().getId() == null) {
+                log.error("[wefitos] 锁定失败: 无法解析courtProjectId - startTime={}", slotRequests.get(0).getStartTime());
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
+            String courtProjectId = targetProject.getId().getId();
+            log.info("[wefitos] 解析到正确的courtProjectId={}, 时段={}", courtProjectId, targetProject.getName());
 
-            String courtProjectId = courtProjectIds.get(0);
-
-            // 3. 查询当天的完整槽位信息以获取必要的数据
+            // 3. 查询合并后的槽位信息（用于验证和courtName映射）
             List<ThirdPartyCourtSlotDto> allSlots = querySlotsFromAPI(config, firstDate);
             if (allSlots == null || allSlots.isEmpty()) {
                 log.error("[wefitos] 锁定失败: 无法查询槽位信息");
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
 
-            // 4. 构建锁定请求
-            List<WefitosLockRequest.CourtWeek> courtWeeks = new ArrayList<>();
+            // 3.5 验证最小预订时长（1小时槽位必须全部选中）
+            validateMinBookingDuration(allSlots, slotRequests);
+
+            // 3.6 查询目标时段的未合并槽位（获取该时段的正确courtId）
+            List<ThirdPartyCourtSlotDto> periodSlots = querySinglePeriodSlots(config, firstDate, courtProjectId, authInfo);
+            if (periodSlots.isEmpty()) {
+                log.error("[wefitos] 锁定失败: 目标时段无槽位数据 - courtProjectId={}", courtProjectId);
+                throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
+            }
+
+            // 构建映射表：mergedCourtId -> courtName（从合并数据获取）
+            Map<String, String> mergedCourtIdToName = allSlots.stream()
+                    .collect(Collectors.toMap(ThirdPartyCourtSlotDto::getThirdPartyCourtId,
+                            ThirdPartyCourtSlotDto::getCourtName, (a, b) -> a));
+
+            // 构建映射表：courtName -> 目标时段的courtId（从未合并数据获取）
+            Map<String, String> courtNameToPeriodCourtId = periodSlots.stream()
+                    .collect(Collectors.toMap(ThirdPartyCourtSlotDto::getCourtName,
+                            ThirdPartyCourtSlotDto::getThirdPartyCourtId, (a, b) -> a));
+
+            // 构建映射表：periodCourtId -> 该场地的API槽位列表（原始粒度）
+            Map<String, List<ThirdPartySlotDto>> periodCourtSlotMap = periodSlots.stream()
+                    .collect(Collectors.toMap(ThirdPartyCourtSlotDto::getThirdPartyCourtId,
+                            ThirdPartyCourtSlotDto::getSlots, (a, b) -> a));
+
+            log.info("[wefitos] courtId映射 - mergedCourtIdToName={}, courtNameToPeriodCourtId={}",
+                    mergedCourtIdToName, courtNameToPeriodCourtId);
+
+            // 4. 构建锁定请求（合并30分钟槽位回原始API粒度，使用正确的courtId）
+            // key = periodCourtId + "_" + apiSlotStartTime，用于去重合并
+            Map<String, WefitosLockRequest.CourtWeek> mergedCourtWeeks = new LinkedHashMap<>();
             Map<SlotLockRequest, String> bookingIds = new HashMap<>();
             List<AwaySlotPrice> slotPrices = new ArrayList<>();
 
             for (SlotLockRequest slot : slotRequests) {
-                log.info("[wefitos] 处理锁定请求: dbCourtId={}, startTime={}", 
+                log.info("[wefitos] 处理锁定请求: dbCourtId={}, startTime={}",
                         slot.getThirdPartyCourtId(), slot.getStartTime());
-                
-                // 构建court week信息
-                WefitosLockRequest.CourtWeek courtWeek = WefitosLockRequest.CourtWeek.builder()
-                        .name("")  // 从槽位中获取
-                        .date(slot.getDate().format(DATE_FORMATTER))
-                        .day(String.valueOf(slot.getDate().getDayOfWeek().getValue() % 7))
-                        .courtId(slot.getThirdPartyCourtId())
-                        .startTime(slot.getStartTime())
-                        .endTime(slot.getEndTime())
-                        .half("0")  // 全场
-                        .remark(remark != null ? remark : "")
-                        .build();
 
-                courtWeeks.add(courtWeek);
+                // 通过mergedCourtId找到courtName，再找到目标时段的正确courtId
+                String courtName = mergedCourtIdToName.get(slot.getThirdPartyCourtId());
+                if (courtName == null) {
+                    log.warn("[wefitos] 未找到courtName: dbCourtId={}", slot.getThirdPartyCourtId());
+                    continue;
+                }
 
-                // 查找槽位的价格信息
-                boolean found = false;
-                for (ThirdPartyCourtSlotDto courtSlot : allSlots) {
-                    if (courtSlot.getThirdPartyCourtId().equals(slot.getThirdPartyCourtId())) {
-                        found = true;
-                        courtWeek.setName(courtSlot.getCourtName());
-                        log.info("[wefitos] 匹配到场地: courtName={}, apiCourtId={}", 
-                                courtSlot.getCourtName(), courtSlot.getThirdPartyCourtId());
+                String periodCourtId = courtNameToPeriodCourtId.get(courtName);
+                if (periodCourtId == null) {
+                    log.warn("[wefitos] 目标时段无此场地: courtName={}, courtProjectId={}", courtName, courtProjectId);
+                    continue;
+                }
 
-                        for (ThirdPartySlotDto slotDto : courtSlot.getSlots()) {
-                            if (slotDto.getStartTime().equals(slot.getStartTime())) {
-                                slotPrices.add(AwaySlotPrice.builder()
-                                        .startTime(LocalTime.parse(slot.getStartTime()))
-                                        .price(slotDto.getPrice())
-                                        .thirdPartyCourtId(slot.getThirdPartyCourtId())
-                                        .build());
-                                break;
-                            }
-                        }
+                log.info("[wefitos] courtId映射: dbCourtId={} -> courtName={} -> periodCourtId={}",
+                        slot.getThirdPartyCourtId(), courtName, periodCourtId);
+
+                // 查找请求的startTime落在哪个API原始槽位内
+                List<ThirdPartySlotDto> apiSlots = periodCourtSlotMap.get(periodCourtId);
+                if (apiSlots == null) {
+                    log.warn("[wefitos] 未找到场地的槽位数据: periodCourtId={}", periodCourtId);
+                    continue;
+                }
+
+                LocalTime reqStart = LocalTime.parse(slot.getStartTime());
+                ThirdPartySlotDto matchedApiSlot = null;
+                for (ThirdPartySlotDto apiSlot : apiSlots) {
+                    LocalTime apiStart = LocalTime.parse(apiSlot.getStartTime());
+                    String apiEndStr = "24:00".equals(apiSlot.getEndTime()) ? "23:59" : apiSlot.getEndTime();
+                    LocalTime apiEnd = LocalTime.parse(apiEndStr);
+                    if ((reqStart.equals(apiStart) || reqStart.isAfter(apiStart)) && reqStart.isBefore(apiEnd)) {
+                        matchedApiSlot = apiSlot;
                         break;
                     }
                 }
-                
-                if (!found) {
-                    log.warn("[wefitos] 未在API响应中找到匹配的场地: dbCourtId={}, 可用的apiCourtIds={}", 
-                            slot.getThirdPartyCourtId(), 
-                            allSlots.stream().map(ThirdPartyCourtSlotDto::getThirdPartyCourtId).toList());
+
+                if (matchedApiSlot == null) {
+                    log.warn("[wefitos] 未匹配到API槽位: periodCourtId={}, reqStartTime={}", periodCourtId, slot.getStartTime());
+                    continue;
                 }
+
+                // 合并courtWeek：同一个API槽位只生成一个courtWeek条目
+                String mergeKey = periodCourtId + "_" + matchedApiSlot.getStartTime();
+                if (!mergedCourtWeeks.containsKey(mergeKey)) {
+                    mergedCourtWeeks.put(mergeKey, WefitosLockRequest.CourtWeek.builder()
+                            .name(courtName)
+                            .date(slot.getDate().format(DATE_FORMATTER))
+                            .day(String.valueOf(slot.getDate().getDayOfWeek().getValue() % 7))
+                            .courtId(periodCourtId)
+                            .startTime(matchedApiSlot.getStartTime())
+                            .endTime(matchedApiSlot.getEndTime())
+                            .half("0")
+                            .remark(remark != null ? remark : "")
+                            .build());
+                }
+
+                // 计算每个30分钟槽位的价格
+                LocalTime apiStart = LocalTime.parse(matchedApiSlot.getStartTime());
+                String apiEndStr = "24:00".equals(matchedApiSlot.getEndTime()) ? "23:59" : matchedApiSlot.getEndTime();
+                LocalTime apiEnd = LocalTime.parse(apiEndStr);
+                int splitCount = TimeSlotSplitUtil.splitTimeSlots(apiStart, apiEnd).size();
+                BigDecimal pricePerSlot = splitCount > 1
+                        ? matchedApiSlot.getPrice().divide(BigDecimal.valueOf(splitCount), 2, RoundingMode.HALF_UP)
+                        : matchedApiSlot.getPrice();
+
+                slotPrices.add(AwaySlotPrice.builder()
+                        .startTime(reqStart)
+                        .price(pricePerSlot)
+                        .thirdPartyCourtId(slot.getThirdPartyCourtId())  // 保持DB courtId用于回映
+                        .build());
             }
+
+            List<WefitosLockRequest.CourtWeek> courtWeeks = new ArrayList<>(mergedCourtWeeks.values());
 
             // 5. 构建锁定请求对象
             WefitosLockRequest lockRequest = WefitosLockRequest.builder()
@@ -632,6 +737,10 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
 
             MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
             body.add("courtProjectId", courtProjectId);
+            // remark作为全局参数，不是courtWeek内的参数（Wefitos平台要求）
+            if (remark != null && !remark.isEmpty()) {
+                body.add("remark", remark);
+            }
             IntStream.range(0, courtWeeks.size()).forEach(i -> {
                 WefitosLockRequest.CourtWeek cw = courtWeeks.get(i);
                 body.add("courtWeek[" + i + "][name]", cw.getName());
@@ -641,7 +750,6 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                 body.add("courtWeek[" + i + "][startTime]", cw.getStartTime());
                 body.add("courtWeek[" + i + "][endTime]", cw.getEndTime());
                 body.add("courtWeek[" + i + "][half]", cw.getHalf());
-                body.add("courtWeek[" + i + "][remark]", cw.getRemark());
             });
 
             HttpHeaders headers = new HttpHeaders();
@@ -650,6 +758,9 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
             headers.set("Cookie", buildCookieString(authInfo));
 
             HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+
+            log.info("[wefitos] 锁场API - URL: {}", url);
+            log.info("[wefitos] 锁场API - Request: {}", body);
 
             ResponseEntity<WefitosResponse<Object>> responseEntity = restTemplate.exchange(
                     url,
@@ -661,6 +772,7 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
 
             // 7. 解析响应
             WefitosResponse<Object> response = responseEntity.getBody();
+            log.info("[wefitos] 锁场API - Response: {}", JSON.toJSONString(response));
             if (response == null || response.getCn() == null || response.getCn() != 0) {
                 log.error("[wefitos] 锁定失败: code={}, msg={}",
                         response != null ? response.getCode() : null,
@@ -678,17 +790,23 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                 throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
             }
             
-            // 匹配锁定的槽位并提取锁定ID
+            // 匹配锁定的槽位并提取锁定ID（使用范围匹配，因为API返回原始粒度如1小时）
             for (SlotLockRequest slot : slotRequests) {
                 boolean found = false;
                 for (ThirdPartyCourtSlotDto courtSlot : lockedSlots) {
                     if (courtSlot.getThirdPartyCourtId().equals(slot.getThirdPartyCourtId())) {
+                        LocalTime reqStart = LocalTime.parse(slot.getStartTime());
                         for (ThirdPartySlotDto slotDto : courtSlot.getSlots()) {
-                            if (slotDto.getStartTime().equals(slot.getStartTime()) && 
-                                slotDto.getLockId() != null && !slotDto.getLockId().isEmpty()) {
+                            LocalTime apiStart = LocalTime.parse(slotDto.getStartTime());
+                            String apiEndStr = "24:00".equals(slotDto.getEndTime()) ? "23:59" : slotDto.getEndTime();
+                            LocalTime apiEnd = LocalTime.parse(apiEndStr);
+                            // 范围匹配：请求的startTime落在API槽位的[apiStart, apiEnd)内
+                            if ((reqStart.equals(apiStart) || reqStart.isAfter(apiStart)) && reqStart.isBefore(apiEnd)
+                                    && slotDto.getLockId() != null && !slotDto.getLockId().isEmpty()) {
                                 bookingIds.put(slot, slotDto.getLockId());
-                                log.info("[wefitos] 找到锁定槽位: courtId={}, startTime={}, lockId={}", 
-                                        courtSlot.getThirdPartyCourtId(), slotDto.getStartTime(), slotDto.getLockId());
+                                log.info("[wefitos] 找到锁定槽位: courtId={}, reqStartTime={}, apiSlot={}-{}, lockId={}",
+                                        courtSlot.getThirdPartyCourtId(), slot.getStartTime(),
+                                        slotDto.getStartTime(), slotDto.getEndTime(), slotDto.getLockId());
                                 found = true;
                                 break;
                             }
@@ -696,9 +814,9 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                         if (found) break;
                     }
                 }
-                
+
                 if (!found) {
-                    log.warn("[wefitos] 未找到锁定槽位: courtId={}, startTime={}", 
+                    log.warn("[wefitos] 未找到锁定槽位: courtId={}, startTime={}",
                             slot.getThirdPartyCourtId(), slot.getStartTime());
                 }
             }
@@ -721,6 +839,55 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
             log.error("[wefitos] 锁定异常: venueId={}", config.getVenueId(), e);
             throw new GloboxApplicationException(VenueCode.VENUE_BOOKING_FAIL);
         }
+    }
+
+    /**
+     * 验证最小预订时长
+     * 对于wefitos平台，某些时段的槽位是1小时粒度（如16:00-22:00），系统拆成2个30分钟展示给用户。
+     * 用户必须同时选择拆分出来的所有半小时段，否则报错。
+     *
+     * @param allSlots API返回的原始槽位（未拆分，可能包含1小时粒度）
+     * @param slotRequests 用户请求锁定的槽位列表（30分钟粒度）
+     */
+    private void validateMinBookingDuration(List<ThirdPartyCourtSlotDto> allSlots, List<SlotLockRequest> slotRequests) {
+        // 构建用户请求的 (courtId, startTime) 集合，用于快速查找
+        Set<String> requestedSlotKeys = slotRequests.stream()
+                .map(req -> req.getThirdPartyCourtId() + "_" + req.getStartTime())
+                .collect(Collectors.toSet());
+
+        for (ThirdPartyCourtSlotDto courtSlot : allSlots) {
+            for (ThirdPartySlotDto apiSlot : courtSlot.getSlots()) {
+                LocalTime apiStart = LocalTime.parse(apiSlot.getStartTime());
+                String endTimeStr = apiSlot.getEndTime();
+                if ("24:00".equals(endTimeStr)) {
+                    endTimeStr = "23:59";
+                }
+                LocalTime apiEnd = LocalTime.parse(endTimeStr);
+
+                // 拆分成30分钟段
+                List<TimeSlotSplitUtil.TimeSlot> splitSlots = TimeSlotSplitUtil.splitTimeSlots(apiStart, apiEnd);
+                if (splitSlots.size() <= 1) {
+                    // 本身就是30分钟槽位，不需要检查
+                    continue;
+                }
+
+                // 检查用户是否选了这个API槽位的任意一个半小时
+                String courtId = courtSlot.getThirdPartyCourtId();
+                List<String> splitKeys = splitSlots.stream()
+                        .map(s -> courtId + "_" + s.getStartTime().format(DateTimeFormatter.ofPattern("HH:mm")))
+                        .toList();
+
+                boolean anySelected = splitKeys.stream().anyMatch(requestedSlotKeys::contains);
+                boolean allSelected = requestedSlotKeys.containsAll(splitKeys);
+
+                if (anySelected && !allSelected) {
+                    log.warn("[wefitos] 最小预订时长校验失败: courtId={}, apiSlot={}-{}, 用户只选了部分半小时",
+                            courtId, apiSlot.getStartTime(), apiSlot.getEndTime());
+                    throw new GloboxApplicationException(VenueCode.VENUE_MIN_BOOKING_DURATION);
+                }
+            }
+        }
+        log.info("[wefitos] 最小预订时长校验通过");
     }
 
     @Override
@@ -754,14 +921,63 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                 return false;
             }
             
-            log.info("[wefitos] 解锁槽位: lockIds={}", lockIds);
+            // 获取期望的remark（用于完整匹配，确保只解锁自己锁的槽位）
+            String expectedRemark = slotRequests.stream()
+                    .map(SlotLockRequest::getThirdPartyRemark)
+                    .filter(r -> r != null && !r.isEmpty())
+                    .findFirst()
+                    .orElse(null);
 
-            // 3. 构建解锁请求
+            if (expectedRemark == null) {
+                log.error("[wefitos] 解锁失败: thirdPartyRemark为空, venueId={}", config.getVenueId());
+                return false;
+            }
+
+            log.info("[wefitos] 解锁槽位: lockIds={}, expectedRemark={}", lockIds, expectedRemark);
+
+            // 2.1 查询当前槽位状态，校验remark是否完整匹配（只解锁我们系统锁定的场地）
+            List<ThirdPartyCourtSlotDto> currentSlots = querySlotsFromAPI(config, firstDate);
+            if (currentSlots == null || currentSlots.isEmpty()) {
+                log.error("[wefitos] 解锁失败: 无法查询当前槽位状态");
+                return false;
+            }
+            
+            // 构建lockId到remark的映射
+            Map<String, String> lockIdToRemarkMap = new HashMap<>();
+            for (ThirdPartyCourtSlotDto courtSlot : currentSlots) {
+                for (ThirdPartySlotDto slot : courtSlot.getSlots()) {
+                    if (slot.getLockId() != null && !slot.getLockId().isEmpty()) {
+                        lockIdToRemarkMap.put(slot.getLockId(), slot.getLockRemark());
+                    }
+                }
+            }
+            
+            // 过滤出remark完整匹配的lockId（lockId + remark 双重校验）
+            List<String> validLockIds = lockIds.stream()
+                    .filter(lockId -> {
+                        String actualRemark = lockIdToRemarkMap.get(lockId);
+                        if (!expectedRemark.equals(actualRemark)) {
+                            log.warn("[wefitos] lockId+remark双重校验失败，跳过: lockId={}, 期望remark={}, 实际remark={}", 
+                                    lockId, expectedRemark, actualRemark);
+                            return false;
+                        }
+                        return true;
+                    })
+                    .collect(Collectors.toList());
+            
+            if (validLockIds.isEmpty()) {
+                log.error("[wefitos] 解锁失败: 没有找到remark完整匹配的锁定槽位, expectedRemark={}", expectedRemark);
+                return false;
+            }
+            
+            log.info("[wefitos] lockId+remark双重校验通过: validLockIds={}, expectedRemark={}", validLockIds, expectedRemark);
+
+            // 3. 构建解锁请求（使用校验通过的validLockIds）
             String apiBaseUrl = getApiBaseUrl(config);
             String url = apiBaseUrl + API_PATH_UNLOCK.replace("{clubId}", clubId);
 
             MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-            IntStream.range(0, lockIds.size()).forEach(i -> body.add("ids[" + i + "]", lockIds.get(i)));
+            IntStream.range(0, validLockIds.size()).forEach(i -> body.add("ids[" + i + "]", validLockIds.get(i)));
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
@@ -769,6 +985,9 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
             headers.set("Cookie", buildCookieString(authInfo));
 
             HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+
+            log.info("[wefitos] 解锁API - URL: {}", url);
+            log.info("[wefitos] 解锁API - Request: {}", body);
 
             ResponseEntity<WefitosResponse<Object>> responseEntity = restTemplate.exchange(
                     url,
@@ -780,6 +999,7 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
 
             // 4. 解析响应
             WefitosResponse<Object> response = responseEntity.getBody();
+            log.info("[wefitos] 解锁API - Response: {}", JSON.toJSONString(response));
             if (response == null || response.getCn() == null || response.getCn() != 0) {
                 log.error("[wefitos] 解锁失败: code={}, msg={}",
                         response != null ? response.getCode() : null,
@@ -791,7 +1011,7 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
             String cacheKey = AwayVenueCacheConstants.buildSlotsCacheKey(config.getVenueId(), firstDate);
             redisService.deleteObject(cacheKey);
 
-            log.info("[wefitos] 解锁成功: venueId={}, count={}", config.getVenueId(), lockIds.size());
+            log.info("[wefitos] 解锁成功: venueId={}, count={}", config.getVenueId(), validLockIds.size());
             return true;
 
         } catch (Exception e) {
@@ -951,11 +1171,31 @@ public class WefitosAdapter implements ThirdPartyPlatformAdapter {
                     .filter(courtSlot -> courtSlot.getSlots() != null)
                     .flatMap(courtSlot -> courtSlot.getSlots().stream()
                             .filter(slot -> slot.getAvailable() != null && slot.getAvailable())
-                            .map(slot -> AwaySlotPrice.builder()
-                                    .startTime(LocalTime.parse(slot.getStartTime()))
-                                    .price(slot.getPrice())
-                                    .thirdPartyCourtId(courtSlot.getThirdPartyCourtId())
-                                    .build())
+                            .flatMap(slot -> {
+                                // 将第三方槽位拆分成30分钟的槽位，按比例分配价格
+                                // 解决第三方平台返回1小时槽位但本地使用30分钟模板的问题
+                                LocalTime slotStart = LocalTime.parse(slot.getStartTime());
+                                String endTimeStr = slot.getEndTime();
+                                if ("24:00".equals(endTimeStr)) {
+                                    endTimeStr = "23:59";
+                                }
+                                LocalTime slotEnd = LocalTime.parse(endTimeStr);
+
+                                List<TimeSlotSplitUtil.TimeSlot> splitSlots = TimeSlotSplitUtil.splitTimeSlots(slotStart, slotEnd);
+                                int halfHourCount = splitSlots.size();
+                                if (halfHourCount <= 0) {
+                                    halfHourCount = 1;
+                                }
+                                BigDecimal pricePerHalfHour = slot.getPrice()
+                                        .divide(BigDecimal.valueOf(halfHourCount), 2, RoundingMode.HALF_UP);
+
+                                return splitSlots.stream()
+                                        .map(splitSlot -> AwaySlotPrice.builder()
+                                                .startTime(splitSlot.getStartTime())
+                                                .price(pricePerHalfHour)
+                                                .thirdPartyCourtId(courtSlot.getThirdPartyCourtId())
+                                                .build());
+                            })
                     )
                     .collect(Collectors.toList());
 

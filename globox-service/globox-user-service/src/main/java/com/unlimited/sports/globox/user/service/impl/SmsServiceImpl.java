@@ -7,6 +7,7 @@ import com.tencentcloudapi.common.profile.HttpProfile;
 import com.tencentcloudapi.sms.v20210111.SmsClient;
 import com.tencentcloudapi.sms.v20210111.models.SendSmsRequest;
 import com.tencentcloudapi.sms.v20210111.models.SendSmsResponse;
+import com.unlimited.sports.globox.model.auth.enums.SmsScene;
 import com.unlimited.sports.globox.user.service.SmsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +57,15 @@ public class SmsServiceImpl implements SmsService {
     @Value("${sms.tencent.template-id:}")
     private String templateId;
 
+    @Value("${sms.tencent.template-id-login:}")
+    private String loginTemplateId;
+
+    @Value("${sms.tencent.template-id-cancel:}")
+    private String cancelTemplateId;
+
+    @Value("${sms.tencent.template-id-bind:}")
+    private String bindTemplateId;
+
     /**
      * 模板中有效期占位符（分钟），默认5
      */
@@ -79,10 +89,15 @@ public class SmsServiceImpl implements SmsService {
         }
 
         // 检测腾讯云配置是否齐全
+        boolean templateConfigured = StringUtils.hasText(loginTemplateId)
+                || StringUtils.hasText(cancelTemplateId)
+                || StringUtils.hasText(bindTemplateId)
+                || StringUtils.hasText(templateId);
+
         boolean configComplete = StringUtils.hasText(secretId) 
                 && StringUtils.hasText(secretKey)
                 && StringUtils.hasText(smsSdkAppId) 
-                && StringUtils.hasText(templateId);
+                && templateConfigured;
 
         if (configComplete) {
             useMockMode = false;
@@ -120,11 +135,12 @@ public class SmsServiceImpl implements SmsService {
      * @return true=发送成功，false=发送失败
      */
     @Override
-    public boolean sendCode(String phone, String code) {
+    public boolean sendCode(String phone, String code, SmsScene scene) {
+        String sceneTemplateId = resolveTemplateId(scene);
         if (useMockMode) {
-            return sendMockSms(phone, code);
+            return sendMockSms(phone, code, scene);
         } else {
-            return sendRealSms(phone, code);
+            return sendRealSms(phone, code, sceneTemplateId);
         }
     }
 
@@ -141,9 +157,9 @@ public class SmsServiceImpl implements SmsService {
     /**
      * Mock模式：控制台打印验证码
      */
-    private boolean sendMockSms(String phone, String code) {
+    private boolean sendMockSms(String phone, String code, SmsScene scene) {
         log.info("=================================================");
-        log.info("【Mock短信】发送验证码");
+        log.info("【Mock短信】发送验证码，场景={}", scene);
         log.info("手机号：{}", phone);
         log.info("验证码：{}", code);
         log.info("有效期：5分钟");
@@ -154,7 +170,7 @@ public class SmsServiceImpl implements SmsService {
     /**
      * 真实短信模式：调用腾讯云短信服务发送
      */
-    private boolean sendRealSms(String phone, String code) {
+    private boolean sendRealSms(String phone, String code, String sceneTemplateId) {
         try {
             // 1. 实例化认证对象
             Credential cred = new Credential(secretId, secretKey);
@@ -180,7 +196,7 @@ public class SmsServiceImpl implements SmsService {
             req.setSignName(signName);
             
             // 设置模板ID
-            req.setTemplateId(templateId);
+            req.setTemplateId(sceneTemplateId);
             
             // 设置模板参数：{1}=验证码, {2}=有效期(分钟)
             String[] templateParamSet = {code, String.valueOf(expireMinutes)};
@@ -219,5 +235,20 @@ public class SmsServiceImpl implements SmsService {
             log.error("【短信服务】系统异常：phone={}, code={}", phone, code, e);
             return false;
         }
+    }
+
+    private String resolveTemplateId(SmsScene scene) {
+        String loginId = StringUtils.hasText(loginTemplateId)
+                ? loginTemplateId
+                : (StringUtils.hasText(templateId) ? templateId : cancelTemplateId);
+        String cancelId = StringUtils.hasText(cancelTemplateId) ? cancelTemplateId : loginId;
+        String bindId = StringUtils.hasText(bindTemplateId) ? bindTemplateId : loginId;
+        if (scene == SmsScene.CANCEL) {
+            return cancelId;
+        }
+        if (scene == SmsScene.BIND) {
+            return bindId;
+        }
+        return loginId;
     }
 }

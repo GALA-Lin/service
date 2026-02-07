@@ -67,6 +67,8 @@ public class GetOrderDetailsVo {
      */
     private Boolean isRefundable;
 
+    private Boolean isPartialRefundable;
+
     /**
      * 是否活动订单
      */

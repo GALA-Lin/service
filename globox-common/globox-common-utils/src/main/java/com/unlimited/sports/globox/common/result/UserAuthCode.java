@@ -19,7 +19,7 @@ public enum UserAuthCode implements ResultCode {
     CAPTCHA_ERROR_TOO_MANY(2005, "验证码错误次数过多，请重新获取"),
     
     // 密码相关 2010-2019
-    USER_NOT_EXIST(2010, "用户不存在，请使用验证码登录"),
+    USER_NOT_EXIST(2010, "用户不存在"),
     PASSWORD_WRONG(2011, "密码错误"),
     PASSWORD_NOT_SET(2012, "未设置密码，请使用验证码登录"),
     PASSWORD_TOO_WEAK(2013, "密码必须为6-20位"),

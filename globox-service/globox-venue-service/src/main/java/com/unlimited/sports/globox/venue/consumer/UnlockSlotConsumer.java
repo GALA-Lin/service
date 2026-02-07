@@ -18,6 +18,7 @@ import com.unlimited.sports.globox.model.venue.entity.booking.VenueBookingSlotRe
 import com.unlimited.sports.globox.model.venue.enums.BookingSlotStatus;
 import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapter;
 import com.unlimited.sports.globox.venue.adapter.ThirdPartyPlatformAdapterFactory;
+import com.unlimited.sports.globox.venue.adapter.constant.AwayVenueCacheConstants;
 import com.unlimited.sports.globox.venue.adapter.dto.SlotLockRequest;
 import com.unlimited.sports.globox.venue.mapper.VenueBookingSlotRecordMapper;
 import com.unlimited.sports.globox.venue.mapper.VenueActivityParticipantMapper;
@@ -168,25 +169,55 @@ public class UnlockSlotConsumer {
 
     /**
      * 处理Away球场的解锁
-     * 1. 检查所有records是否都有thirdPartyBookingId（必须全有或全无）
-     * 2. 如果都有，说明是Away订单，调用第三方平台解锁
+     * 1. 检查thirdPartyRemark是否有效（以LOCK_REMARK_PREFIX开头且一致）
+     * 2. 检查thirdPartyBookingId是否存在
+     * 3. 两者都必须有效才能解锁
      *
      * @param records 槽位记录列表
      */
     private void handleAwayUnlock(List<VenueBookingSlotRecord> records,Venue venue) {
-        // 统计有thirdPartyBookingId的记录数量
-        long recordsWithThirdPartyIdCount = records.stream()
-                .filter(record -> record.getThirdPartyBookingId() != null
-                        && !record.getThirdPartyBookingId().isEmpty())
-                .count();
-
-        // 检查一致性：要么全有，要么全无
-        if (recordsWithThirdPartyIdCount == 0 ||  recordsWithThirdPartyIdCount < records.size()) {
-            log.error("[Away解锁] 数据不一致：部分记录有thirdPartyBookingId，部分没有 - 总数: {}, 有thirdPartyId: {},需要人工干预解锁",
-                    records.size(), recordsWithThirdPartyIdCount);
-            // todo 人工干预解锁.如发邮件/插入记录表
+        // 1. 校验thirdPartyRemark是否有效（必须以LOCK_REMARK_PREFIX开头且一致）
+        String firstRemark = records.get(0).getThirdPartyRemark();
+        boolean allRemarksValid = records.stream()
+                .allMatch(r -> r.getThirdPartyRemark() != null 
+                        && r.getThirdPartyRemark().startsWith(AwayVenueCacheConstants.LOCK_REMARK_PREFIX)
+                        && r.getThirdPartyRemark().equals(firstRemark));
+        
+        if (!allRemarksValid) {
+            log.error("[Away解锁] 备注校验失败：备注不一致或不以'{}'开头 - venueId: {}, remarks: {}",
+                    AwayVenueCacheConstants.LOCK_REMARK_PREFIX, venue.getVenueId(), 
+                    records.stream().map(VenueBookingSlotRecord::getThirdPartyRemark).toList());
             throw new GloboxApplicationException(VenueCode.VENUE_CAN_NOT_UNLOCK);
         }
+        
+        log.info("[Away解锁] 备注校验通过 - remark: {}", firstRemark);
+
+        // 2. Away球场只允许全部退款，不允许部分退款
+        // 查询该预订（同一remark）的总槽位数，与本次解锁数比较
+        long totalBookingSlots = slotRecordMapper.selectCount(
+                new LambdaQueryWrapper<VenueBookingSlotRecord>()
+                        .eq(VenueBookingSlotRecord::getVenueId, venue.getVenueId())
+                        .eq(VenueBookingSlotRecord::getThirdPartyRemark, firstRemark)
+        );
+        if (totalBookingSlots != records.size()) {
+            log.error("[Away解锁] Away球场不允许部分退款 - venueId: {}, 本次解锁{}个, 预订总计{}个",
+                    venue.getVenueId(), records.size(), totalBookingSlots);
+            throw new GloboxApplicationException(VenueCode.VENUE_CAN_NOT_UNLOCK);
+        }
+        log.info("[Away解锁] 全量退款校验通过 - 总计{}个槽位", totalBookingSlots);
+
+        // 3. 校验thirdPartyBookingId是否存在（所有记录都必须有）
+        boolean allBookingIdsValid = records.stream()
+                .allMatch(r -> r.getThirdPartyBookingId() != null 
+                        && !r.getThirdPartyBookingId().isEmpty());
+        
+        if (!allBookingIdsValid) {
+            log.error("[Away解锁] bookingId校验失败：部分记录缺少thirdPartyBookingId - venueId: {}, bookingIds: {}",
+                    venue.getVenueId(), records.stream().map(VenueBookingSlotRecord::getThirdPartyBookingId).toList());
+            throw new GloboxApplicationException(VenueCode.VENUE_CAN_NOT_UNLOCK);
+        }
+        
+        log.info("[Away解锁] bookingId校验通过 - 记录数: {}", records.size());
         Long venueId = venue.getVenueId();
         List<Long> templateIds = records.stream()
                 .map(VenueBookingSlotRecord::getSlotTemplateId)
@@ -224,7 +255,7 @@ public class UnlockSlotConsumer {
         // 获取预订日期（假设所有record的日期相同）
         LocalDate bookingDate = records.get(0).getBookingDate().toLocalDate();
 
-        // 构建解锁请求列表（包含第三方预订ID用于解锁）
+        // 构建解锁请求列表（包含第三方预订ID和备注用于解锁校验）
         List<SlotLockRequest> unlockRequests = records.stream()
                 .map(record -> {
                     VenueBookingSlotTemplate template = templateMap.get(record.getSlotTemplateId());
@@ -243,6 +274,7 @@ public class UnlockSlotConsumer {
                             .endTime(template.getEndTime().toString())
                             .date(bookingDate)
                             .thirdPartyBookingId(record.getThirdPartyBookingId())
+                            .thirdPartyRemark(record.getThirdPartyRemark())
                             .build();
                 })
                 .filter(Objects::nonNull)

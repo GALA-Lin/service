@@ -1,0 +1,6 @@
+FROM globox-service-base-jdk17:1.0
+
+ENV SPRING_PROFILES_ACTIVE=app-prod
+COPY target/*.jar /app/app.jar
+
+EXPOSE 12022 22022 23022

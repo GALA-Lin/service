@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.user.controller;
 
 import com.unlimited.sports.globox.common.result.R;
+import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.MerchantLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.MerchantLoginResponse;
 import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
@@ -51,5 +52,19 @@ public class MerchantAuthController {
     public R<MerchantLoginResponse> refreshToken(@Validated @RequestBody TokenRefreshRequest request) {
         MerchantLoginResponse response = merchantAuthService.refreshToken(request);
         return R.ok(response);
+    }
+
+    @PostMapping("/password/change")
+    @Operation(summary = "修改密码", description = "使用旧密码修改商家账号密码")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "修改成功"),
+            @ApiResponse(responseCode = "2021", description = "无效的Token"),
+            @ApiResponse(responseCode = "2061", description = "账号或密码错误"),
+            @ApiResponse(responseCode = "2013", description = "密码必须为6-20位"),
+            @ApiResponse(responseCode = "2014", description = "两次输入的密码不一致")
+    })
+    public R<String> changePassword(@Validated @RequestBody ChangePasswordRequest request) {
+        String result = merchantAuthService.changePassword(request);
+        return R.ok(result);
     }
 }

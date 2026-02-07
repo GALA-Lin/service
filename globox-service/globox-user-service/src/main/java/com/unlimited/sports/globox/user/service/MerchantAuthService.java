@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.user.service;
 
+import com.unlimited.sports.globox.model.auth.dto.ChangePasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.MerchantLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.MerchantLoginResponse;
 import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
@@ -24,4 +25,6 @@ public interface MerchantAuthService {
      * @return 登录响应（新的 Token、商家信息）
      */
     MerchantLoginResponse refreshToken(TokenRefreshRequest request);
+
+    String changePassword(ChangePasswordRequest request);
 }

@@ -26,7 +26,11 @@ public enum FacilityType {
     EQUIPMENT_RENTAL(6, "器材租赁"),
     STRING_SERVICE(7, "穿线服务"),
     WATER_DISPENSER(8, "饮水机"),
-    SHOWER_ROOM(9, "淋浴室");
+    SHOWER_ROOM(9, "淋浴室"),
+    FITNESS_CENTER(10, "体能中心"),
+    SERVING_MACHINE(11, "发球机"),
+    PICKLEBALL(12, "匹克球")
+
     ;
 
     private final int value;

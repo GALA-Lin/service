@@ -738,7 +738,7 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                         .eq(VenueActivityParticipant::getActivityId, activityId)
                         .eq(VenueActivityParticipant::getStatus, VenueActivityParticipantStatusEnum.ACTIVE.getValue())
         );
-
+        log.info("活动参与者列表查询成功 - activityId: {}, 参与者数: {}", activityId, participants.size());
         // 批量查询用户信息
         List<ActivityParticipantInfoVo> participantInfoList;
         if (participants.isEmpty()) {
@@ -778,6 +778,7 @@ public class VenueActivityManagementServiceImpl implements VenueActivityManageme
                 .activityId(activity.getActivityId())
                 .venueId(activity.getVenueId())
                 .courtId(activity.getCourtId())
+                .courtName(courtMapper.selectById(activity.getCourtId()).getName())
                 .activityTypeId(activity.getActivityTypeId())
                 .activityTypeDesc(activity.getActivityTypeDesc())
                 .activityName(activity.getActivityName())

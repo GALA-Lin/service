@@ -9,6 +9,12 @@ import java.time.LocalDate;
 public class AwayVenueCacheConstants {
 
     /**
+     * 第三方平台锁场备注前缀
+     * 用于标识我们系统锁定的场地，解锁时校验
+     */
+    public static final String LOCK_REMARK_PREFIX = "qiuhe";
+
+    /**
      * 槽位缓存 - 前缀
      * 格式: third_party:slots:{venueId}:{date}
      */

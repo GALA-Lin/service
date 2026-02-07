@@ -44,7 +44,7 @@ public class PricingRequestDto implements Serializable {
     /**
      * 用户下订单的时候填写的手机号
      */
-//    @NotNull(message = "手机号不能为空")
+    @NotNull(message = "手机号不能为空")
     private String userPhone;
 
     /**

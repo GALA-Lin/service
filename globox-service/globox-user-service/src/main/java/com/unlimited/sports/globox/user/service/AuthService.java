@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.user.service;
 
 import com.unlimited.sports.globox.common.result.R;
 import com.unlimited.sports.globox.model.auth.dto.*;
+import com.unlimited.sports.globox.model.auth.vo.UserIdentityVo;
 
 /**
  * 认证服务接口
@@ -34,22 +35,6 @@ public interface AuthService {
      * @return 登录响应（已绑定返回Token，未绑定返回临时凭证）
      */
     R<WechatLoginResponse> wechatLogin(WechatLoginRequest request);
-
-    /**
-     * 微信绑定手机号
-     *
-     * @param request 绑定请求（临时凭证、手机号、验证码、微信信息）
-     * @return 登录响应（Token、用户信息）
-     */
-    R<LoginResponse> wechatBindPhone(WechatBindPhoneRequest request);
-
-    /**
-     * 第三方小程序微信手机号登录
-     *
-     * @param request 登录请求（wxCode、phoneCode、nickname、avatarUrl）
-     * @return 登录响应（Token、用户信息、是否为新用户）
-     */
-    R<ThirdPartyLoginResponse> wechatPhoneLogin(WechatPhoneLoginRequest request);
 
     /**
      * 设置密码
@@ -108,6 +93,13 @@ public interface AuthService {
     R<String> verifyCancelAccount(CancelAccountRequest request);
 
     /**
+     * 第三方注销（微信App/Apple，无需短信验证码，直接校验并确认）
+     *
+     * @return 注销结果
+     */
+    R<String> verifyCancelAccountThirdParty();
+
+    /**
      * 注销账号确认
      *
      * @param request 注销确认请求
@@ -115,6 +107,20 @@ public interface AuthService {
      */
     R<String> confirmCancelAccount(CancelAccountConfirmRequest request);
 
+    /**
+     * 已登录用户绑定身份（微信/Apple/手机号）
+     *
+     * @param request 绑定请求
+     * @return 绑定结果
+     */
+    R<String> bindIdentity(BindIdentityRequest request);
+
+    /**
+     * 查询已绑定的身份列表
+     *
+     * @return 已绑定身份
+     */
+    R<java.util.List<UserIdentityVo>> getBoundIdentities();
 
     R<WechatLoginResponse> createWechatUserAndLogin(String identifier, String openid,
                                                     DeviceInfo deviceInfo, String clientType);

@@ -100,6 +100,14 @@ public class BookingSlotVo {
      */
     private Boolean isMyBooking;
 
+    /**
+     * 是否连续槽位（从更大时间单位拆分而来）
+     * true: 该30分钟槽位是从1小时等更大槽位拆分而来，必须与相邻linked槽位一起预订
+     * false: 独立的30分钟槽位，可单独预订
+     */
+    @Builder.Default
+    private Boolean linked = false;
+
     // ===== 活动槽位字段（slotType=2时使用）=====
 
     /**

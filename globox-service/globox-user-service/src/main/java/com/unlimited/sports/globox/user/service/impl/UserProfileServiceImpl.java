@@ -289,7 +289,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         }
 
         // 设置默认球星卡
-        if (ObjectUtils.isEmpty(vo.getPortraitUrl())) {
+        if (ObjectUtils.isEmpty(vo.getPortraitUrl()) && userProfileDefaultProperties.getEnableDefaultStarCard()) {
             if (GenderEnum.FEMALE.equals(profile.getGender())) {
                 vo.setPortraitUrl(userProfileDefaultProperties.getDefaultStarCardFemaleUrl());
             } else {
@@ -1226,7 +1226,7 @@ public class UserProfileServiceImpl implements UserProfileService {
         Assert.isNotEmpty(profile, UserAuthCode.USER_NOT_EXIST);
 
         // 设置默认球星卡
-        if (ObjectUtils.isEmpty(profile.getPortraitUrl())) {
+        if (ObjectUtils.isEmpty(profile.getPortraitUrl()) && userProfileDefaultProperties.getEnableDefaultStarCard()) {
             if (GenderEnum.FEMALE.equals(profile.getGender())) {
                 profile.setPortraitUrl(userProfileDefaultProperties.getDefaultStarCardFemaleUrl());
             } else {

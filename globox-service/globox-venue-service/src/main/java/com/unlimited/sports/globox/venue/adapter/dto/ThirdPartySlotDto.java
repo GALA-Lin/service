@@ -40,4 +40,9 @@ public class ThirdPartySlotDto {
      * 锁定ID（仅在已锁定状态时有值）
      */
     private String lockId;
+
+    /**
+     * 锁定备注（仅在已锁定状态时有值，用于校验是否为我们系统锁定）
+     */
+    private String lockRemark;
 }

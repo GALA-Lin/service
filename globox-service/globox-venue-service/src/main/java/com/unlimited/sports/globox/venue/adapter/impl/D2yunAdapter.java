@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.venue.adapter.impl;
 
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
@@ -282,8 +283,12 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
         if (time == null || time.isEmpty()) {
             return 0;
         }
+        // 特殊处理：23:59:59 或 23:59 转换为 1440（24:00的分钟数）
+        if ("23:59:59".equals(time) || "23:59".equals(time)) {
+            return 1440;
+        }
         String[] parts = time.split(":");
-        if (parts.length != 2) {
+        if (parts.length < 2) {
             return 0;
         }
         try {
@@ -372,6 +377,9 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
                     + "?business_id=" + businessId
                     + "&role_type=" + ROLE_TYPE;
 
+            log.info("[d2yun] 锁场API - URL: {}", url);
+            log.info("[d2yun] 锁场API - Request: {}", JSON.toJSONString(lockRequest));
+
             ResponseEntity<D2yunResponse<Object>> responseEntity = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
@@ -382,6 +390,7 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
 
             // 7. 解析响应
             D2yunResponse<Object> response = responseEntity.getBody();
+            log.info("[d2yun] 锁场API - Response: {}", JSON.toJSONString(response));
             if (response == null || response.getStatus() == null || response.getStatus() != 0) {
                 log.error("[d2yun] 锁定失败: status={}, msg={}",
                         response != null ? response.getStatus() : null,
@@ -537,7 +546,19 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
                 return false;
             }
 
-            // 2. 提取锁定时保存的thirdPartyBookingId列表
+            // 2. 获取期望的remark（用于完整匹配，确保只解锁自己锁的槽位）
+            String expectedRemark = slotRequests.stream()
+                    .map(SlotLockRequest::getThirdPartyRemark)
+                    .filter(r -> r != null && !r.isEmpty())
+                    .findFirst()
+                    .orElse(null);
+
+            if (expectedRemark == null) {
+                log.error("[d2yun] 解锁失败: thirdPartyRemark为空, venueId={}", config.getVenueId());
+                return false;
+            }
+
+            // 3. 提取锁定时保存的thirdPartyBookingId列表
             Set<String> bookingIds = slotRequests.stream()
                     .map(SlotLockRequest::getThirdPartyBookingId)
                     .filter(id -> id != null && !id.isEmpty())
@@ -548,28 +569,37 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
                 return false;
             }
             
-            log.info("[d2yun] 使用锁定ID解锁: bookingIds={}", bookingIds);
+            log.info("[d2yun] 使用锁定ID解锁: bookingIds={}, expectedRemark={}", bookingIds, expectedRemark);
 
             // 3. 获取第一个槽位的日期（用于清除缓存）
             LocalDate firstDate = slotRequests.get(0).getDate();
 
-            // 4. 查询锁定的资源，并通过thirdPartyBookingId过滤（安全校验）
+            // 4. 查询锁定的资源，并通过thirdPartyBookingId和remark双重过滤（安全校验）
             List<D2yunResource> allResourcesToUnlock = new ArrayList<>();
             for (SlotLockRequest slot : slotRequests) {
                 List<D2yunResource> resources = getResourcesToUnlock(config, authInfo,
                         slot.getThirdPartyCourtId(), slot.getStartTime(), slot.getEndTime(), slot.getDate());
                 if (resources != null && !resources.isEmpty()) {
-                    // 只解锁ID匹配的资源（安全校验）
+                    // 只解锁ID匹配且remark匹配的资源（bookingId + remark 双重安全校验）
                     for (D2yunResource resource : resources) {
                         if (bookingIds.contains(resource.getId())) {
-                            allResourcesToUnlock.add(resource);
+                            // 双重校验：bookingId已匹配，现在校验remark必须完全匹配
+                            if (expectedRemark != null && expectedRemark.equals(resource.getRemark())) {
+                                allResourcesToUnlock.add(resource);
+                                log.info("[d2yun] bookingId+remark双重校验通过: id={}, remark={}", resource.getId(), resource.getRemark());
+                            } else {
+                                // remark为空或不匹配，都不能解锁
+                                log.warn("[d2yun] bookingId+remark双重校验失败，跳过: id={}, 期望remark={}, 实际remark={}", 
+                                        resource.getId(), expectedRemark, resource.getRemark());
+                            }
                         }
                     }
                 }
             }
 
             if (allResourcesToUnlock.isEmpty()) {
-                log.error("[d2yun] 未找到匹配的要解锁的资源: venueId={}, bookingIds={}", config.getVenueId(), bookingIds);
+                log.error("[d2yun] 未找到匹配的要解锁的资源: venueId={}, bookingIds={}, expectedRemark={}", 
+                        config.getVenueId(), bookingIds, expectedRemark);
                 return false;
             }
 
@@ -607,6 +637,9 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
                     + "?business_id=" + businessId
                     + "&role_type=" + ROLE_TYPE;
 
+            log.info("[d2yun] 解锁API - URL: {}", url);
+            log.info("[d2yun] 解锁API - Request: {}", JSON.toJSONString(unlockRequest));
+
             ResponseEntity<D2yunResponse<Object>> responseEntity = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
@@ -617,6 +650,7 @@ public class D2yunAdapter implements ThirdPartyPlatformAdapter {
 
             // 7. 解析响应
             D2yunResponse<Object> response = responseEntity.getBody();
+            log.info("[d2yun] 解锁API - Response: {}", JSON.toJSONString(response));
             if (response == null || response.getStatus() == null || response.getStatus() != 0) {
                 log.error("[d2yun] 解锁失败: status={}, msg={}",
                         response != null ? response.getStatus() : null,

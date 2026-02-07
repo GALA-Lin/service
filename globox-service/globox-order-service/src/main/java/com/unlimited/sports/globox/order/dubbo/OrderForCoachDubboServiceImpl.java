@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.unlimited.sports.globox.common.enums.order.OrderStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.RefundStatusEnum;
 import com.unlimited.sports.globox.common.enums.order.SellerTypeEnum;
+import com.unlimited.sports.globox.common.enums.order.SourcePlatformEnum;
 import com.unlimited.sports.globox.common.lock.RedisLock;
 import com.unlimited.sports.globox.common.result.OrderCode;
 import com.unlimited.sports.globox.common.result.RpcResult;
@@ -139,7 +140,7 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
                             .paymentStatusName(order.getPaymentStatus().getDescription())
                             .orderStatus(order.getOrderStatus())
                             .orderStatusName(order.getOrderStatus().getDescription())
-                            .source(order.getSourcePlatform())
+                            .source(order.getSourcePlatform().getCode())
                             .paidAt(order.getPaidAt())
                             .createdAt(order.getCreatedAt())
                             .records(recordDtos)
@@ -246,7 +247,7 @@ public class OrderForCoachDubboServiceImpl implements OrderForCoachDubboService 
                 .paymentStatusName(order.getPaymentStatus().getDescription())
                 .orderStatus(order.getOrderStatus())
                 .orderStatusName(order.getOrderStatus().getDescription())
-                .source(order.getSourcePlatform())
+                .source(order.getSourcePlatform().getCode())
                 .paidAt(order.getPaidAt())
                 .createdAt(order.getCreatedAt())
                 .records(recordDtos)

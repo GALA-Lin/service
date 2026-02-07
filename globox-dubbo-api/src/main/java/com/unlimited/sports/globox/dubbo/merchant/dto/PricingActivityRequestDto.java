@@ -24,7 +24,7 @@ public class PricingActivityRequestDto implements Serializable {
     @NotNull(message = "活动 ID 不能为空")
     private Long activityId;
 
-//    @NotNull(message = "手机号不能为空")
+    @NotNull(message = "手机号不能为空")
     private String userPhone;
 
     /**

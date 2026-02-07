@@ -3,6 +3,7 @@ package com.unlimited.sports.globox.model.order.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import javax.validation.constraints.FutureOrPresent;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
@@ -34,8 +35,8 @@ public class CreateCoachOrderDto {
 
     @Schema(description = "联系电话",
             requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-//    @NotNull(message = "手机号不能为空")
-//    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
+    @NotNull(message = "手机号不能为空")
+    @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")
     private String userPhone;
 
     @Schema(description = "学员人数",
@@ -49,6 +50,7 @@ public class CreateCoachOrderDto {
     /**
      * 预订日期
      */
+    @FutureOrPresent(message = "预定日期不能早于今天")
     @NotNull(message = "预订日期不能为空")
     @Schema(description = "预订日期（格式：yyyy-MM-dd）",
             example = "2025-12-20",

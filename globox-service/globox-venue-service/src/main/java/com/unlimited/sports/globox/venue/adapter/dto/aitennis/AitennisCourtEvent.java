@@ -36,6 +36,12 @@ public class AitennisCourtEvent {
     private String courtName;
 
     /**
+     * 场地排序
+     */
+    @JsonProperty("court_sort")
+    private Integer courtSort;
+
+    /**
      * 类型：rent_price（可租赁）、lock_court（已锁场）
      */
     private String type;

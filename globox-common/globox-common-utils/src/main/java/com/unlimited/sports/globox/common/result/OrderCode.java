@@ -36,7 +36,9 @@ public enum OrderCode implements ResultCode {
     ORDER_STATUS_NOT_EXIST(1025, "订单状态不存在"),
     EXIST_UNFINISHED_ORDER(1026, "当前存在未完成的订单"),
     ORDER_PAYMENT_AMOUNT_INCONSISTENT(1027, "当前订单支付金额不正确"),
-    ACTIVITY_ONLY_REFUND_ALL(1028, "活动订单不支持部分退款");
+    ACTIVITY_ONLY_REFUND_ALL(1028, "活动订单不支持部分退款"),
+    AWAY_ONLY_REFUND_ALL(1029, "该场馆不支持部分退款"),
+    ;
     private final Integer code;
     private final String message;
 }

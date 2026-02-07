@@ -424,19 +424,25 @@ public class OrderRefundActionServiceImpl implements OrderRefundActionService {
 
         BigDecimal finalTotalRefundAmount = totalRefundAmount;
 
-        // 直接发起退款 rpc
-        UserRefundRequestDto requestDto = UserRefundRequestDto.builder()
-                .refundReason(apply.getReasonCode().getCode() + ":" + apply.getReasonDetail())
-                .outTradeNo(order.getOutTradeNo())
-                .outRequestNo(outRequestNo)
-                .orderNo(order.getOrderNo())
-                .fullRefund(fullRefundAfterThis)
-                .refundAmount(finalTotalRefundAmount)
-                .build();
-        RpcResult<Void> result = paymentForOrderDubboService.userRefund(requestDto);
-        Assert.rpcResultOk(result);
+        boolean zeroPay = order.getPayAmount() != null
+                && order.getPayAmount().compareTo(BigDecimal.ZERO) == 0;
+        if (!zeroPay) {
+            String remarkCodeDescription = apply.getReasonCode().getDescription();
+            String refundReason = remarkCodeDescription + "-" + (operatorType.equals(OperatorTypeEnum.USER) ?   apply.getReasonDetail(): apply.getSellerRemark());
+            // 直接发起退款 rpc
+            UserRefundRequestDto requestDto = UserRefundRequestDto.builder()
+                    .refundReason(refundReason)
+                    .outTradeNo(order.getOutTradeNo())
+                    .outRequestNo(outRequestNo)
+                    .orderNo(order.getOrderNo())
+                    .fullRefund(fullRefundAfterThis)
+                    .refundAmount(finalTotalRefundAmount)
+                    .build();
+            RpcResult<Void> result = paymentForOrderDubboService.userRefund(requestDto);
+            Assert.rpcResultOk(result);
+        }
 
-        // 退款状态修改
+        // 退款状态修改（0 元订单直接走成功）
         thisService.refundSuccessAction(orderNo, outRequestNo);
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

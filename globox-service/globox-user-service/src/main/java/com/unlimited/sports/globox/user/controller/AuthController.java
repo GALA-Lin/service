@@ -9,11 +9,8 @@ import com.unlimited.sports.globox.model.auth.dto.ResetPasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.SendCaptchaRequest;
 import com.unlimited.sports.globox.model.auth.dto.SetPasswordRequest;
 import com.unlimited.sports.globox.model.auth.dto.TokenRefreshRequest;
-import com.unlimited.sports.globox.model.auth.dto.ThirdPartyLoginResponse;
-import com.unlimited.sports.globox.model.auth.dto.WechatBindPhoneRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.WechatLoginResponse;
-import com.unlimited.sports.globox.model.auth.dto.WechatPhoneLoginRequest;
 import com.unlimited.sports.globox.model.auth.dto.AppleLoginRequest;
 import com.unlimited.sports.globox.user.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -48,7 +45,8 @@ public class AuthController {
     private AuthService authService;
 
     @PostMapping("/captcha/send")
-    @Operation(summary = "发送短信验证码", description = "发送登录/注册验证码，需要白名单权限")
+    @Operation(summary = "发送短信验证码", description = "发送登录/注册/注销/绑定手机号验证码，需要白名单权限。\n" +
+            "请求参数 scene：0=登录（默认），1=注销，2=绑定手机号。注销/绑定场景必须显式传 scene。")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "发送成功"),
             @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
@@ -85,34 +83,6 @@ public class AuthController {
     })
     public R<WechatLoginResponse> wechatLogin(@Validated @RequestBody WechatLoginRequest request) {
         return authService.wechatLogin(request);
-    }
-
-    @PostMapping("/wechat/bindPhone")
-    @Operation(summary = "微信绑定手机号", description = "微信登录时绑定手机号，支持绑定到现有账号或创建新账号")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "绑定成功"),
-            @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
-            @ApiResponse(responseCode = "2002", description = "当前仅限内测用户，敬请期待正式上线"),
-            @ApiResponse(responseCode = "2033", description = "微信授权失败"),
-            @ApiResponse(responseCode = "2035", description = "临时凭证已过期，请重新授权")
-    })
-    public R<LoginResponse> wechatBindPhone(@Validated @RequestBody WechatBindPhoneRequest request) {
-        return authService.wechatBindPhone(request);
-    }
-
-    @PostMapping("/wechat/phoneLogin")
-    @Operation(summary = "第三方小程序/App端微信手机号登录", description = "第三方小程序/App端微信手机号登录，通过wxCode和phoneCode一次性完成登录和手机号绑定，无需验证码。严格按 X-Client-Type 选择配置：third-party-jsapi → miniapp，app → uniapp，其他（含 jsapi）报错。\n" +
-            "注意：若 X-Client-Type=app，会启用单端登录（新登录会挤掉旧 token）；其他端登录不受影响。\n" +
-            "返回的 refreshToken 将携带 clientType claim（用于后续刷新）。")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "登录成功"),
-            @ApiResponse(responseCode = "2001", description = "手机号格式不正确"),
-            @ApiResponse(responseCode = "2002", description = "当前仅限内测用户，敬请期待正式上线"),
-            @ApiResponse(responseCode = "2033", description = "微信授权失败"),
-            @ApiResponse(responseCode = "2034", description = "微信授权code已过期")
-    })
-    public R<ThirdPartyLoginResponse> wechatPhoneLogin(@Validated @RequestBody WechatPhoneLoginRequest request) {
-        return authService.wechatPhoneLogin(request);
     }
 
     @PostMapping("/password/set")

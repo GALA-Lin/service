@@ -23,4 +23,7 @@ public class SendCaptchaRequest {
 
     @Schema(description = "国家/地区代码", example = "+86")
     private String regionCode;
+
+    @Schema(description = "验证码用途：0=登录，1=注销，2=绑定手机号", example = "0")
+    private Integer scene;
 }

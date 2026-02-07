@@ -21,6 +21,7 @@ import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.unlimited.sports.globox.payment.mapper.PaymentProfitSharingMapper;
+import com.unlimited.sports.globox.payment.prop.ProfitSharingProperties;
 import com.unlimited.sports.globox.payment.prop.TimeoutProperties;
 import com.unlimited.sports.globox.payment.service.AlipayService;
 import com.unlimited.sports.globox.payment.service.PaymentsService;
@@ -75,11 +76,14 @@ public class PaymentsServiceImpl implements PaymentsService {
     @Autowired
     private AlipayService alipayService;
 
-    @Autowired(required = false)
+    @Autowired
     private WechatPayService wechatPayService;
 
-    @Autowired(required = false)
+    @Autowired
     private WechatPayMoonCourtJsapiService wechatPayMoonCourtJsapiService;
+
+    @Autowired
+    private ProfitSharingProperties profitSharingProperties;
 
     /**
      * 根据对外业务编号获取支付信息。
@@ -319,11 +323,10 @@ public class PaymentsServiceImpl implements PaymentsService {
     @Override
     public void profitSharing(Payments payments) {
         String outProfitSharingNo = UUID.randomUUID().toString().replaceAll("-", "");
-
         // 计算出分账金额
         BigDecimal totalAmount = payments.getTotalAmount();
         BigDecimal profitSharingAmount = totalAmount
-                .multiply(new BigDecimal("0.30"))
+                .multiply(new BigDecimal(profitSharingProperties.getProfitSharingAmount()))
                 .setScale(2, RoundingMode.DOWN);
 
         log.info("分账金额：{} , 分账支付信息:{}", profitSharingAmount, payments);

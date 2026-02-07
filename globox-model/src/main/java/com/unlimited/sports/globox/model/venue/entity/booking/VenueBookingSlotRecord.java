@@ -70,6 +70,12 @@ public class VenueBookingSlotRecord {
     private String thirdPartyBookingId;
 
     /**
+     * 第三方平台锁场备注（格式：qiuhe_{时段}_{时间戳}，用于解锁时校验）
+     */
+    @TableField("third_party_remark")
+    private String thirdPartyRemark;
+
+    /**
      * 商家锁场批次ID
      */
     @TableField("merchant_batch_id")

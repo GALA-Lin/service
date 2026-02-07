@@ -13,6 +13,7 @@ import com.unlimited.sports.globox.model.social.entity.*;
 import com.unlimited.sports.globox.model.social.vo.ConversationVo;
 import com.unlimited.sports.globox.model.social.vo.MessageListVo;
 import com.unlimited.sports.globox.social.mapper.ConversationMapper;
+import com.unlimited.sports.globox.social.prop.IMProperties;
 import com.unlimited.sports.globox.social.service.ConversationService;
 import com.unlimited.sports.globox.social.service.MessageService;
 import com.unlimited.sports.globox.social.service.TencentCloudImService;
@@ -55,6 +56,9 @@ public class ChatController {
     @Autowired
     private ConversationService conversationService;
 
+    @Autowired
+    private IMProperties imProperties;
+
     @DubboReference(group = "rpc")
     private SensitiveWordsDubboService sensitiveWordsDubboService;
 
@@ -76,7 +80,7 @@ public class ChatController {
             String userSig = tencentCloudImService.getTxCloudUserSig(String.valueOf(userId));
             Map<String, Object> result = new HashMap<>();
             result.put("userSig", userSig);
-            result.put("sdkAppId", 1600119377);
+            result.put("sdkAppId", imProperties.getAppId());
             return R.ok(result);
         } catch (Exception e) {
             log.error("获取用户签名失败", e);
@@ -548,7 +552,7 @@ public class ChatController {
             }
             // 标记会话已读
             int cleared = conversationMapper.clearUnreadCount(conversation.getConversationId(), userId);
-            log.warn("用户：{}标记会话已读条数：{}",userId,cleared );
+            log.info("用户：{}标记会话已读条数：{}",userId,cleared );
             MessageListVo messageListByConversation = messageService.getMessageListByConversation(conversationId,
                     page,
                     pageSize,

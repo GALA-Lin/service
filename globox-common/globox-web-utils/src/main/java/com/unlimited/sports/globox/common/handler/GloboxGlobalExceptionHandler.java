@@ -48,7 +48,7 @@ public class GloboxGlobalExceptionHandler {
                 .collect(Collectors.joining(";"));
         logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), detail);
         return R.<Void>error(ValidCode.INVALID_REQUEST_PARAM)
-                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detail);
+                .message(detail);
     }
 
     @ExceptionHandler(BindException.class)
@@ -59,7 +59,7 @@ public class GloboxGlobalExceptionHandler {
                 .collect(Collectors.joining(";"));
         logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), detail);
         return R.<Void>error(ValidCode.INVALID_REQUEST_PARAM)
-                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detail);
+                .message(detail);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -71,7 +71,7 @@ public class GloboxGlobalExceptionHandler {
                 .collect(Collectors.joining(";"));
         logWarn(req, ValidCode.INVALID_REQUEST_PARAM.getCode(), detail);
         return R.<Void>error(ValidCode.INVALID_REQUEST_PARAM)
-                .message(ValidCode.INVALID_REQUEST_PARAM.getMessage() + ":" + detail);
+                .message(detail);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

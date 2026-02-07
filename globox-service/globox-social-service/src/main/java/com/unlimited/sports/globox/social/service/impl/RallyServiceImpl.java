@@ -334,10 +334,14 @@ public class RallyServiceImpl implements RallyService {
         }
     }
     private boolean isRallyExpired(RallyPosts rally) {
-        if (rally.getRallyEventDate() == null || rally.getRallyStartTime() == null) {
+        if (rally.getRallyEventDate() == null) {
             return false;
         }
-        // 合并日期和开始时间
+        if (rally.getRallyStartTime() == null) {
+            // 核心修改：只要日期还没过今天，就不算过期
+            return rally.getRallyEventDate().isBefore(LocalDate.now());
+        }
+
         LocalDateTime startDateTime = LocalDateTime.of(rally.getRallyEventDate(), rally.getRallyStartTime());
         // 如果当前时间已经过了开始时间，则视为过期/已完成
         return startDateTime.isBefore(LocalDateTime.now());
@@ -395,7 +399,7 @@ public class RallyServiceImpl implements RallyService {
         // 判断性别是否要求
         int genderLimit = rallyPosts.getRallyGenderLimit(); // 性别限制: 0=不限 1=仅男生 2=仅女生
         Integer userGender = applicantInfo.getGender().getCode();    // 1=男, 0=女
-        log.info("约球性别要求：{} -- 申请人性别：{}", genderLimit == 1 ? "仅男生":"仅女生" , applicantInfo.getGender());
+        log.info("约球性别要求：{} -- 申请人性别：{}", genderLimit == 0? "不限" : genderLimit == 1 ? "仅男生":"仅女生" , applicantInfo.getGender());
         if (genderLimit != 0) { // 如果有限制
             if (genderLimit == 1 && (userGender == null || userGender != 1)) {
                 throw new GloboxApplicationException("该活动仅限男生参加");
@@ -406,7 +410,8 @@ public class RallyServiceImpl implements RallyService {
         }
         // 判断Ntrp是否符合要求
         double userNtrp = applicantInfo.getUserNtrpLevel();
-        if (userNtrp <= rallyPosts.getRallyNtrpMin() || userNtrp >= rallyPosts.getRallyNtrpMax()) {
+        log.info("约球NTRP要求：{} --{} ； 申请人NTRP：{}", rallyPosts.getRallyNtrpMin() , rallyPosts.getRallyNtrpMax(), userNtrp);
+        if (userNtrp < rallyPosts.getRallyNtrpMin() || userNtrp > rallyPosts.getRallyNtrpMax()) {
             throw new GloboxApplicationException(RallyResultEnum.RALLY_POSTS_JOIN_NTRP_LIMIT.getMessage());
         }
 

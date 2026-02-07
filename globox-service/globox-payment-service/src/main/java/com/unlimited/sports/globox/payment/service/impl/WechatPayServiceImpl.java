@@ -23,6 +23,7 @@ import com.unlimited.sports.globox.model.payment.entity.Payments;
 import com.unlimited.sports.globox.model.payment.vo.GetPaymentStatusResultVo;
 import com.unlimited.sports.globox.model.payment.vo.SubmitResultVo;
 import com.unlimited.sports.globox.model.payment.vo.WechatPayNotifyVo;
+import com.unlimited.sports.globox.payment.prop.ProfitSharingProperties;
 import com.unlimited.sports.globox.payment.prop.WechatPayProperties;
 import com.unlimited.sports.globox.payment.service.*;
 import com.unlimited.sports.globox.payment.utils.AmountUtils;
@@ -73,7 +74,7 @@ public class WechatPayServiceImpl implements WechatPayService {
     private WechatPayAppService wechatPayAppService;
 
     @Autowired
-    private WechatPayProperties wechatPayProperties;
+    private ProfitSharingProperties profitSharingProperties;
 
     @Autowired
     private RefundService refundService;
@@ -333,15 +334,22 @@ public class WechatPayServiceImpl implements WechatPayService {
 
     @Override
     public PaymentProfitSharing profitSharing(Payments payments, String outProfitSharingNo, BigDecimal profitSharingAmount) {
-        log.info("进入微信分账:{}", payments);
+        log.info("[订单完成分账] 进入微信分账:{}", payments);
         String receiverOpenId;
         String receiverRealName;
         if (payments.getSellerType().equals(SellerTypeEnum.COACH)) {
-            RpcResult<CoachInfoForProfitSharing> rpc = userDubboService.getCoachInfoForProfitSharing(payments.getReceiverId());
-            Assert.rpcResultOk(rpc);
-            CoachInfoForProfitSharing coachInfo = rpc.getData();
-            receiverOpenId = coachInfo.getAccount();
-            receiverRealName = coachInfo.getRealName();
+            if (profitSharingProperties.getEnableCoachProfitSharing()) {
+                RpcResult<CoachInfoForProfitSharing> rpc = userDubboService.getCoachInfoForProfitSharing(payments.getReceiverId());
+                CoachInfoForProfitSharing coachInfo = Assert.rpcResultOk(rpc);
+                receiverOpenId = coachInfo.getAccount();
+                receiverRealName = coachInfo.getRealName();
+                log.info("[订单完成分账] 分账到教练:{}", receiverRealName);
+            } else {
+                ProfitSharingProperties.CoachAccount coachAccount = profitSharingProperties.getDefaultCoachAccount();
+                receiverOpenId = coachAccount.getAccount();
+                receiverRealName = coachAccount.getRealName();
+                log.info("[订单完成分账] 默认分账到账户:{}", receiverRealName);
+            }
         } else if (SellerTypeEnum.VENUE.equals(payments.getSellerType())) {
             return null;
         } else {

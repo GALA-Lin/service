@@ -95,17 +95,7 @@ public enum CourseStatusEnum {
         }
 
         // 2. 状态为1（正常）或null，根据时间判断
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime scheduleStart = LocalDateTime.of(scheduleDate, startTime);
-        LocalDateTime scheduleEnd = LocalDateTime.of(scheduleDate, endTime);
-
-        if (now.isBefore(scheduleStart)) {
-            return UPCOMING;
-        } else if (now.isAfter(scheduleEnd)) {
-            return COMPLETED;
-        } else {
-            return IN_PROGRESS;
-        }
+        return calculatePlatformStatus(scheduleDate, startTime, endTime);
     }
 
     /**

@@ -44,7 +44,7 @@ public interface ICoachSlotService  extends IService<CoachSlotRecord> {
      * 返回按日期分组的可用时段
      * 逻辑:无记录或记录状态为AVAILABLE = 可用
      */
-    Map<String, List<CoachAvailableSlotVo>> getAvailableSlots(CoachAvailableSlotQueryDto dto);
+    Map<String, List<CoachAvailableSlotVo>> queryAvailableSlotsByDateRange(CoachAvailableSlotQueryDto dto);
 
     /**
      * 查询时段可用性状态(新增)

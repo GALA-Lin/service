@@ -34,7 +34,7 @@ public class CoachInfoController {
      */
     @GetMapping
     public R<CoachListResponse> getCoachList(@Valid GetCoachListDto dto) {
-        log.info("获取教练列表 - sortBy: {}, page: {}/{}",
+        log.info("【获取教练列表】sortBy: {}, page: {}/{}",
                 dto.getSortBy(), dto.getPage(), dto.getPageSize());
 
         CoachListResponse result = coachService.searchCoaches(dto);

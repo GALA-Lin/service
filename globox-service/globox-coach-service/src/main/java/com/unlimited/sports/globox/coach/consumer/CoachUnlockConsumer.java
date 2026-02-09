@@ -63,11 +63,11 @@ public class CoachUnlockConsumer {
             // 批量解锁时段
             int unlockedCount = coachSlotService.batchUnlockSlots(recordIds, userId);
 
-            log.info("[教练解锁槽位] 批量解锁成功 - userId: {}, 解锁数量: {}/{}",
+            log.info("【教练解锁槽位】 批量解锁成功 - userId: {}, 解锁数量: {}/{}",
                     userId, unlockedCount, recordIds.size());
 
         } catch (Exception e) {
-            log.error("[教练解锁槽位] 处理失败 - userId: {}, recordIds: {}",
+            log.error("【教练解锁槽位】 处理失败 - userId: {}, recordIds: {}",
                     userId, recordIds, e);
             throw e;
         }

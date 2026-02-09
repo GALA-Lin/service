@@ -25,7 +25,7 @@ public class CoachApplications implements Serializable {
     private static final long serialVersionUID = 1L;
 
     @TableId(value ="coach_applications_id" , type = IdType.AUTO)
-    private Long coach_applications_id;
+    private Long coachApplicationsId;
 
     /**
      * 申请用户ID

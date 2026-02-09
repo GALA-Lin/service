@@ -34,6 +34,8 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.unlimited.sports.globox.model.coach.enums.CoachStatusEnum.ACTIVE;
+
 /**
  * @since 2026/1/1 12:23
  * 教练服务实现（已修复 List<String> 类型错误）
@@ -66,10 +68,11 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
             log.info("教龄筛选条件: {}", filterEnum.getDesc());
         }
 
+
         // 计算分页偏移量
         int offset = (dto.getPage() - 1) * dto.getPageSize();
 
-        // 调用Mapper进行搜索
+        // 调用 Mapper 进行搜索
         List<Map<String, Object>> searchResults = coachProfileMapper.searchCoaches(
                 dto.getKeyword(),
                 dto.getMinPrice(),
@@ -88,7 +91,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 dto.getPageSize()
         );
 
-        // 查询总数
+        // 查询总数（使用处理后的 minPrice）
         long total = coachProfileMapper.countSearchCoaches(
                 dto.getKeyword(),
                 dto.getMinPrice(),
@@ -180,7 +183,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         CoachProfile profile = coachProfileMapper.selectOne(
                 new LambdaQueryWrapper<CoachProfile>()
                         .eq(CoachProfile::getCoachUserId, coachUserId)
-                        .eq(CoachProfile::getCoachStatus, 1)
+                        .eq(CoachProfile::getCoachStatus, ACTIVE.getCode())
                         .eq(CoachProfile::getCoachAuditStatus, 1)
         );
 
@@ -192,7 +195,7 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         List<CoachCourseType> services = coachCourseTypeMapper.selectList(
                 new LambdaQueryWrapper<CoachCourseType>()
                         .eq(CoachCourseType::getCoachUserId, coachUserId)
-                        .eq(CoachCourseType::getCoachIsActive, 1)
+                        .eq(CoachCourseType::getCoachIsActive, ACTIVE.getCode())
         );
 
         // 获取用户基本信息

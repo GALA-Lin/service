@@ -5,6 +5,8 @@ import lombok.Data;
 import javax.validation.constraints.*;
 import java.math.BigDecimal;
 
+import static com.unlimited.sports.globox.model.coach.enums.CoachStatusEnum.ACTIVE;
+
 /**
  * @since 2026/1/8 10:07
  * 教练课程类型DTO
@@ -64,5 +66,5 @@ public class CoachCourseTypeDto {
      */
     @Min(value = 0, message = "启用状态必须为0或1")
     @Max(value = 1, message = "启用状态必须为0或1")
-    private Integer coachIsActive = 1;
+    private Integer coachIsActive = ACTIVE.getCode();
 }

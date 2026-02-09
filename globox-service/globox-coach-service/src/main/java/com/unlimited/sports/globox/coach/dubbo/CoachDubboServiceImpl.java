@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.unlimited.sports.globox.common.result.CoachErrorCodeEnum.*;
+import static com.unlimited.sports.globox.model.merchant.enums.OperatorSourceEnum.USER;
 
 
 /**
@@ -218,8 +219,8 @@ public class CoachDubboServiceImpl implements CoachDubboService {
             if (totalHours.compareTo(requiredHours) < 0) {
                 log.warn("远距离区域课时不足 - 总课时: {}, 要求: {}", totalHours, requiredHours);
                 RpcResult.error(REMOTE_AREA_MIN_HOURS_NOT_MET);
-//TODO 优化提示信息
-//                String.format("远距离区域最低需预约%.1f小时", requiredHours)
+                //TODO 优化提示信息
+                // String.format("远距离区域最低需预约%.1f小时", requiredHours)
                 return false;
             }
         } else {
@@ -449,7 +450,7 @@ public class CoachDubboServiceImpl implements CoachDubboService {
                     record.setLockedUntil(lockedUntil);
                     record.setLockedType(1); // 用户下单锁定
                     record.setOperatorId(userId);
-                    record.setOperatorSource(2); // 用户端
+                    record.setOperatorSource(USER.getCode()); // 用户端
                     templateToRecordMap.put(template.getCoachSlotTemplateId(), record);
                     return record;
                 })

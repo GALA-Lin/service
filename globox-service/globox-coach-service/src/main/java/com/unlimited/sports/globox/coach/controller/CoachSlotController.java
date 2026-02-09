@@ -86,7 +86,7 @@ public class CoachSlotController {
         log.info("请求参数{}", JSON.toJSONString(dto));
         log.info("查询可预约时段 - coachUserId: {}, {} - {}",
                 dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
-        Map<String, List<CoachAvailableSlotVo>> slots = coachSlotService.getAvailableSlots(dto);
+        Map<String, List<CoachAvailableSlotVo>> slots = coachSlotService.queryAvailableSlotsByDateRange(dto);
         return R.ok(slots);
     }
     /**
@@ -109,7 +109,7 @@ public class CoachSlotController {
      */
     @GetMapping("/schedule")
     public R<List<CoachScheduleVo>> getCoachSchedule(@Valid CoachScheduleQueryDto dto) {
-        log.info("查询教练日程 - coachUserId: {}", dto.getCoachUserId());
+        log.info("【查询教练日程】coachUserId: {}", dto.getCoachUserId());
         List<CoachScheduleVo> schedule = coachSlotService.getCoachSchedule(dto);
         return R.ok(schedule);
     }
@@ -152,7 +152,7 @@ public class CoachSlotController {
      */
     @PostMapping("/batch-unlock")
     public R<Integer> batchUnlockSlots(@Valid @RequestBody CoachSlotBatchUnlockDto dto) {
-        log.info("批量解锁时段 - coachUserId: {}", dto.getCoachUserId());
+        log.info("【批量解锁时段】 coachUserId: {}", dto.getCoachUserId());
         int count = coachSlotService.batchUnlockSlots(dto);
         return R.ok(count);
     }

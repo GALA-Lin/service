@@ -1,6 +1,5 @@
 package com.unlimited.sports.globox.model.coach.dto;
 
-import com.unlimited.sports.globox.model.coach.vo.VideoItem;
 import lombok.Data;
 
 import javax.validation.constraints.Size;
@@ -28,7 +27,7 @@ public class UpdateCoachDisplaySettingsDto {
      * 教学视频列表
      */
     @Size(max = 5, message = "教学视频最多5个")
-    private List<VideoItem> coachWorkVideos;
+    private List<String> coachWorkVideos;
 
     /**
      * 证书附件URL列表

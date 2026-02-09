@@ -140,7 +140,7 @@ public class CoachSettingsVo {
         /**
          * 教学视频
          */
-        private List<VideoItem> coachWorkVideos;
+        private List<String> coachWorkVideos;
 
         /**
          * 证书附件

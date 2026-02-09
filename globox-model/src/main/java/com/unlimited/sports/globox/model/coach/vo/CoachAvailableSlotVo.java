@@ -53,6 +53,26 @@ public class CoachAvailableSlotVo {
     private List<String> acceptableAreas;
 
     /**
+     * 教练主服务区域
+     */
+    private List<String> coachMainServiceAreas;
+
+    /**
+     * 教练远程服务区域
+     */
+    private List<String> coachRemoteServiceAreas;
+
+    /**
+     * 教练最小时长
+     */
+    private Integer coachMinHours;
+
+    /**
+     * 教练远程最小时长
+     */
+    private Integer coachRemoteMinHours;
+
+    /**
      * 场地要求说明
      */
     private String venueRequirementDesc;

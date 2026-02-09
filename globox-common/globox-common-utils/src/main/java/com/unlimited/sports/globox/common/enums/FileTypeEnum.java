@@ -57,7 +57,7 @@ public enum FileTypeEnum {
             "user-media/video",
             "用户媒体视频",
             new String[]{".mp4", ".mov"},
-            100 * 1024 * 1024L  // 100MB
+            200 * 1024 * 1024L  // 200MB
     ),
 
     /**
@@ -77,7 +77,7 @@ public enum FileTypeEnum {
             "social-note/video",
             "笔记视频",
             new String[]{".mp4", ".mov"},
-            100 * 1024 * 1024L  // 100MB
+            200 * 1024 * 1024L  // 200MB
     ),
 
     /**
@@ -112,7 +112,45 @@ public enum FileTypeEnum {
     ),
 
 
-    ;
+    /**
+     * 教练教学图片
+     */
+    COACH_WORK_PHOTO(
+            "coach/work-photos",
+            "教学图片",
+            new String[] {".jpg", ".jpeg", ".png", ".webp"},
+            10 * 1024 * 1024L // 10MB
+    ),
+
+    /**
+     * 教练教学视频
+     */
+    COACH_WORK_VIDEO(
+            "coach/work-videos",
+            "教学视频",
+            new String[] {".mp4", ".mov", ".avi", ".mkv"},
+            200 * 1024 * 1024L // 200MB
+    ),
+
+    /**
+     * 教练证书附件
+     */
+    COACH_CERTIFICATION(
+            "coach/certifications",
+            "证书附件",
+            new String[] {".jpg", ".jpeg", ".png", ".pdf"}, // 证书通常包含 PDF
+            10 * 1024 * 1024L // 10MB
+    ),
+
+    /**
+     * 教练图片/头像
+     */
+    COACH_IMAGE(
+            "coach/images",
+            "教练图片",
+            new String[] {".jpg", ".jpeg", ".png", ".webp"},
+            10 * 1024 * 1024L // 10MB
+    );;
 
     /**
      * 类型代码（用于文件路径）

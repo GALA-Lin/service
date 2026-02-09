@@ -17,6 +17,8 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+import static com.unlimited.sports.globox.model.coach.enums.CoachSlotRecordStatusEnum.getDescription;
+
 /**
  * 优化后的教练时段管理服务
  * 核心设计理念：
@@ -36,6 +38,9 @@ public class CoachSlotServiceOptimizedImpl  {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private CoachProfileMapper coachProfileMapper; // 注入教练档案Mapper
 
     /**
      * 灵活开放时段（新接口）
@@ -234,7 +239,7 @@ public class CoachSlotServiceOptimizedImpl  {
                     log.warn("只能删除可用状态的记录 - recordId: {}, status: {}",
                             recordId, record.getStatus());
                     failedRecords.add(recordId + "(状态不允许:" +
-                            CoachSlotRecordStatusEnum.getDescription(record.getStatus()) + ")");
+                            getDescription(record.getStatus()) + ")");
                     continue;
                 }
 
@@ -276,6 +281,26 @@ public class CoachSlotServiceOptimizedImpl  {
 
         log.info("查询可预约时段（优化版） - coachUserId: {}, 日期范围: {} - {}",
                 dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
+        // 1. 查询教练的配置信息（授课区域与起订时长）
+        CoachProfile profile = coachProfileMapper.selectOne(
+                new LambdaQueryWrapper<CoachProfile>()
+                        .eq(CoachProfile::getCoachUserId, dto.getCoachUserId())
+        );
+        log.info("教练配置信息 - mainAreas: {}, remoteAreas: {}, minHours: {}, remoteMinHours: {}",
+                profile.getCoachServiceArea(), profile.getCoachRemoteServiceArea(),
+                profile.getCoachMinHours(), profile.getCoachRemoteMinHours());
+
+        // 处理默认值：如果 profile 为空或字段为 null，则设为默认值
+        List<String> mainAreas = (profile != null && profile.getCoachServiceArea() != null)
+                ? Collections.singletonList(profile.getCoachServiceArea()) : Collections.emptyList();
+        List<String> remoteAreas = (profile != null && profile.getCoachRemoteServiceArea() != null)
+                ? profile.getCoachRemoteServiceArea() : Collections.emptyList();
+
+        // 最小授课时间逻辑：为 null 时按照 0 处理
+        Integer minHours = (profile != null && profile.getCoachMinHours() != null)
+                ? profile.getCoachMinHours() : 0;
+        Integer remoteMinHours = (profile != null && profile.getCoachRemoteMinHours() != null)
+                ? profile.getCoachRemoteMinHours() : 0;
 
         // 1. 直接查询日期范围内的可用记录
         List<CoachSlotRecord> availableRecords = slotRecordMapper.selectList(
@@ -302,7 +327,11 @@ public class CoachSlotServiceOptimizedImpl  {
                     .durationMinutes((int) ChronoUnit.MINUTES.between(
                             record.getStartTime(), record.getEndTime()))
                     .slotStatus(record.getStatus())
-                    .slotStatusDesc(CoachSlotRecordStatusEnum.AVAILABLE.getDescription())
+                    .slotStatusDesc(getDescription(record.getStatus()))
+                    .coachMainServiceAreas(mainAreas)
+                    .coachRemoteServiceAreas(remoteAreas)
+                    .coachMinHours(minHours)
+                    .coachRemoteMinHours(remoteMinHours)
                     .build();
 
             resultMap.computeIfAbsent(dateKey, k -> new ArrayList<>()).add(vo);

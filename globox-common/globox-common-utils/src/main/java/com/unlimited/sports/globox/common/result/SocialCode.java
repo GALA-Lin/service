@@ -23,7 +23,7 @@ public enum SocialCode implements ResultCode {
     NOTE_PAGE_SIZE_EXCEEDED(3011, "每页数量不能超过50"),
     NOTE_SORT_INVALID(3012, "排序方式无效，仅支持pool/latest/hot"),
     NOTE_UPLOAD_FILE_FAILED(3013, "文件上传失败"),
-    NOTE_UPLOAD_FILE_TOO_LARGE(3014, "文件大小超过限制"),
+    NOTE_UPLOAD_FILE_TOO_LARGE(3014, "文件大小超过限制，最大允许 %s"),
     NOTE_UPLOAD_FILE_TYPE_NOT_SUPPORTED(3015, "文件类型不支持"),
     NOTE_MEDIA_CLEAR_NOT_ALLOWED(3016, "不允许清空笔记的所有媒体"),
     NOTE_MEDIA_NOT_FOUND(3017, "媒体不存在"),

@@ -46,4 +46,14 @@ public class GloboxApplicationException extends RuntimeException {
         super(message, cause);
         this.code = ApplicationCode.FAIL.getCode();
     }
+
+    /**
+     * 支持动态格式化消息的构造函数
+     * @param resultCode 响应码枚举
+     * @param args 替换占位符的参数
+     */
+    public GloboxApplicationException(ResultCode resultCode, Object... args) {
+        super(String.format(resultCode.getMessage(), args));
+        this.code = resultCode.getCode();
+    }
 }

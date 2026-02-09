@@ -164,6 +164,15 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         if (dto.getCoachTeachingYears() != null) {
             updateEntity.setCoachTeachingYears(dto.getCoachTeachingYears());
         }
+        if (dto.getCoachCertificationFiles() != null) {
+            updateEntity.setCoachCertificationFiles(dto.getCoachCertificationFiles());
+        }
+        if (dto.getCoachWorkPhotos() != null) {
+            updateEntity.setCoachWorkPhotos(dto.getCoachWorkPhotos());
+        }
+        if (dto.getCoachWorkVideos() != null) {
+            updateEntity.setCoachWorkVideos(dto.getCoachWorkVideos());
+        }
 
         int updated = coachProfileMapper.update(
                 updateEntity, // 第一个参数：要更新的字段（已赋值的实体对象）

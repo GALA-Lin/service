@@ -47,7 +47,7 @@ public class CoachDetailVo {
     /**
      * 教学视频URL列表
      */
-    private List<VideoItem> coachWorkVideos;
+    private List<String> coachWorkVideos;
 
     /**
      * 专长标签列表

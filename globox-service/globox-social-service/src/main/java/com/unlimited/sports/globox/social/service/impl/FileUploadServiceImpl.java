@@ -68,7 +68,12 @@ public class FileUploadServiceImpl implements FileUploadService {
 
         // 3. 校验文件大小
         if (fileSize > fileType.getDefaultMaxSize()) {
-            throw new GloboxApplicationException(SocialCode.NOTE_UPLOAD_FILE_TOO_LARGE);
+            // 将字节转换为 MB，方便前端/用户查看
+            long maxMb = fileType.getDefaultMaxSize() / 1024 / 1024;
+            String limitDesc = maxMb + "MB";
+
+            // 抛出异常并带上限制说明
+            throw new GloboxApplicationException(SocialCode.NOTE_UPLOAD_FILE_TOO_LARGE, limitDesc);
         }
 
         // 4. 生成文件路径

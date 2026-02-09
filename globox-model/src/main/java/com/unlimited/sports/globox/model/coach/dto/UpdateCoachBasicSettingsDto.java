@@ -43,4 +43,22 @@ public class UpdateCoachBasicSettingsDto {
     @Min(value = 0, message = "教龄不能为负数")
     @Max(value = 50, message = "教龄不能超过50年")
     private Integer coachTeachingYears;
+
+    /**
+     * 证书附件URL列表
+     */
+    @Size(max = 10, message = "证书附件最多10个")
+    private List<String> coachCertificationFiles;
+
+    /**
+     * 教学图片URL列表
+     */
+    @Size(max = 9, message = "教学图片最多9张")
+    private List<String> coachWorkPhotos;
+
+    /**
+     * 教学视频列表
+     */
+    @Size(max = 5, message = "教学视频最多5个")
+    private List<String> coachWorkVideos;
 }

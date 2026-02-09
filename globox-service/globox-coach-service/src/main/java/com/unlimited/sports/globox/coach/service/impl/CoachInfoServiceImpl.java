@@ -169,6 +169,10 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
             }
         }
 
+        if (allCoaches.size() == 1 || (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) == 0)) {
+            minPrice = BigDecimal.ZERO;
+        }
+
         return CoachListResponse.PriceRange.builder()
                 .minPrice(minPrice != null ? minPrice : BigDecimal.ZERO)
                 .maxPrice(maxPrice != null ? maxPrice : BigDecimal.ZERO)

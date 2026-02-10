@@ -1,6 +1,7 @@
 package com.unlimited.sports.globox.social.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -18,20 +19,22 @@ import com.unlimited.sports.globox.model.social.dto.SaveDraftRequest;
 import com.unlimited.sports.globox.model.social.dto.UpdateNoteRequest;
 import com.unlimited.sports.globox.model.social.entity.SocialNote;
 import com.unlimited.sports.globox.model.social.enums.NoteTag;
+import com.unlimited.sports.globox.model.social.entity.SocialNoteComment;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteLike;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteMedia;
 import com.unlimited.sports.globox.model.social.entity.SocialNotePool;
-import com.unlimited.sports.globox.model.social.event.NoteLikeEvent;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.DraftNoteVo;
 import com.unlimited.sports.globox.model.social.vo.NoteDetailVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
 import com.unlimited.sports.globox.model.social.vo.NoteMediaVo;
+import com.unlimited.sports.globox.social.mapper.SocialNoteCommentMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteLikeMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMediaMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNotePoolMapper;
+import com.unlimited.sports.globox.social.consts.SocialRedisKeyConstants;
 import com.unlimited.sports.globox.social.service.NoteLikeSyncService;
 import com.unlimited.sports.globox.social.service.NoteService;
 import com.unlimited.sports.globox.social.service.SocialRelationService;
@@ -44,9 +47,6 @@ import com.unlimited.sports.globox.dubbo.user.UserDubboService;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.BeanUtils;
@@ -73,6 +73,7 @@ public class NoteServiceImpl   implements NoteService {
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 50;
     private static final String TAGS_DELIMITER = ";";
+    private static final int BATCH_SIZE = 500;
 
     @Autowired
     private SocialNoteMapper socialNoteMapper;
@@ -85,6 +86,9 @@ public class NoteServiceImpl   implements NoteService {
 
     @Autowired
     private SocialNoteLikeMapper socialNoteLikeMapper;
+
+    @Autowired
+    private SocialNoteCommentMapper socialNoteCommentMapper;
 
     @Autowired
     private NoteLikeSyncService noteLikeSyncService;
@@ -510,6 +514,11 @@ public class NoteServiceImpl   implements NoteService {
 
         NoteDetailVo vo = new NoteDetailVo();
         BeanUtils.copyProperties(note, vo);
+        // 查询实际点赞数和评论数（覆盖 BeanUtils 拷贝的旧值）
+        Map<Long, Integer> likeCountMap = batchQueryLikeCounts(List.of(noteId));
+        Map<Long, Integer> commentCountMap = batchQueryCommentCounts(List.of(noteId));
+        vo.setLikeCount(likeCountMap.getOrDefault(noteId, 0));
+        vo.setCommentCount(commentCountMap.getOrDefault(noteId, 0));
         vo.setStatus(note.getStatus() != null ? note.getStatus().name() : null);
         vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
         List<String> tags = parseTags(note.getTags());
@@ -526,10 +535,9 @@ public class NoteServiceImpl   implements NoteService {
                 .collect(Collectors.toList());
         vo.setMediaList(mediaVos);
 
-        // 查询 liked 状态
+        // 查询 liked 状态（结合 Redis pending 和 DB）
         if (userId != null) {
-            Set<Long> likedNoteIds = socialNoteLikeMapper.selectLikedNoteIdsByUser(userId, Collections.singletonList(noteId));
-            vo.setLiked(likedNoteIds.contains(noteId));
+            vo.setLiked(isCurrentlyLiked(userId, noteId));
         }
 
         // 通过RPC获取作者信息
@@ -1145,14 +1153,16 @@ public class NoteServiceImpl   implements NoteService {
             throw new GloboxApplicationException(SocialCode.NOTE_NOT_FOUND);
         }
 
-        // 2. 获取当前点赞状态（包括数据库和 Redis 未消费事件）
-        LikeStatus likeStatus = getCurrentLikeStatus(userId, noteId);
-        if (likeStatus.alreadyLiked) {
+        // 2. 判断是否已点赞（优先看 Redis pending，再看 DB）
+        if (isCurrentlyLiked(userId, noteId)) {
             return R.ok("已经点赞，无法重复点赞");
         }
 
-        // 3. 添加点赞事件到 Redis
-        noteLikeSyncService.addLikeEvent(userId, noteId, likeStatus.existsInDb, likeStatus.isDeletedInDb);
+        // 3. 添加点赞事件到 Redis Hash
+        noteLikeSyncService.addLikeEvent(userId, noteId);
+
+        // 3.1 点赞增量 +1
+        redisService.hincrHashField(SocialRedisKeyConstants.NOTE_LIKE_DELTA, noteId.toString(), 1);
 
         // 4. 异步发送通知（不影响主流程）
         if (!note.getUserId().equals(userId)) {
@@ -1174,14 +1184,16 @@ public class NoteServiceImpl   implements NoteService {
             throw new GloboxApplicationException(SocialCode.NOTE_NOT_FOUND);
         }
 
-        // 2. 获取当前点赞状态（包括数据库和 Redis 未消费事件）
-        LikeStatus likeStatus = getCurrentLikeStatus(userId, noteId);
-        if (!likeStatus.alreadyLiked) {
+        // 2. 判断是否已点赞（优先看 Redis pending，再看 DB）
+        if (!isCurrentlyLiked(userId, noteId)) {
             return R.ok("未点赞，无法取消");
         }
 
-        // 3. 添加取消点赞事件到 Redis（事件创建和写入都在 NoteLikeSyncService 中处理）
-        noteLikeSyncService.addUnlikeEvent(userId, noteId, likeStatus.existsInDb, likeStatus.isDeletedInDb);
+        // 3. 添加取消点赞事件到 Redis Hash
+        noteLikeSyncService.addUnlikeEvent(userId, noteId);
+
+        // 3.1 点赞增量 -1
+        redisService.hincrHashField(SocialRedisKeyConstants.NOTE_LIKE_DELTA, noteId.toString(), -1);
 
         return R.ok("取消点赞成功");
     }
@@ -1322,11 +1334,19 @@ public class NoteServiceImpl   implements NoteService {
             return Collections.emptyList();
         }
 
+        // 0. 批量查询实际点赞数和评论数
+        List<Long> allNoteIds = notes.stream().map(SocialNote::getNoteId).collect(Collectors.toList());
+        Map<Long, Integer> likeCountMap = batchQueryLikeCounts(allNoteIds);
+        Map<Long, Integer> commentCountMap = batchQueryCommentCounts(allNoteIds);
+
+
         // 1. 转换为VO
         List<NoteItemVo> voList = notes.stream()
                 .map(note -> {
                     NoteItemVo vo = new NoteItemVo();
                     BeanUtils.copyProperties(note, vo);
+                    vo.setLikeCount(likeCountMap.getOrDefault(note.getNoteId(), 0));
+                    vo.setCommentCount(commentCountMap.getOrDefault(note.getNoteId(), 0));
                     vo.setStatus(note.getStatus() != null ? note.getStatus().name() : null);
                     vo.setMediaType(note.getMediaType() != null ? note.getMediaType().name() : null);
                     List<String> tags = parseTags(note.getTags());
@@ -1348,14 +1368,18 @@ public class NoteServiceImpl   implements NoteService {
             // 2.1 从数据库查询已点赞的笔记ID
             Set<Long> dbLikedNoteIds = socialNoteLikeMapper.selectLikedNoteIdsByUser(userId, noteIds);
             
-            // 2.2 从Redis获取未同步的点赞事件（会覆盖数据库状态）
-            Set<Long> pendingLikedNoteIds = noteLikeSyncService.batchGetPendingLikedNoteIds(userId, noteIds);
-            Set<Long> pendingUnlikedNoteIds = noteLikeSyncService.batchGetPendingUnlikedNoteIds(userId, noteIds);
+            // 2.2 从Redis Hash获取未同步的点赞状态
+            Map<Long, Boolean> pendingStatus = noteLikeSyncService.batchGetPendingLikeStatus(userId, noteIds);
             
-            // 2.3 计算最终点赞状态：(数据库点赞 + Redis点赞) - Redis取消点赞
+            // 2.3 计算最终点赞状态：数据库状态 + Redis pending 覆盖
             Set<Long> finalLikedNoteIds = new HashSet<>(dbLikedNoteIds);
-            finalLikedNoteIds.addAll(pendingLikedNoteIds);
-            finalLikedNoteIds.removeAll(pendingUnlikedNoteIds);
+            pendingStatus.forEach((noteId, liked) -> {
+                if (liked) {
+                    finalLikedNoteIds.add(noteId);
+                } else {
+                    finalLikedNoteIds.remove(noteId);
+                }
+            });
             
             // 3. 填充 liked 字段
             Map<Long, NoteItemVo> voMap = voList.stream()
@@ -1516,52 +1540,63 @@ public class NoteServiceImpl   implements NoteService {
     }
 
     /**
-     * 点赞状态信息
+     * 判断用户当前是否已点赞（优先看 Redis pending，再看 DB）
      */
-    @Data
-    @AllArgsConstructor
-    @NoArgsConstructor
-    private static class LikeStatus {
-        /** 是否已点赞 */
-        private boolean alreadyLiked;
-        /** 记录在数据库中是否存在 */
-        private Boolean existsInDb;
-        /** 记录在数据库中是否被软删除 */
-        private Boolean isDeletedInDb;
-    }
+    private boolean isCurrentlyLiked(Long userId, Long noteId) {
+        // 1. 优先检查 Redis pending 状态
+        Boolean pendingStatus = noteLikeSyncService.getPendingLikeStatus(userId, noteId);
+        if (pendingStatus != null) {
+            return pendingStatus;
+        }
 
-    /**
-     * 获取当前点赞状态（包括数据库和 Redis 未消费事件）
-     */
-    private LikeStatus getCurrentLikeStatus(Long userId, Long noteId) {
-        // 1. 从数据库检查
+        // 2. Redis 无 pending，查数据库
         LambdaQueryWrapper<SocialNoteLike> dbQuery = new LambdaQueryWrapper<>();
         dbQuery.eq(SocialNoteLike::getUserId, userId)
-                .eq(SocialNoteLike::getNoteId, noteId);
-        SocialNoteLike dbLike = socialNoteLikeMapper.selectOne(dbQuery);
+                .eq(SocialNoteLike::getNoteId, noteId)
+                .eq(SocialNoteLike::getDeleted, false);
+        return socialNoteLikeMapper.selectCount(dbQuery) > 0;
+    }
 
-        // 2. 从 Redis Set 未消费事件检查（最终状态）
-        NoteLikeEvent pendingEvent = noteLikeSyncService.getPendingLikeEventFromSet(userId, noteId);
-
-        // 3. 综合两个来源判断最终状态
-        if (pendingEvent != null) {
-            // 有未消费事件，根据事件 action 推算同步后的数据库状态
-            boolean liked = pendingEvent.getAction() == NoteLikeEvent.LikeAction.LIKE;
-            if (liked) {
-                // pending 是 LIKE，同步后记录会存在且未删除 → 下一个 UNLIKE 应该是 UNLIKE:true:false
-                return new LikeStatus(true, true, false);
-            } else {
-                // pending 是 UNLIKE，同步后记录会存在且已软删除 → 下一个 LIKE 应该是 LIKE:true:true
-                return new LikeStatus(false, true, true);
-            }
-        } else if (dbLike != null) {
-            // 数据库中存在且未软删除
-            boolean liked = !dbLike.getDeleted();
-            return new LikeStatus(liked, true, dbLike.getDeleted());
-        } else {
-            // 数据库中不存在
-            return new LikeStatus(false, false, false);
+    @Override
+    public Map<Long, Integer> batchQueryLikeCounts(List<Long> noteIds) {
+        Map<Long, Integer> result = new HashMap<>();
+        if (noteIds == null || noteIds.isEmpty()) {
+            return result;
         }
+        for (int i = 0; i < noteIds.size(); i += BATCH_SIZE) {
+            List<Long> batch = noteIds.subList(i, Math.min(i + BATCH_SIZE, noteIds.size()));
+            QueryWrapper<SocialNoteLike> query = new QueryWrapper<>();
+            query.select("note_id as noteId", "COUNT(*) as cnt")
+                    .in("note_id", batch)
+                    .eq("deleted", false)
+                    .groupBy("note_id");
+            List<Map<String, Object>> rows = socialNoteLikeMapper.selectMaps(query);
+            for (Map<String, Object> row : rows) {
+                result.put(((Number) row.get("noteId")).longValue(), ((Number) row.get("cnt")).intValue());
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public Map<Long, Integer> batchQueryCommentCounts(List<Long> noteIds) {
+        Map<Long, Integer> result = new HashMap<>();
+        if (noteIds == null || noteIds.isEmpty()) {
+            return result;
+        }
+        for (int i = 0; i < noteIds.size(); i += BATCH_SIZE) {
+            List<Long> batch = noteIds.subList(i, Math.min(i + BATCH_SIZE, noteIds.size()));
+            QueryWrapper<SocialNoteComment> query = new QueryWrapper<>();
+            query.select("note_id as noteId", "COUNT(*) as cnt")
+                    .in("note_id", batch)
+                    .eq("status", "PUBLISHED")
+                    .groupBy("note_id");
+            List<Map<String, Object>> rows = socialNoteCommentMapper.selectMaps(query);
+            for (Map<String, Object> row : rows) {
+                result.put(((Number) row.get("noteId")).longValue(), ((Number) row.get("cnt")).intValue());
+            }
+        }
+        return result;
     }
 
 }

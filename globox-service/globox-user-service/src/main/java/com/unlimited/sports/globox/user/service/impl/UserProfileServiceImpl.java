@@ -48,6 +48,7 @@ import com.unlimited.sports.globox.user.prop.UserProfileDefaultProperties;
 import com.unlimited.sports.globox.user.service.FileUploadService;
 import com.unlimited.sports.globox.user.service.PortraitMattingService;
 import com.unlimited.sports.globox.user.service.UserProfileService;
+import com.unlimited.sports.globox.user.util.UserSyncMQSender;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Value;
@@ -118,6 +119,9 @@ public class UserProfileServiceImpl implements UserProfileService {
 
     @DubboReference(group = "rpc")
     private RegionDubboService regionDubboService;
+
+    @Autowired
+    private UserSyncMQSender userSyncMQSender;
 
     @Value("${user.globox-no.cooldown-seconds:5184000}")
     private long globoxNoCooldownSeconds;
@@ -784,6 +788,9 @@ public class UserProfileServiceImpl implements UserProfileService {
                 }
             }
         }
+
+        // 7. 同步用户数据到ES（失败不影响更新流程）
+        userSyncMQSender.sendUserSyncMessage(profile);
 
         log.info("用户资料更新成功：userId={}", userId);
         return R.ok("资料更新成功");

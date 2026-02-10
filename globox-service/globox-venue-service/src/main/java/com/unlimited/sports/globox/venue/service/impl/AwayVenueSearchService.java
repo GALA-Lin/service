@@ -3,6 +3,8 @@ package com.unlimited.sports.globox.venue.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.unlimited.sports.globox.common.utils.LocalDateUtils;
+import com.unlimited.sports.globox.merchant.mapper.CourtMapper;
+import com.unlimited.sports.globox.model.merchant.entity.Court;
 import com.unlimited.sports.globox.model.venue.entity.venues.ThirdPartyPlatform;
 import com.unlimited.sports.globox.model.venue.entity.venues.VenueThirdPartyConfig;
 import com.unlimited.sports.globox.model.venue.enums.VenueThirdPartyConfigStatusEnum;
@@ -55,6 +57,9 @@ public class AwayVenueSearchService {
     @Autowired
     private  ThirdPartyPlatformAdapterFactory adapterFactory;
 
+    @Autowired
+    private CourtMapper courtMapper;
+
     /**
      * 查询所有away球场在指定时间段的不可预订场馆ID
      * 优化策略：先批量从缓存获取，缓存miss的再并发请求API
@@ -98,6 +103,35 @@ public class AwayVenueSearchService {
         Map<Long, List<ThirdPartyCourtSlotDto>> allSlotsMap = new HashMap<>();
         allSlotsMap.putAll(cachedSlotsMap);
         allSlotsMap.putAll(apiSlotsMap);
+
+        // 批量查询所有away场馆的本地场地，过滤掉本地不存在的第三方场地
+        List<Long> awayVenueIds = allAwayConfigs.stream()
+                .map(VenueThirdPartyConfig::getVenueId)
+                .toList();
+        List<Court> allLocalCourts = courtMapper.selectList(
+                new LambdaQueryWrapper<Court>()
+                        .in(Court::getVenueId, awayVenueIds)
+                        .isNotNull(Court::getThirdPartyCourtId)
+        );
+        // 按venueId分组，构建每个场馆的本地thirdPartyCourtId集合
+        Map<Long, Set<String>> localThirdPartyCourtIdsByVenueId = allLocalCourts.stream()
+                .collect(Collectors.groupingBy(
+                        Court::getVenueId,
+                        Collectors.mapping(Court::getThirdPartyCourtId, Collectors.toSet())
+                ));
+
+        // 过滤allSlotsMap：只保留本地存在的场地数据
+        allSlotsMap.replaceAll((venueId, slots) -> {
+            Set<String> localCourtIds = localThirdPartyCourtIdsByVenueId.getOrDefault(venueId, Collections.emptySet());
+            List<ThirdPartyCourtSlotDto> filtered = slots.stream()
+                    .filter(slot -> localCourtIds.contains(slot.getThirdPartyCourtId()))
+                    .toList();
+            if (filtered.size() < slots.size()) {
+                log.info("[AwayVenueSearch] 过滤本地不存在的场地: venueId={}, 原始={}, 过滤后={}",
+                        venueId, slots.size(), filtered.size());
+            }
+            return filtered;
+        });
 
         // 检查每个场馆的时间段可用性
         Set<Long> unavailableVenueIds = allAwayConfigs.stream()

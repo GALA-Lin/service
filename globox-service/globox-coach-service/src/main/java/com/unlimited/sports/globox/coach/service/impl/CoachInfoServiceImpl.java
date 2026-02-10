@@ -2,6 +2,7 @@ package com.unlimited.sports.globox.coach.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.unlimited.sports.globox.coach.mapper.CoachCourseTypeMapper;
+import com.unlimited.sports.globox.coach.mapper.CoachExtraInfoMapper;
 import com.unlimited.sports.globox.coach.mapper.CoachProfileMapper;
 import com.unlimited.sports.globox.coach.service.ICoachInfoService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
@@ -16,6 +17,7 @@ import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.dto.GetCoachListDto;
 import com.unlimited.sports.globox.model.coach.entity.CoachCourseType;
+import com.unlimited.sports.globox.model.coach.entity.CoachExtraInfo;
 import com.unlimited.sports.globox.model.coach.entity.CoachProfile;
 import com.unlimited.sports.globox.model.coach.enums.CoachAcceptVenueTypeEnum;
 import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
@@ -49,6 +51,9 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
 
     @Autowired
     private CoachCourseTypeMapper coachCourseTypeMapper;
+
+    @Autowired
+    private CoachExtraInfoMapper coachExtraInfoMapper;
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -194,6 +199,11 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         if (profile == null) {
             throw new GloboxApplicationException("教练不存在或未通过审核");
         }
+        // === 新增：查询是否显示真名 ===
+        CoachExtraInfo extraInfo = coachExtraInfoMapper.selectById(coachUserId);
+        boolean displayRealName = extraInfo != null &&
+                extraInfo.getDisplayRealName() != null &&
+                extraInfo.getDisplayRealName();
 
         // 查询教练服务类型
         List<CoachCourseType> services = coachCourseTypeMapper.selectList(
@@ -207,10 +217,17 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
         Assert.rpcResultOk(userResult);
         UserInfoVo userInfo = userResult.getData();
 
+        // === 新增：如果显示真名，覆盖昵称 ===
+        if (displayRealName && profile.getCoachRealName() != null &&
+                !profile.getCoachRealName().trim().isEmpty()) {
+            userInfo.setNickName(profile.getCoachRealName());
+        }
+
         // 获取教练电话
         RpcResult<UserPhoneDto> phoneResult = userDubboService.getUserPhone(coachUserId);
+        Assert.rpcResultOk(phoneResult);
         String coachPhone = null;
-        if (phoneResult != null && phoneResult.getData() != null) {
+        if (phoneResult.getData() != null) {
             coachPhone = phoneResult.getData().getPhone();
         }
 
@@ -346,6 +363,17 @@ public class CoachInfoServiceImpl implements ICoachInfoService {
                 log.warn("教练用户信息缺失 - coachUserId: {}", coachUserId);
             } else {
                 BeanUtils.copyProperties(userInfo, userInfo);
+            }
+
+            boolean displayRealName = result.get("displayRealName") != null
+                    && (Boolean) result.get("displayRealName");
+            String coachRealName = (String) result.get("coachRealName");
+
+            // 如果设置显示真名且真名不为空，则覆盖用户信息中的昵称
+            if (displayRealName && coachRealName != null && !coachRealName.trim().isEmpty()) {
+                if (userInfo != null) {
+                    userInfo.setNickName(coachRealName);  // 复用 nickName 字段显示真名
+                }
             }
 
             // 解析证书列表（从数据库JSON字段）

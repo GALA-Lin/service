@@ -39,5 +39,13 @@ public interface SocialNoteLikeMapper extends BaseMapper<SocialNoteLike> {
      */
     Set<Long> selectLikedNoteIdsByUser(@Param("userId") Long userId,
                                        @Param("noteIds") List<Long> noteIds);
+
+    /**
+     * 点赞 upsert：不存在则插入，已存在则恢复（deleted=false）
+     *
+     * @param userId 用户ID
+     * @param noteId 笔记ID
+     */
+    void upsertLike(@Param("userId") Long userId, @Param("noteId") Long noteId);
 }
 

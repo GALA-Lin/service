@@ -160,6 +160,12 @@
             <when test="sortBy == 'distance' and latitude != null and longitude != null">
                 ORDER BY distance ASC, cp.coach_rating_score DESC
             </when>
+            <when test="sortBy == 'price_asc'">
+                ORDER BY cp.coach_min_price ASC, cp.coach_rating_score DESC
+            </when>
+            <when test="sortBy == 'price_desc'">
+                ORDER BY cp.coach_min_price DESC, cp.coach_rating_score DESC
+            </when>
             <otherwise>
                 ORDER BY cp.coach_rating_score DESC, cp.coach_rating_count DESC
             </otherwise>

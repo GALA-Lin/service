@@ -39,12 +39,7 @@ public interface ICoachSlotService  extends IService<CoachSlotRecord> {
      */
     List<CoachSlotRecordVo> getSlotTemplates(Long coachUserId);
 
-    /**
-     * 查询可预约时段(按需计算,无需预先生成记录)
-     * 返回按日期分组的可用时段
-     * 逻辑:无记录或记录状态为AVAILABLE = 可用
-     */
-    Map<String, List<CoachAvailableSlotVo>> queryAvailableSlotsByDateRange(CoachAvailableSlotQueryDto dto);
+
 
     /**
      * 查询时段可用性状态(新增)

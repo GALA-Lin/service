@@ -22,10 +22,12 @@ import com.unlimited.sports.globox.model.social.entity.SocialNoteComment;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteCommentLike;
 import com.unlimited.sports.globox.model.social.vo.CommentItemVo;
 import com.unlimited.sports.globox.model.social.vo.CursorPaginationResult;
+import com.unlimited.sports.globox.social.consts.SocialRedisKeyConstants;
 import com.unlimited.sports.globox.social.mapper.SocialNoteCommentLikeMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteCommentMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.service.CommentService;
+import com.unlimited.sports.globox.service.RedisService;
 import com.unlimited.sports.globox.social.util.CursorUtils;
 import com.unlimited.sports.globox.social.util.SocialNotificationUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +80,9 @@ public class CommentServiceImpl implements CommentService {
 
     @Autowired
     private SocialNotificationUtil socialNotificationUtil;
+
+    @Autowired
+    private RedisService redisService;
 
     @Override
     public R<CursorPaginationResult<CommentItemVo>> getCommentList(Long noteId, String cursor, Integer size, Long userId) {
@@ -206,8 +211,8 @@ public class CommentServiceImpl implements CommentService {
 
         commentMapper.insert(comment);
 
-        // 6. 原子更新笔记评论数
-        noteMapper.incrementCommentCount(noteId);
+        // 6. 评论增量 +1
+        redisService.hincrHashField(SocialRedisKeyConstants.NOTE_COMMENT_DELTA, noteId.toString(), 1);
 
         // 7. 发送通知（评论作者不是笔记作者时才发送，展示评论者信息）
         if (!note.getUserId().equals(userId)) {
@@ -231,8 +236,10 @@ public class CommentServiceImpl implements CommentService {
             }
         }
 
-        // 8. 如果是回复评论，发送通知给被回复的用户（且被回复的用户不是自己）
-        if (replyToUserId != null && !replyToUserId.equals(userId)) {
+        // 8. 如果是回复评论，发送通知给被回复的用户（且被回复的用户不是自己，且不是笔记作者）
+        if (replyToUserId != null
+                && !replyToUserId.equals(userId)
+                && !replyToUserId.equals(note.getUserId())) {
             socialNotificationUtil.sendCommentRepliedNotification(
                     noteId, parentId, comment.getContent(), replyToUserId, userId
             );
@@ -288,10 +295,10 @@ public class CommentServiceImpl implements CommentService {
                 commentMapper.updateById(reply);
             }
         }
-        // 8. 原子更新笔记评论数
-        noteMapper.decrementCommentCount(noteId, deleteCount);
+        // 8. 评论增量 -deleteCount
+        redisService.hincrHashField(SocialRedisKeyConstants.NOTE_COMMENT_DELTA, noteId.toString(), -deleteCount);
 
-        log.info("评论删除成功：userId={}, noteId={}, commentId={}, 删除数量={}", 
+        log.info("评论删除成功：userId={}, noteId={}, commentId={}, 删除数量={}",
                 userId, noteId, commentId, deleteCount);
         return R.ok("删除成功");
     }

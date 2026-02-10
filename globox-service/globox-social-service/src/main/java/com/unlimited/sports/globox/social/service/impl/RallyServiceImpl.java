@@ -481,11 +481,16 @@ public class RallyServiceImpl implements RallyService {
                 throw new GloboxApplicationException("取消失败，活动状态异常");
             }
 
+            RallyParticipant participant = RallyParticipant.builder()
+                    .deleted(true)
+                    .build();
+
             // 删除参与记录和申请记录
-            rallyParticipantMapper.delete(Wrappers.<RallyParticipant>lambdaQuery()
+            rallyParticipantMapper.update(participant, Wrappers.<RallyParticipant>lambdaQuery()
                     .eq(RallyParticipant::getRallyPostId, rallyId)
                     .eq(RallyParticipant::getParticipantId, userId));
-            rallyApplicationMapper.deleteById(rallyApplication.getApplicationId());
+            rallyApplication.setDeleted(true);
+            rallyApplicationMapper.updateById(rallyApplication);
 
             // 发送异步通知
             socialNotificationUtil.sendRallyQuitNotification(rallyId, userId, currentrallyPosts);

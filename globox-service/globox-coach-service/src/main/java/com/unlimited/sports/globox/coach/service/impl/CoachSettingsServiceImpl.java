@@ -2,10 +2,12 @@ package com.unlimited.sports.globox.coach.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.unlimited.sports.globox.coach.mapper.CoachExtraInfoMapper;
 import com.unlimited.sports.globox.coach.mapper.CoachProfileMapper;
 import com.unlimited.sports.globox.coach.service.ICoachSettingsService;
 import com.unlimited.sports.globox.common.exception.GloboxApplicationException;
 import com.unlimited.sports.globox.model.coach.dto.*;
+import com.unlimited.sports.globox.model.coach.entity.CoachExtraInfo;
 import com.unlimited.sports.globox.model.coach.entity.CoachProfile;
 import com.unlimited.sports.globox.model.coach.enums.CoachAcceptVenueTypeEnum;
 import com.unlimited.sports.globox.model.coach.enums.CoachStatusEnum;
@@ -33,6 +35,9 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
     @Autowired
     private CoachProfileMapper coachProfileMapper;
 
+    @Autowired
+    private CoachExtraInfoMapper coachExtraInfoMapper;
+
     @Override
     public CoachSettingsVo getCoachSettings(Long coachUserId) {
         log.info("获取教练设置信息 - coachUserId: {}", coachUserId);
@@ -45,6 +50,12 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
         if (profile == null) {
             throw new GloboxApplicationException("教练信息不存在");
         }
+
+        // === 新增：查询真名显示设置 ===
+        CoachExtraInfo extraInfo = coachExtraInfoMapper.selectById(coachUserId);
+        Boolean displayRealName = extraInfo != null && extraInfo.getDisplayRealName() != null
+                ? extraInfo.getDisplayRealName()
+                : false;
 
         // 获取状态描述
         String statusDesc = "";
@@ -67,7 +78,7 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
             log.warn("未知的场地类型: {}", profile.getCoachAcceptVenueType());
         }
 
-        // 构建返回结果（直接使用 List<String>，无需额外解析）
+        // 构建返回结果
         return CoachSettingsVo.builder()
                 .coachUserId(coachUserId)
                 .coachStatus(profile.getCoachStatus())
@@ -77,7 +88,6 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
                         .longitude(profile.getCoachLongitude())
                         .build())
                 .serviceAreaInfo(CoachSettingsVo.ServiceAreaInfo.builder()
-                        // 直接返回 List<String>，无需转换
                         .serviceArea(profile.getCoachServiceArea() != null ?
                                 profile.getCoachServiceArea() : null)
                         .remoteServiceAreaList(profile.getCoachRemoteServiceArea() != null ?
@@ -105,6 +115,11 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
                 .venuePreferenceInfo(CoachSettingsVo.VenuePreferenceInfo.builder()
                         .coachAcceptVenueType(profile.getCoachAcceptVenueType())
                         .coachAcceptVenueTypeDesc(venueTypeDesc)
+                        .build())
+                // === 新增：真名显示信息 ===
+                .realNameInfo(CoachSettingsVo.RealNameInfo.builder()
+                        .coachRealName(profile.getCoachRealName())
+                        .displayRealName(displayRealName)
                         .build())
                 .build();
     }
@@ -304,6 +319,64 @@ public class CoachSettingsServiceImpl implements ICoachSettingsService {
 
         log.info("教练场地偏好更新成功 - coachUserId: {}", dto.getCoachUserId());
         return null;
+    }
+
+    /**
+     * 更新教练真名显示设置
+     *
+     * @param dto 真名设置
+     */
+    /**
+     * 更新教练真名显示设置
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateRealNameSettings(UpdateCoachRealNameSettingsDto dto) {
+        log.info("更新教练真名显示设置 - coachUserId: {}, displayRealName: {}",
+                dto.getCoachUserId(), dto.getDisplayRealName());
+
+        // 1. 验证教练是否存在
+        verifyCoachExists(dto.getCoachUserId());
+
+        // 2. 更新 coach_profile 表的真实姓名（如果提供了）
+        if (dto.getCoachRealName() != null && !dto.getCoachRealName().trim().isEmpty()) {
+            int profileUpdated = coachProfileMapper.update(null,
+                    new LambdaUpdateWrapper<CoachProfile>()
+                            .eq(CoachProfile::getCoachUserId, dto.getCoachUserId())
+                            .set(CoachProfile::getCoachRealName, dto.getCoachRealName().trim())
+            );
+
+            if (profileUpdated == 0) {
+                throw new GloboxApplicationException("更新教练真实姓名失败");
+            }
+            log.info("教练真实姓名更新成功 - coachUserId: {}, realName: {}",
+                    dto.getCoachUserId(), dto.getCoachRealName());
+        }
+
+        // 3. 更新或创建 coach_extra_info 表的显示设置
+        CoachExtraInfo existingInfo = coachExtraInfoMapper.selectById(dto.getCoachUserId());
+
+        if (existingInfo != null) {
+            // 更新现有记录
+            existingInfo.setDisplayRealName(dto.getDisplayRealName());
+            int updated = coachExtraInfoMapper.updateById(existingInfo);
+
+            if (updated == 0) {
+                throw new GloboxApplicationException("更新真名显示设置失败");
+            }
+            log.info("真名显示设置更新成功 - coachUserId: {}", dto.getCoachUserId());
+        } else {
+            // 创建新记录
+            CoachExtraInfo newInfo = new CoachExtraInfo();
+            newInfo.setCoachUserId(dto.getCoachUserId());
+            newInfo.setDisplayRealName(dto.getDisplayRealName());
+
+            int inserted = coachExtraInfoMapper.insert(newInfo);
+            if (inserted == 0) {
+                throw new GloboxApplicationException("创建真名显示设置失败");
+            }
+            log.info("真名显示设置创建成功 - coachUserId: {}", dto.getCoachUserId());
+        }
     }
 
     // ========== 私有辅助方法 ==========

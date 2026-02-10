@@ -53,6 +53,12 @@ public class VenueListResponse {
     private List<VenueDictItem> facilities = new ArrayList<>();
 
     /**
+     * 区域列表（ES聚合去重）
+     */
+    @NonNull
+    private List<String> regions = new ArrayList<>();
+
+    /**
      * 价格区间
      */
     private PriceRange priceRange;

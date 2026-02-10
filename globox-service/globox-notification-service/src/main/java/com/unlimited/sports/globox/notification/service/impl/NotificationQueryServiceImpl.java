@@ -51,7 +51,8 @@ public class NotificationQueryServiceImpl implements INotificationQueryService {
         // 查询所有未读消息，按 notification_module 分组统计
         LambdaQueryWrapper<PushRecords> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PushRecords::getUserId, userId)
-                .eq(PushRecords::getIsRead, 0);
+                .eq(PushRecords::getIsRead, 0)
+                .notIn(PushRecords::getEventType, MessageTypeEnum.EXCLUDED_EVENT_TYPES);
 
         List<PushRecords> unreadRecords = pushRecordsService.list(wrapper);
 
@@ -104,6 +105,7 @@ public class NotificationQueryServiceImpl implements INotificationQueryService {
         LambdaUpdateWrapper<PushRecords> wrapper = new LambdaUpdateWrapper<>();
         wrapper.eq(PushRecords::getUserId, userId)
                 .eq(PushRecords::getIsRead, 0)
+                .notIn(PushRecords::getEventType, MessageTypeEnum.EXCLUDED_EVENT_TYPES)
                 .set(PushRecords::getIsRead, 1)
                 .set(PushRecords::getReadAt, LocalDateTime.now());
 
@@ -134,6 +136,7 @@ public class NotificationQueryServiceImpl implements INotificationQueryService {
         LambdaQueryWrapper<PushRecords> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PushRecords::getUserId, userId)
                 .in(PushRecords::getNotificationModule, moduleCodes)
+                .notIn(PushRecords::getEventType, MessageTypeEnum.EXCLUDED_EVENT_TYPES)
                 .orderByDesc(PushRecords::getCreatedAt);
 
         // 分页查询

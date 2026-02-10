@@ -65,4 +65,11 @@ public interface ICoachSettingsService {
      * @return
      */
     CoachProfile updateVenuePreference(UpdateCoachVenuePreferenceDto dto);
+
+    /**
+     * 更新教练真名显示设置
+     *
+     * @param dto 真名设置
+     */
+    void updateRealNameSettings(UpdateCoachRealNameSettingsDto dto);
 }

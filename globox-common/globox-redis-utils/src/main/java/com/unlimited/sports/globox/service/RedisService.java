@@ -821,6 +821,16 @@ public class RedisService {
     }
 
     /**
+     * 获取 Hash 的字段数量（HLEN）
+     *
+     * @param key Redis键
+     * @return Hash 中的字段数量
+     */
+    public Long getHashSize(final String key) {
+        return redisTemplate.opsForHash().size(key);
+    }
+
+    /**
      * 获取缓存的map数据（支持复杂的泛型嵌套）
      * 
      * @param key           key

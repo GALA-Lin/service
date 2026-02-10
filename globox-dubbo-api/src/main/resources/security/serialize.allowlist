@@ -79,6 +79,21 @@ com.unlimited.sports.globox.model.social.entity.SocialNote
 com.unlimited.sports.globox.model.social.vo.NoteSyncVo
 com.unlimited.sports.globox.model.venue.vo.VenueSyncVO
 
+com.unlimited.sports.globox.common.result.R
+com.unlimited.sports.globox.common.result.ResultCode
+com.unlimited.sports.globox.common.result.SocialCode
+com.unlimited.sports.globox.common.result.UserAuthCode
+com.unlimited.sports.globox.common.result.VenueCode
+com.unlimited.sports.globox.common.result.ValidCode
+com.unlimited.sports.globox.common.result.PaymentsCode
+com.unlimited.sports.globox.common.result.OrderCode
+com.unlimited.sports.globox.common.result.MerchantErrorCode
+com.unlimited.sports.globox.common.result.GovernanceCode
+com.unlimited.sports.globox.common.result.CustomMessageCode
+com.unlimited.sports.globox.common.result.CoachErrorCodeEnum
+com.unlimited.sports.globox.common.result.ApplicationCode
+com.unlimited.sports.globox.common.result.PaginationResult
+
 com.baomidou.mybatisplus.core.metadata.IPage
 com.baomidou.mybatisplus.extension.plugins.pagination.Page
 

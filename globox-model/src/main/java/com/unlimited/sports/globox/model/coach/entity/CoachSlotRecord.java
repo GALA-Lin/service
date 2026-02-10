@@ -140,4 +140,11 @@ public class CoachSlotRecord implements Serializable {
      */
     @TableField(value = "updated_at", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    /**
+     * 逻辑删除 0表示未删除，1表示已删除
+     */
+    @TableLogic(value = "0", delval = "1")
+    @TableField(value = "is_deleted")
+    private Integer isDeleted;
 }

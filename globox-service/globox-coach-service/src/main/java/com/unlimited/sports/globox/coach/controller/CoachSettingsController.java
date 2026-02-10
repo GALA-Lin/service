@@ -143,4 +143,25 @@ public class CoachSettingsController {
         CoachProfile profile = coachSettingsService.updateVenuePreference(dto);
         return R.ok(profile);
     }
+
+    /**
+     * 更新教练真名显示设置
+     *
+     * @param coachUserId 教练用户ID（从请求头获取）
+     * @param dto 真名设置
+     * @return 更新结果
+     */
+    @PutMapping("/real-name")
+    public R<Void> updateRealNameSettings(
+            @RequestHeader(HEADER_USER_ID) Long coachUserId,
+            @Valid @RequestBody UpdateCoachRealNameSettingsDto dto) {
+
+        log.info("更新教练真名显示设置 - coachUserId: {}, displayRealName: {}",
+                coachUserId, dto.getDisplayRealName());
+
+        dto.setCoachUserId(coachUserId);
+        coachSettingsService.updateRealNameSettings(dto);
+
+        return R.ok();
+    }
 }

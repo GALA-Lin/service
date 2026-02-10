@@ -58,6 +58,7 @@ import com.unlimited.sports.globox.user.service.SmsService;
 import com.unlimited.sports.globox.user.service.WechatService;
 import com.unlimited.sports.globox.user.service.WhitelistService;
 import com.unlimited.sports.globox.user.util.PasswordUtils;
+import com.unlimited.sports.globox.user.util.UserSyncMQSender;
 import com.unlimited.sports.globox.user.util.PhoneUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
@@ -138,6 +139,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Autowired
     private UserProfileDefaultProperties userProfileDefaultProperties;
+
+    @Autowired
+    private UserSyncMQSender userSyncMQSender;
 
     @Autowired
     private Environment environment;
@@ -1550,7 +1554,6 @@ public class AuthServiceImpl implements AuthService {
     private void resetUserProfileForCancellation(Long userId) {
         LambdaUpdateWrapper<UserProfile> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(UserProfile::getUserId, userId)
-                .set(UserProfile::getGloboxNo, "")
                 .set(UserProfile::getLastGloboxNoChangedAt, null)
                 .set(UserProfile::getAvatarUrl, normalizeAvatarForStorage(null))
                 .set(UserProfile::getPortraitUrl, null)
@@ -1591,6 +1594,12 @@ public class AuthServiceImpl implements AuthService {
                 .set(AuthIdentity::getCancelled, true));
 
         resetUserProfileForCancellation(userId);
+
+        // 同步注销状态到ES（从搜索索引中删除用户）
+        UserProfile cancelledProfile = new UserProfile();
+        cancelledProfile.setUserId(userId);
+        cancelledProfile.setCancelled(true);
+        userSyncMQSender.sendUserSyncMessage(cancelledProfile);
 
         String clientType = RequestContextHolder.getHeader(RequestHeaderConstants.HEADER_CLIENT_TYPE);
         if (StringUtils.hasText(clientType)) {
@@ -1706,6 +1715,9 @@ public class AuthServiceImpl implements AuthService {
 
         // 5. 导入腾讯IM账号（失败不影响注册流程）
         importTencentIMAccount(userId, profile.getNickName(), profile.getAvatarUrl());
+
+        // 6. 同步用户数据到ES（失败不影响注册流程）
+        userSyncMQSender.sendUserSyncMessage(profile);
 
         log.info("新用户注册成功：userId={}, type={}, identifier={}", userId, type, identifier);
         return new LoginUserResult(newUser, true, false, true);

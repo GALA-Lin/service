@@ -18,7 +18,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -80,27 +79,13 @@ public class SearchController {
     }
 
     /**
-     * todo 暂时手动通过接口同步,后续转为定时器
-     * 增量同步场馆数据到ES
-     * @param updatedTime 上次同步时间
-     */
-    @PostMapping("/venues/sync")
-    public R<Integer> syncVenues(@RequestParam(required = false) LocalDateTime updatedTime) {
-        log.info("同步场馆数据: updatedTime={}", updatedTime);
-        int count = venueSearchService.syncVenueData(updatedTime);
-        log.info("场馆同步完成: 同步数={}", count);
-        return R.ok(count);
-    }
-
-
-    /**
      * 搜索笔记
      * @param dto 搜索条件
      * @return 笔记搜索结果
      */
     @GetMapping("/notes")
     public R<PaginationResult<NoteItemVo>> searchNotes(@Valid SearchNotesDto dto,
-                                                       @RequestHeader("X-User-Id") Long userId) {
+                                                       @RequestHeader(value = "X-User-Id",required = false) Long userId) {
         log.info("搜索笔记: keyword={}, tag={}, sortBy={}", dto.getKeyword(), dto.getTag(), dto.getSortBy());
         PaginationResult<NoteItemVo> result = noteSearchService.searchNotes(
                 dto.getKeyword(), dto.getTag(), dto.getSortBy(), dto.getPage(), dto.getPageSize(),userId);
@@ -126,20 +111,6 @@ public class SearchController {
     }
 
     /**
-     * todo 暂时手动通过接口同步,后续转为定时器
-     * 增量同步笔记数据到ES
-     * @param updatedTime 上次同步时间
-     */
-    @PostMapping("/notes/sync")
-    public R<Integer> syncNotes(@RequestParam(required = false) LocalDateTime updatedTime) {
-        log.info("同步笔记数据: updatedTime={}", updatedTime);
-        int count = noteSearchService.syncNoteData(updatedTime);
-        log.info("笔记同步完成: 同步数={}", count);
-        return R.ok(count);
-    }
-
-
-    /**
      *
      * 搜索用户（通过昵称或球盒号）
      * @param keyword 搜索关键词
@@ -155,18 +126,5 @@ public class SearchController {
         log.info("搜索用户: keyword={}", keyword);
         PaginationResult<UserListItemVo> result = userSearchService.searchUsers(keyword, page, pageSize);
         return R.ok(result);
-    }
-
-    /**
-     * todo 暂时手动通过接口同步,后续转为定时器
-     * 增量同步用户数据到ES
-     * @param updatedTime 上次同步时间
-     */
-    @PostMapping("/users/sync")
-    public R<Integer> syncUsers(@RequestParam(required = false) LocalDateTime updatedTime) {
-        log.info("同步用户数据: updatedTime={}", updatedTime);
-        int count = userSearchService.syncUserData(updatedTime);
-        log.info("用户同步完成: 同步数={}", count);
-        return R.ok(count);
     }
 }

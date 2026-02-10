@@ -42,6 +42,12 @@ public class CoachProfile implements Serializable {
     private Long coachUserId;
 
     /**
+     * 教练姓名
+     */
+    @TableField("coach_real_name")
+    private String coachRealName;
+
+    /**
      * 证书等级（JSON数组）
      */
     @TableField(value = "coach_certification_level", typeHandler = JacksonTypeHandler.class)

@@ -1,5 +1,6 @@
 package com.unlimited.sports.globox.notification.enums;
 
+import com.unlimited.sports.globox.common.enums.notification.NotificationEventEnum;
 import com.unlimited.sports.globox.common.enums.notification.NotificationModuleEnum;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -33,6 +34,14 @@ public enum MessageTypeEnum {
             NotificationModuleEnum.COACH_BOOKING,
             NotificationModuleEnum.SYSTEM
     ), "系统消息");
+
+    /**
+     * 通知中心查询和统计时需要排除的事件类型
+     * 这些事件仍然会正常推送，但不在通知中心展示和计数
+     */
+    public static final List<String> EXCLUDED_EVENT_TYPES = List.of(
+            NotificationEventEnum.SOCIAL_CHAT_MESSAGE_RECEIVED.getEventCode()
+    );
 
     /**
      * 消息类型代码（用户端）

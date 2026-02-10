@@ -5,6 +5,8 @@ import com.unlimited.sports.globox.model.social.entity.SocialNote;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Map;
+
 /**
  * 笔记Mapper接口
  */
@@ -43,5 +45,12 @@ public interface SocialNoteMapper extends BaseMapper<SocialNote> {
      * @return 更新的行数
      */
     int decrementCommentCount(@Param("noteId") Long noteId, @Param("count") Integer count);
+
+    /**
+     * 批量更新笔记点赞计数（CASE WHEN 参数化）
+     *
+     * @param countChanges key=noteId, value=增量（正数加，负数减）
+     */
+    void batchUpdateLikeCounts(@Param("countChanges") Map<Long, Integer> countChanges);
 }
 

@@ -16,11 +16,13 @@ import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoRequest;
 import com.unlimited.sports.globox.dubbo.user.dto.BatchUserInfoResponse;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.entity.SocialNote;
+import com.unlimited.sports.globox.model.social.entity.SocialNoteLike;
 import com.unlimited.sports.globox.model.social.entity.SocialUserBlock;
 import com.unlimited.sports.globox.model.social.entity.SocialUserFollow;
 import com.unlimited.sports.globox.model.social.vo.BlockUserVo;
 import com.unlimited.sports.globox.model.social.vo.FollowUserVo;
 import com.unlimited.sports.globox.model.social.vo.UserRelationStatsVo;
+import com.unlimited.sports.globox.social.mapper.SocialNoteLikeMapper;
 import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
 import com.unlimited.sports.globox.social.mapper.SocialUserBlockMapper;
 import com.unlimited.sports.globox.social.mapper.SocialUserFollowMapper;
@@ -56,6 +58,9 @@ public class SocialRelationServiceImpl implements SocialRelationService {
 
     @Autowired
     private SocialNoteMapper socialNoteMapper;
+
+    @Autowired
+    private SocialNoteLikeMapper socialNoteLikeMapper;
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -305,12 +310,19 @@ public class SocialRelationServiceImpl implements SocialRelationService {
         long fansCount = socialUserFollowMapper.selectCount(fansCountQuery);
 
         // 获赞数（已发布笔记）
-        LambdaQueryWrapper<SocialNote> likeSumQuery = new LambdaQueryWrapper<>();
-        likeSumQuery.eq(SocialNote::getUserId, targetUserId)
+        LambdaQueryWrapper<SocialNote> noteQuery = new LambdaQueryWrapper<>();
+        noteQuery.eq(SocialNote::getUserId, targetUserId)
                 .eq(SocialNote::getStatus, SocialNote.Status.PUBLISHED)
-                .select(SocialNote::getLikeCount);
-        List<SocialNote> notes = socialNoteMapper.selectList(likeSumQuery);
-        long likeCount = notes.stream().mapToLong(n -> n.getLikeCount() == null ? 0 : n.getLikeCount()).sum();
+                .select(SocialNote::getNoteId);
+        List<SocialNote> notes = socialNoteMapper.selectList(noteQuery);
+        long likeCount = 0;
+        if (!notes.isEmpty()) {
+            List<Long> noteIds = notes.stream().map(SocialNote::getNoteId).toList();
+            LambdaQueryWrapper<SocialNoteLike> likeQuery = new LambdaQueryWrapper<>();
+            likeQuery.in(SocialNoteLike::getNoteId, noteIds)
+                    .eq(SocialNoteLike::getDeleted, false);
+            likeCount = socialNoteLikeMapper.selectCount(likeQuery);
+        }
 
         UserRelationStatsVo vo = new UserRelationStatsVo();
         vo.setFollowCount(followCount);

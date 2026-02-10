@@ -96,7 +96,7 @@ public class NoteSyncConsumer {
         List<UnifiedSearchDocument> unifiedDocs = new ArrayList<>(syncVos.size());
 
         for (NoteSyncVo syncVo : syncVos) {
-            Double hotScore = noteSearchService.calculateHotScore(
+            Double unifiedScore = noteSearchService.calculateHotScore(
                     syncVo.getLikeCount(),
                     syncVo.getCommentCount(),
                     syncVo.getCollectCount(),
@@ -115,11 +115,13 @@ public class NoteSyncConsumer {
                     .comments(syncVo.getCommentCount() != null ? syncVo.getCommentCount() : 0)
                     .saves(syncVo.getCollectCount() != null ? syncVo.getCollectCount() : 0)
                     .mediaType(syncVo.getMediaType())
-                    .hotScore(hotScore)
                     .qualityScore(0.0)
                     .featured(syncVo.getFeatured() != null ? syncVo.getFeatured() : false)
                     .status(syncVo.getStatus() != null ? syncVo.getStatus().ordinal() : 0)
                     .createdAt(syncVo.getCreatedAt())
+                    .createdAtMillis(syncVo.getCreatedAt() != null
+                            ? syncVo.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                            : null)
                     .updatedAt(syncVo.getUpdatedAt())
                     .build();
             documents.add(document);
@@ -134,7 +136,7 @@ public class NoteSyncConsumer {
                     .location(null)
                     .region(null)
                     .coverUrl(syncVo.getCoverUrl())
-                    .score(hotScore != null ? hotScore : 0.0)
+                    .score(unifiedScore != null ? unifiedScore : 0.0)
                     .createdAt(syncVo.getCreatedAt())
                     .updatedAt(syncVo.getUpdatedAt())
                     .build();

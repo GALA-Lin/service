@@ -30,5 +30,20 @@
         WHERE note_id = #{noteId}
     </update>
 
+    <!-- 批量更新点赞计数 -->
+    <update id="batchUpdateLikeCounts">
+        UPDATE social_note
+        SET like_count = CASE
+        <foreach collection="countChanges" index="noteId" item="delta">
+            WHEN note_id = #{noteId} THEN GREATEST(like_count + #{delta}, 0)
+        </foreach>
+            ELSE like_count
+        END
+        WHERE note_id IN
+        <foreach collection="countChanges" index="noteId" item="delta" open="(" separator="," close=")">
+            #{noteId}
+        </foreach>
+    </update>
+
 </mapper>
 

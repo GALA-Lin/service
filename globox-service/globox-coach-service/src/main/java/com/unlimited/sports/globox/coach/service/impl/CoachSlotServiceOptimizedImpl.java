@@ -138,13 +138,14 @@ public class CoachSlotServiceOptimizedImpl  {
 
         for (LocalDate date : dates) {
             for (CoachFlexibleSlotOpenDto.SlotItem slotItem : slots) {
-                // 检查是否已存在记录
+                // 检查是否已存在记录：增加 is_deleted = 0 的判断
                 Long existingCount = slotRecordMapper.selectCount(
                         new LambdaQueryWrapper<CoachSlotRecord>()
                                 .eq(CoachSlotRecord::getCoachUserId, coachUserId)
                                 .eq(CoachSlotRecord::getBookingDate, date)
                                 .eq(CoachSlotRecord::getStartTime, slotItem.getStartTime())
                                 .eq(CoachSlotRecord::getEndTime, slotItem.getEndTime())
+                                .eq(CoachSlotRecord::getIsDeleted, 0) // 仅统计未删除的记录
                 );
 
                 if (existingCount > 0) {
@@ -160,18 +161,17 @@ public class CoachSlotServiceOptimizedImpl  {
                 record.setStartTime(slotItem.getStartTime());
                 record.setEndTime(slotItem.getEndTime());
                 record.setStatus(CoachSlotRecordStatusEnum.AVAILABLE.getCode());
-                record.setCoachSlotTemplateId(null); // 非模板生成的记录
+                record.setCoachSlotTemplateId(null);
                 record.setOperatorId(coachUserId);
                 record.setOperatorSource(1); // 教练端
+                record.setIsDeleted(0); // 显式初始化为 0
 
                 slotRecordMapper.insert(record);
                 createdCount++;
             }
         }
-
         return createdCount;
     }
-
     /**
      * 根据模板参数生成日期列表
      */
@@ -209,7 +209,7 @@ public class CoachSlotServiceOptimizedImpl  {
             return 0;
         }
 
-        log.info("批量删除时段记录 - coachUserId: {}, recordIds数量: {}",
+        log.info("批量软删除时段记录 - coachUserId: {}, recordIds数量: {}",
                 coachUserId, recordIds.size());
 
         int deletedCount = 0;
@@ -219,16 +219,16 @@ public class CoachSlotServiceOptimizedImpl  {
             try {
                 CoachSlotRecord record = slotRecordMapper.selectById(recordId);
 
-                // 1. 验证记录是否存在
-                if (record == null) {
-                    log.warn("时段记录不存在 - recordId: {}", recordId);
+                // 1. 验证记录是否存在（且未被软删除）
+                if (record == null || (record.getIsDeleted() != null && record.getIsDeleted() == 1)) {
+                    log.warn("时段记录不存在或已被删除 - recordId: {}", recordId);
                     failedRecords.add(recordId + "(不存在)");
                     continue;
                 }
 
-                // 2. 验证权限：只能删除自己的记录
+                // 2. 验证权限：只能操作自己的记录
                 if (!record.getCoachUserId().equals(coachUserId)) {
-                    log.warn("无权限删除该记录 - recordId: {}, owner: {}, operator: {}",
+                    log.warn("无权限操作该记录 - recordId: {}, owner: {}, operator: {}",
                             recordId, record.getCoachUserId(), coachUserId);
                     failedRecords.add(recordId + "(权限不足)");
                     continue;
@@ -243,27 +243,32 @@ public class CoachSlotServiceOptimizedImpl  {
                     continue;
                 }
 
-                // 4. 删除记录
-                slotRecordMapper.deleteById(recordId);
-                deletedCount++;
+                // 4. 执行软删除操作
+                CoachSlotRecord updateEntity = new CoachSlotRecord();
+                updateEntity.setCoachSlotRecordId(recordId);
+                updateEntity.setIsDeleted(1);
 
-                log.debug("删除时段记录成功 - recordId: {}", recordId);
+                int rows = slotRecordMapper.updateById(updateEntity);
+                if (rows > 0) {
+                    deletedCount++;
+                    log.debug("软删除时段记录成功 - recordId: {}", recordId);
+                }
 
             } catch (Exception e) {
-                log.error("删除时段记录失败 - recordId: {}", recordId, e);
+                log.error("软删除时段记录失败 - recordId: {}", recordId, e);
                 failedRecords.add(recordId + "(异常:" + e.getMessage() + ")");
             }
         }
 
-        // 记录结果
+        // 记录结果日志
         if (deletedCount > 0) {
-            log.info("批量删除完成 - coachUserId: {}, 成功: {}/{}, 失败记录: {}",
+            log.info("批量软删除完成 - coachUserId: {}, 成功: {}/{}, 失败记录: {}",
                     coachUserId, deletedCount, recordIds.size(),
                     failedRecords.isEmpty() ? "无" : String.join(", ", failedRecords));
         }
 
         if (!failedRecords.isEmpty()) {
-            log.warn("部分记录删除失败 - coachUserId: {}, 失败详情: {}",
+            log.warn("部分记录软删除失败 - coachUserId: {}, 失败详情: {}",
                     coachUserId, failedRecords);
         }
 
@@ -302,12 +307,13 @@ public class CoachSlotServiceOptimizedImpl  {
         Integer remoteMinHours = (profile != null && profile.getCoachRemoteMinHours() != null)
                 ? profile.getCoachRemoteMinHours() : 0;
 
-        // 1. 直接查询日期范围内的可用记录
+        // 直接查询日期范围内的可用记录：增加 is_deleted = 0 的判断
         List<CoachSlotRecord> availableRecords = slotRecordMapper.selectList(
                 new LambdaQueryWrapper<CoachSlotRecord>()
                         .eq(CoachSlotRecord::getCoachUserId, dto.getCoachUserId())
                         .between(CoachSlotRecord::getBookingDate, dto.getStartDate(), dto.getEndDate())
                         .eq(CoachSlotRecord::getStatus, CoachSlotRecordStatusEnum.AVAILABLE.getCode())
+                        .eq(CoachSlotRecord::getIsDeleted, 0) // 过滤掉已删除记录
                         .orderByAsc(CoachSlotRecord::getBookingDate)
                         .orderByAsc(CoachSlotRecord::getStartTime)
         );

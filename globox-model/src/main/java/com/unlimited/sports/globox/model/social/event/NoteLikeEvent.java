@@ -1,16 +1,15 @@
 package com.unlimited.sports.globox.model.social.event;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 
 /**
  * 笔记点赞事件
- * 用于 Redis Stream 存储和异步处理
+ * 存储在 Redis Hash 中，field = {userId}:{noteId}，value = 本对象的 JSON
  */
 @Data
 @Builder
@@ -18,62 +17,22 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class NoteLikeEvent {
 
-    /**
-     * 用户ID
-     */
+    /** 用户ID */
     private Long userId;
 
-    /**
-     * 笔记ID
-     */
+    /** 笔记ID */
     private Long noteId;
 
-    /**
-     * 操作类型：LIKE（点赞）或 UNLIKE（取消点赞）
-     */
-    private LikeAction action;
+    /** 点赞状态：1=点赞，0=取消点赞 */
+    private Integer likeStatus;
 
-    /**
-     * 该记录在数据库中是否存在
-     */
-    private Boolean existsInDb;
+    /** 点赞/取消点赞时间 */
+    private LocalDateTime likeTime;
 
-    /**
-     * 如果存在，是否被软删除
-     */
-    private Boolean isDeletedInDb;
+    public static final int STATUS_LIKE = 1;
+    public static final int STATUS_UNLIKE = 0;
 
-    /**
-     * 操作类型枚举
-     */
-    public enum LikeAction {
-        LIKE,
-        UNLIKE
-    }
-
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
-
-
-    /**
-     * 从 JSON 字符串解析事件
-     */
-    public static NoteLikeEvent fromSetValue(String value) {
-        if (value == null || value.isEmpty()) {
-            return null;
-        }
-        try {
-            return objectMapper.readValue(value, NoteLikeEvent.class);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * 获取事件的唯一键（用于去重）
-     * 格式: userId:noteId
-     */
-    public String toEventKey() {
-        return String.format("%d:%d", userId, noteId);
+    public boolean isLike() {
+        return STATUS_LIKE == likeStatus;
     }
 }

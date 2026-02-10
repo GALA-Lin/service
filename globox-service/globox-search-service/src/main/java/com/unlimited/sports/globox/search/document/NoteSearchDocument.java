@@ -137,6 +137,9 @@ public class NoteSearchDocument {
     @Field(type = FieldType.Date, format = {}, pattern = "yyyy-MM-dd'T'HH:mm:ss || strict_date_optional_time || epoch_millis")
     private LocalDateTime createdAt;
 
+    @Field(type = FieldType.Long)
+    private Long createdAtMillis;
+
     /**
      * 更新时间
      */

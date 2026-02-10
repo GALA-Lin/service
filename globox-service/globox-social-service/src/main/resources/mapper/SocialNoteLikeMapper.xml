@@ -71,5 +71,13 @@
             </foreach>
     </select>
 
+    <!-- 点赞 upsert：不存在则插入，已存在则恢复（deleted=false） -->
+    <!-- 需要 social_note_like 表上有 UNIQUE KEY (user_id, note_id) -->
+    <insert id="upsertLike">
+        INSERT INTO social_note_like (user_id, note_id, created_at, deleted)
+        VALUES (#{userId}, #{noteId}, NOW(), false)
+        ON DUPLICATE KEY UPDATE deleted = false, created_at = NOW()
+    </insert>
+
 </mapper>
 

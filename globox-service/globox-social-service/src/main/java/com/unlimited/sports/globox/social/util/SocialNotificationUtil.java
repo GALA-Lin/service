@@ -10,6 +10,7 @@ import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.social.entity.RallyPosts;
 import com.unlimited.sports.globox.model.social.entity.RallyPostsStatusEnum;
 import com.unlimited.sports.globox.social.constants.NoteCommentConstants;
+import com.unlimited.sports.globox.service.RedisService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +19,9 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import static com.unlimited.sports.globox.social.consts.SocialRedisKeyConstants.NOTE_LIKE_NOTIFY_DEDUP_PREFIX;
 
 /**
  * 社交模块通知工具类
@@ -30,6 +34,9 @@ public class SocialNotificationUtil {
 
     @Autowired
     private NotificationSender notificationSender;
+
+    @Autowired
+    private RedisService redisService;
 
     @DubboReference(group = "rpc")
     private UserDubboService userDubboService;
@@ -83,6 +90,14 @@ public class SocialNotificationUtil {
      */
     public void sendNoteLikedNotification(Long noteId, Long likerId, String noteTitle, Long noteAuthorId) {
         try {
+            String dedupKey = NOTE_LIKE_NOTIFY_DEDUP_PREFIX + noteId + ":" + noteAuthorId + ":" + likerId;
+            Boolean dedupSet = redisService.setCacheObjectIfAbsent(dedupKey, "1", 1L, TimeUnit.DAYS);
+            if (Boolean.FALSE.equals(dedupSet)) {
+                log.info("[帖子点赞通知] 去重命中，跳过发送 - noteId={}, noteAuthorId={}, likerId={}",
+                        noteId, noteAuthorId, likerId);
+                return;
+            }
+
             // 获取点赞人的用户信息（用于推送到手机端显示昵称）
             RpcResult<UserInfoVo> likerResult = userDubboService.getUserInfo(likerId);
             if (!likerResult.isSuccess()) {

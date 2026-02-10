@@ -14,11 +14,28 @@ import com.unlimited.sports.globox.model.social.vo.NoteDetailVo;
 import com.unlimited.sports.globox.model.social.vo.NoteItemVo;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 笔记服务接口
  */
 public interface NoteService {
+
+    /**
+     * 批量查询实际点赞数（从 social_note_like 表 COUNT）
+     *
+     * @param noteIds 笔记ID列表
+     * @return key=noteId, value=实际点赞数
+     */
+    Map<Long, Integer> batchQueryLikeCounts(List<Long> noteIds);
+
+    /**
+     * 批量查询实际评论数（从 social_note_comment 表 COUNT，只统计 PUBLISHED 状态）
+     *
+     * @param noteIds 笔记ID列表
+     * @return key=noteId, value=实际评论数
+     */
+    Map<Long, Integer> batchQueryCommentCounts(List<Long> noteIds);
 
     /**
      * 保存草稿（支持新建和更新）

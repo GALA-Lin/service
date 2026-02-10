@@ -187,10 +187,6 @@ public class RallyController {
             @RequestBody PostIdDto postIdDto,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(RequestHeaderConstants.HEADER_USER_ID) Long cancellerId){
-        if (cancellerId == null){
-            log.error("请求头中缺少{}",HEADER_USER_ID);
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
         String rallyResult = rallyService.cancelJoinRally(postIdDto.getPostId(), cancellerId);
         if (rallyResult == null){
             return R.error();
@@ -316,10 +312,6 @@ public class RallyController {
             @RequestParam(defaultValue = "20") Integer pageSize,
             @Parameter(description = "用户ID（由网关自动注入）", hidden = false)
             @RequestHeader(HEADER_USER_ID) Long inspectorId){
-        if (inspectorId == null){
-            log.error("请求头中缺少{}",HEADER_USER_ID);
-            throw new GloboxApplicationException(TOKEN_EXPIRED.getCode(), TOKEN_EXPIRED.getMessage());
-        }
         PaginationResult<RallyApplicationVo> rallyApplications = rallyService.inspectList(postId,page,pageSize,inspectorId);
         return R.ok(rallyApplications);
     }

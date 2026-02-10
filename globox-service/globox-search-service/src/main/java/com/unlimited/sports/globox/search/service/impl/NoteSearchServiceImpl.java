@@ -19,10 +19,13 @@ import com.unlimited.sports.globox.search.service.IUnifiedSearchService;
 import com.unlimited.sports.globox.search.service.IUserSearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.dubbo.config.annotation.DubboReference;
+import org.elasticsearch.common.lucene.search.function.CombineFunction;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
 import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
+import org.elasticsearch.script.Script;
+import org.elasticsearch.script.ScriptType;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
@@ -50,6 +53,20 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class NoteSearchServiceImpl implements INoteSearchService {
+
+    private static final String HOT_SCORE_SCRIPT =
+            "double likes = (doc['likes'].size() != 0 ? doc['likes'].value : 0);" +
+            "double comments = (doc['comments'].size() != 0 ? doc['comments'].value : 0);" +
+            "double saves = (doc['saves'].size() != 0 ? doc['saves'].value : 0);" +
+            "double baseScore = likes * params.likeWeight + comments * params.commentWeight + saves * params.collectWeight;" +
+            "if (doc.containsKey('createdAtMillis') && doc['createdAtMillis'].size() != 0) {" +
+            "  long createdMillis = doc['createdAtMillis'].value;" +
+            "  double hours = (params.nowMillis - createdMillis) / 3600000.0;" +
+            "  if (hours < 0) { hours = 0; }" +
+            "  double timeDecay = Math.pow(params.decayFactor, hours / params.decayUnit);" +
+            "  return baseScore * timeDecay;" +
+            "}" +
+            "return baseScore;";
 
     @Autowired
     private ElasticsearchOperations elasticsearchOperations;
@@ -93,15 +110,33 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                 boolQuery.filter(QueryBuilders.termQuery("featured", true));
             }
 
-            // 3. 构建排序
-            List<SortBuilder<?>> sorts = buildSortBuilders(sortType.getCode());
+            // 3. 构建排序与查询（hotScore 在查询时动态计算，不在文档中维护）
+            List<SortBuilder<?>> sorts;
+
+            NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder();
+            if (NoteSortTypeEnum.HOTTEST.equals(sortType) || NoteSortTypeEnum.SELECTED.equals(sortType)) {
+                Map<String, Object> params = new HashMap<>();
+                params.put("nowMillis", System.currentTimeMillis());
+                params.put("likeWeight", NoteSearchConstants.LIKE_WEIGHT);
+                params.put("commentWeight", NoteSearchConstants.COMMENT_WEIGHT);
+                params.put("collectWeight", NoteSearchConstants.COLLECT_WEIGHT);
+                params.put("decayFactor", NoteSearchConstants.TIME_DECAY_FACTOR);
+                params.put("decayUnit", NoteSearchConstants.TIME_DECAY_UNIT_HOURS.doubleValue());
+
+                Script script = new Script(ScriptType.INLINE, "painless", HOT_SCORE_SCRIPT, params);
+                FunctionScoreQueryBuilder functionScoreQuery = QueryBuilders
+                        .functionScoreQuery(boolQuery, ScoreFunctionBuilders.scriptFunction(script))
+                        .boostMode(CombineFunction.REPLACE);
+                queryBuilder.withQuery(functionScoreQuery);
+
+                sorts = buildHottestSorts();
+            } else {
+                queryBuilder.withQuery(boolQuery);
+                sorts = buildSortBuilders(sortType.getCode());
+            }
 
             // 4. 构建分页对象（ES中page从0开始）
             Pageable pageable = PageRequest.of(page - 1, pageSize);
-
-            // 5. 构建查询对象
-            NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder()
-                    .withQuery(boolQuery);
 
             sorts.forEach(queryBuilder::withSorts);
             queryBuilder.withPageable(pageable);
@@ -128,35 +163,41 @@ public class NoteSearchServiceImpl implements INoteSearchService {
 
             Map<Long, UserSearchDocument> userMap = userSearchService.getUsersByIds(userIds);
 
-            // 9. 查询笔记统计信息
+            // 9. 查询用户点赞状态（点赞数/评论数直接使用ES中已同步的数据）
             List<Long> noteIds = docs.stream()
                     .map(NoteSearchDocument::getNoteId)
                     .toList();
 
-            Map<Long, NoteStatisticsDto> statisticsMap = Collections.emptyMap();
-            try {
-                RpcResult<Map<Long, NoteStatisticsDto>> statsResult = noteSearchDataService.queryNotesStatistics(noteIds, userId);
-                if (statsResult.isSuccess() && statsResult.getData() != null) {
-                    statisticsMap = statsResult.getData();
-                    log.info("查询笔记统计信息完成: {} 条", statisticsMap.size());
+            Set<Long> likedNoteIds = Collections.emptySet();
+            if (userId != null && userId > 0) {
+                try {
+                    RpcResult<Set<Long>> likedResult = noteSearchDataService.queryUserLikedNoteIds(userId, noteIds);
+                    if (likedResult.isSuccess() && likedResult.getData() != null) {
+                        likedNoteIds = likedResult.getData();
+                    }
+                } catch (Exception e) {
+                    log.warn("查询用户点赞状态异常: userId={}", userId, e);
                 }
-            } catch (Exception e) {
-                log.warn("查询笔记统计信息异常: userId={}", userId, e);
             }
 
             // 10. 转换为NoteItemVo并填充用户信息和统计数据
-            final Map<Long, NoteStatisticsDto> finalStatisticsMap = statisticsMap;
+            final Set<Long> finalLikedNoteIds = likedNoteIds;
             List<NoteItemVo> noteItems = docs.stream()
                     .map(doc -> {
                         try {
                             UserSearchDocument userDoc = userMap.get(doc.getUserId());
-                            NoteStatisticsDto stats = finalStatisticsMap.getOrDefault(doc.getNoteId(),
-                                    NoteStatisticsDto.builder()
-                                            .noteId(doc.getNoteId())
-                                            .likeCount(doc.getLikes() != null ? doc.getLikes() : 0)
-                                            .commentCount(doc.getComments() != null ? doc.getComments() : 0)
-                                            .isLiked(false)
-                                            .build());
+                            boolean isLiked = finalLikedNoteIds.contains(doc.getNoteId());
+                            int likeCount = doc.getLikes() != null ? doc.getLikes() : 0;
+                            // 用户已点赞但ES数据未同步时，保证至少显示1
+                            if (isLiked && likeCount < 1) {
+                                likeCount = 1;
+                            }
+                            NoteStatisticsDto stats = NoteStatisticsDto.builder()
+                                    .noteId(doc.getNoteId())
+                                    .likeCount(likeCount)
+                                    .commentCount(doc.getComments() != null ? doc.getComments() : 0)
+                                    .isLiked(isLiked)
+                                    .build();
                             return toListItemVo(doc, userDoc, stats);
                         } catch (Exception e) {
                             log.error("笔记转换失败: noteId={}", doc.getNoteId(), e);
@@ -233,7 +274,7 @@ public class NoteSearchServiceImpl implements INoteSearchService {
     @Override
     public List<SortBuilder<?>> buildHottestSorts() {
         List<SortBuilder<?>> sorts = new ArrayList<>();
-        sorts.add(SortBuilders.fieldSort("hotScore").order(SortOrder.DESC));
+        sorts.add(SortBuilders.scoreSort().order(SortOrder.DESC));
         sorts.add(SortBuilders.fieldSort("createdAt").order(SortOrder.DESC));
         sorts.add(SortBuilders.fieldSort("noteId").order(SortOrder.DESC));
         return sorts;
@@ -300,7 +341,12 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                                     .location(null)
                                     .region(null)
                                     .coverUrl(note.getCoverUrl())
-                                    .score(note.getHotScore() != null ? note.getHotScore() : 0.0)
+                                    .score(Optional.ofNullable(calculateHotScore(
+                                            note.getLikes(),
+                                            note.getComments(),
+                                            note.getSaves(),
+                                            note.getCreatedAt()
+                                    )).orElse(0.0))
                                     .createdAt(note.getCreatedAt())
                                     .updatedAt(note.getUpdatedAt())
                                     .build())
@@ -345,14 +391,6 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                 return null;
             }
 
-            // 计算热度分数
-            Double hotScore = calculateHotScore(
-                    vo.getLikeCount(),
-                    vo.getCommentCount(),
-                    vo.getCollectCount(),
-                    vo.getCreatedAt()
-            );
-
             return NoteSearchDocument.builder()
                     .id(SearchDocTypeEnum.buildSearchDocId(SearchDocTypeEnum.NOTE,vo.getNoteId()))
                     .noteId(vo.getNoteId())
@@ -365,8 +403,10 @@ public class NoteSearchServiceImpl implements INoteSearchService {
                     .comments(vo.getCommentCount())
                     .saves(vo.getCollectCount())
                     .createdAt(vo.getCreatedAt())
+                    .createdAtMillis(vo.getCreatedAt() != null
+                            ? vo.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                            : null)
                     .updatedAt(vo.getUpdatedAt())
-                    .hotScore(hotScore)
                     .qualityScore(NoteSearchConstants.INITIAL_QUALITY_SCORE)
                     .mediaType(vo.getMediaType())
                     .featured(vo.getFeatured() != null ? vo.getFeatured() : false)
@@ -467,35 +507,40 @@ public class NoteSearchServiceImpl implements INoteSearchService {
 
             Map<Long, UserSearchDocument> userMap = userSearchService.getUsersByIds(userIds);
 
-            // 10. 查询笔记统计信息
+            // 10. 查询用户点赞状态（点赞数/评论数直接使用ES中已同步的数据）
             List<Long> noteIds = docs.stream()
                     .map(NoteSearchDocument::getNoteId)
                     .toList();
 
-            Map<Long, NoteStatisticsDto> statisticsMap = Collections.emptyMap();
-            try {
-                RpcResult<Map<Long, NoteStatisticsDto>> statsResult = noteSearchDataService.queryNotesStatistics(noteIds, userId);
-                if (statsResult.isSuccess() && statsResult.getData() != null) {
-                    statisticsMap = statsResult.getData();
-                    log.info("查询笔记统计信息完成: {} 条", statisticsMap.size());
+            Set<Long> likedNoteIds = Collections.emptySet();
+            if (userId != null && userId > 0) {
+                try {
+                    RpcResult<Set<Long>> likedResult = noteSearchDataService.queryUserLikedNoteIds(userId, noteIds);
+                    if (likedResult.isSuccess() && likedResult.getData() != null) {
+                        likedNoteIds = likedResult.getData();
+                    }
+                } catch (Exception e) {
+                    log.warn("查询用户点赞状态异常: userId={}", userId, e);
                 }
-            } catch (Exception e) {
-                log.warn("查询笔记统计信息异常: userId={}", userId, e);
             }
 
             // 11. 转换为NoteItemVo并填充用户信息和统计数据
-            final Map<Long, NoteStatisticsDto> finalStatisticsMap = statisticsMap;
+            final Set<Long> finalLikedNoteIds = likedNoteIds;
             List<NoteItemVo> noteItems = docs.stream()
                     .map(doc -> {
                         try {
                             UserSearchDocument userDoc = userMap.get(doc.getUserId());
-                            NoteStatisticsDto stats = finalStatisticsMap.getOrDefault(doc.getNoteId(),
-                                    NoteStatisticsDto.builder()
-                                            .noteId(doc.getNoteId())
-                                            .likeCount(doc.getLikes() != null ? doc.getLikes() : 0)
-                                            .commentCount(doc.getComments() != null ? doc.getComments() : 0)
-                                            .isLiked(false)
-                                            .build());
+                            boolean isLiked = finalLikedNoteIds.contains(doc.getNoteId());
+                            int likeCount = doc.getLikes() != null ? doc.getLikes() : 0;
+                            if (isLiked && likeCount < 1) {
+                                likeCount = 1;
+                            }
+                            NoteStatisticsDto stats = NoteStatisticsDto.builder()
+                                    .noteId(doc.getNoteId())
+                                    .likeCount(likeCount)
+                                    .commentCount(doc.getComments() != null ? doc.getComments() : 0)
+                                    .isLiked(isLiked)
+                                    .build();
                             return toListItemVo(doc, userDoc, stats);
                         } catch (Exception e) {
                             log.error("笔记转换失败: noteId={}", doc.getNoteId(), e);

@@ -13,7 +13,6 @@ import com.unlimited.sports.globox.dubbo.user.dto.UserPhoneDto;
 import com.unlimited.sports.globox.model.auth.vo.UserInfoVo;
 import com.unlimited.sports.globox.model.coach.dto.*;
 import com.unlimited.sports.globox.model.coach.entity.*;
-import com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum;
 import com.unlimited.sports.globox.model.coach.enums.CoachSlotLockType;
 import com.unlimited.sports.globox.model.coach.enums.CoachSlotRecordStatusEnum;
 import com.unlimited.sports.globox.model.coach.enums.CourseStatusEnum;
@@ -32,7 +31,6 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.unlimited.sports.globox.model.coach.enums.CoachServiceTypeEnum.ALL_TYPE;
 import static com.unlimited.sports.globox.model.coach.enums.CourseStatusEnum.CANCELLED;
 
 /**
@@ -188,94 +186,6 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         return templates.stream()
                 .map(this::buildSlotRecordVo)
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * 查询可预约时段
-     * 核心逻辑修正：
-     * - 无记录 = 可用（状态0）
-     * - 有记录且status=0 = 可用
-     * - 有记录且status=1/2/3 = 不可用
-     */
-    @Override
-    public Map<String, List<CoachAvailableSlotVo>> queryAvailableSlotsByDateRange(CoachAvailableSlotQueryDto dto) {
-        log.info("查询可预约时段 - coachUserId: {}, 日期范围: {} - {}",
-                dto.getCoachUserId(), dto.getStartDate(), dto.getEndDate());
-
-        // 1. 查询所有有效模板
-        LambdaQueryWrapper<CoachSlotTemplate> templateWrapper = new LambdaQueryWrapper<CoachSlotTemplate>()
-                .eq(CoachSlotTemplate::getCoachUserId, dto.getCoachUserId())
-                .eq(CoachSlotTemplate::getIsDeleted, 0);
-
-        if (dto.getCoachServiceType() != null) {
-            templateWrapper.and(w -> w.eq(CoachSlotTemplate::getCoachServiceType, ALL_TYPE.getCode())
-                    .or().eq(CoachSlotTemplate::getCoachServiceType, dto.getCoachServiceType())
-                    .or().isNull(CoachSlotTemplate::getCoachServiceType));
-        }
-
-        List<CoachSlotTemplate> templates = slotTemplateMapper.selectList(templateWrapper);
-        if (templates.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        // 2. 批量查询日期范围内的所有记录
-        List<CoachSlotRecord> allRecords = slotRecordMapper.selectByDateRange(
-                dto.getCoachUserId(),
-                dto.getStartDate(),
-                dto.getEndDate()
-        );
-
-        // 3. 按日期和模板ID组织记录
-        Map<String, Map<Long, CoachSlotRecord>> recordMap = buildRecordMapByDate(allRecords);
-
-        // 4. 遍历日期和模板，计算可用时段
-        Map<String, List<CoachAvailableSlotVo>> availableSlotsMap = new LinkedHashMap<>();
-
-        LocalDate currentDate = dto.getStartDate();
-        while (!currentDate.isAfter(dto.getEndDate())) {
-            LocalDate finalCurrentDate = currentDate;
-            String dateKey = currentDate.toString();
-
-            List<CoachAvailableSlotVo> daySlots = new ArrayList<>();
-            Map<Long, CoachSlotRecord> dateRecords = recordMap.getOrDefault(dateKey, Collections.emptyMap());
-
-            for (CoachSlotTemplate template : templates) {
-                // 检查是否在提前预约天数范围内
-                long daysUntil = ChronoUnit.DAYS.between(LocalDate.now(), finalCurrentDate);
-                if (daysUntil < 0 || daysUntil > template.getAdvanceBookingDays()) {
-                    continue;
-                }
-
-                CoachSlotRecord record = dateRecords.get(template.getCoachSlotTemplateId());
-
-                // 构建可用时段Vo对象，并设置正确的状态
-                CoachAvailableSlotVo slotVo = buildAvailableSlotVo(template, finalCurrentDate, record);
-
-                // 【关键修改】状态判断逻辑
-                if (record == null) {
-                    // 无记录 = 可用
-                    slotVo.setSlotStatus(CoachSlotRecordStatusEnum.AVAILABLE.getCode());
-                    slotVo.setSlotStatusDesc(CoachSlotRecordStatusEnum.AVAILABLE.getDescription());
-                } else {
-                    // 有记录，使用记录的实际状态
-                    slotVo.setSlotStatus(record.getStatus());
-                    slotVo.setSlotStatusDesc(CoachSlotRecordStatusEnum.getDescription(record.getStatus()));
-                }
-
-                daySlots.add(slotVo);
-            }
-
-            if (!daySlots.isEmpty()) {
-                availableSlotsMap.put(dateKey, daySlots);
-            }
-
-            currentDate = currentDate.plusDays(1);
-        }
-
-        log.info("找到可预约日期数: {}, 总时段数: {}",
-                availableSlotsMap.size(),
-                availableSlotsMap.values().stream().mapToInt(List::size).sum());
-        return availableSlotsMap;
     }
 
     /**
@@ -1125,24 +1035,7 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
                 .build();
     }
 
-    private CoachAvailableSlotVo buildAvailableSlotVo(
-            CoachSlotTemplate template,
-            LocalDate date,
-            CoachSlotRecord record) {
-        return CoachAvailableSlotVo.builder()
-                .coachSlotTemplateId(template.getCoachSlotTemplateId())
-                .slotRecordId(record != null ? record.getCoachSlotRecordId() : null)
-                .bookingDate(date)
-                .startTime(template.getStartTime())
-                .endTime(template.getEndTime())
-                .durationMinutes(template.getDurationMinutes())
-                .price(template.getPrice())
-                .acceptableAreas(parseJsonArrayFromDb(template.getAcceptableAreas()))
-                .venueRequirementDesc(template.getVenueRequirementDesc())
-                .coachServiceType(template.getCoachServiceType())
-                .serviceName(getServiceName(template.getCoachServiceType()))
-                .build();
-    }
+
 
 
     private List<CoachSlotConflictVo> checkTimeConflicts(
@@ -1260,18 +1153,6 @@ public class CoachSlotServiceImpl extends ServiceImpl<CoachSlotRecordMapper, Coa
         batchLogMapper.insert(log);
     }
 
-    private String getServiceName(Integer serviceType) {
-        if (serviceType == null) {
-            return "不限";
-        }
-
-        try {
-            CoachServiceTypeEnum serviceTypeEnum = CoachServiceTypeEnum.fromValue(serviceType);
-            return serviceTypeEnum.getDescription();
-        } catch (IllegalArgumentException e) {
-            return "未知";
-        }
-    }
 
     private String convertListToJson(List<String> list) {
         if (list == null || list.isEmpty()) {

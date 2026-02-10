@@ -64,6 +64,11 @@ public class GetVenueListDto {
     private List<Integer> facilities;
 
     /**
+     * 区域过滤（多选，满足其中一个即可）
+     */
+    private List<String> regions;
+
+    /**
      * 场地片数筛选
      * 1=4片以内, 2=4-10片, 3=10片以上
      */

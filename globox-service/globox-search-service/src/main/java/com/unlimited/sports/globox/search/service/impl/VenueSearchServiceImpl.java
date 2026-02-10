@@ -28,6 +28,11 @@ import org.elasticsearch.common.unit.DistanceUnit;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.IdsQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.aggregations.AggregationBuilders;
+import org.elasticsearch.search.aggregations.Aggregations;
+import org.elasticsearch.search.aggregations.bucket.MultiBucketsAggregation;
+import org.elasticsearch.search.aggregations.bucket.global.Global;
+import org.elasticsearch.search.aggregations.bucket.terms.Terms;
 import org.elasticsearch.search.sort.SortBuilder;
 import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
@@ -45,7 +50,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +106,40 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         Double maxDistance = dto.getMaxDistance();
         boolQuery = buildGeneralFilters(boolQuery, dto.getMinPrice(), dto.getMaxPrice(), userLocation, maxDistance);
 
+        // 区域过滤（多选，满足其中一个即可）
+        if (dto.getRegions() != null && !dto.getRegions().isEmpty()) {
+            boolQuery.filter(QueryBuilders.termsQuery("region", dto.getRegions()));
+        }
+
+        // 如果提供了预订时间但时间已过去，直接返回空结果
+        if (dto.getBookingDate() != null) {
+            LocalDate today = LocalDate.now();
+            boolean isPast = dto.getBookingDate().isBefore(today)
+                    || (dto.getBookingDate().isEqual(today)
+                        && dto.getEndTime() != null
+                        && !dto.getEndTime().isAfter(LocalTime.now()));
+            if (isPast) {
+                log.info("预订时间已过去，返回空结果: bookingDate={}, endTime={}", dto.getBookingDate(), dto.getEndTime());
+                PaginationResult<VenueItemVo> emptyResult = PaginationResult.build(
+                        List.of(), 0L,
+                        dto.getPage() != null ? dto.getPage() : 1,
+                        dto.getPageSize() != null ? dto.getPageSize() : 10
+                );
+                return VenueListResponse.builder()
+                        .venues(emptyResult)
+                        .courtTypes(CourtType.getDictItems())
+                        .groundTypes(GroundType.getDictItems())
+                        .courtCountFilters(CourtCountFilter.getDictItems())
+                        .distances(DistanceFilter.getDictItems())
+                        .facilities(FacilityType.getDictItems())
+                        .priceRange(VenueListResponse.PriceRange.builder()
+                                .minPrice(VenueSearchConstants.DEFAULT_PRICE_MIN)
+                                .maxPrice(VenueSearchConstants.DEFAULT_PRICE_MAX)
+                                .build())
+                        .build();
+            }
+        }
+
         // 获取不可用的场馆ID（如果提供了预订时间）
         List<Long> unavailableVenueIds = new ArrayList<>();
         if (dto.getBookingDate() != null && dto.getStartTime() != null && dto.getEndTime() != null) {
@@ -121,6 +162,12 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder()
                 .withQuery(boolQuery);
 
+        // 添加全局区域聚合（不受查询条件影响，返回所有场馆的去重区域）
+        queryBuilder.withAggregations(
+                AggregationBuilders.global("all_regions")
+                        .subAggregation(AggregationBuilders.terms("regions").field("region").size(100))
+        );
+
         // 构建排序
         SortResult sortResult = buildSortBuilders(dto.getSortBy(), sortOrder, userLocation);
         sortResult.getSorts().forEach(queryBuilder::withSorts);
@@ -139,6 +186,21 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
         );
 
         log.info("场馆搜索: keyword={}, 命中数={}, 总数={}", dto.getKeyword(), searchHits.getSearchHits().size(), searchHits.getTotalHits());
+
+        // 提取全局区域聚合结果
+        List<String> regionList = new ArrayList<>();
+        if (searchHits.getAggregations() != null) {
+            Aggregations aggregations = (Aggregations) searchHits.getAggregations().aggregations();
+            Global globalAgg = aggregations.get("all_regions");
+            if (globalAgg != null) {
+                Terms regionsAgg = globalAgg.getAggregations().get("regions");
+                if (regionsAgg != null) {
+                    regionList = regionsAgg.getBuckets().stream()
+                            .map(MultiBucketsAggregation.Bucket::getKeyAsString)
+                            .collect(Collectors.toList());
+                }
+            }
+        }
 
         // 8. 转换搜索结果
         final int distanceSortIndex = sortResult.getDistanceSortIndex();
@@ -182,6 +244,7 @@ public class VenueSearchServiceImpl implements IVenueSearchService {
                 .courtCountFilters(CourtCountFilter.getDictItems())
                 .distances(DistanceFilter.getDictItems())
                 .facilities(FacilityType.getDictItems())
+                .regions(regionList)
                 .priceRange(VenueListResponse.PriceRange.builder()
                         .minPrice(VenueSearchConstants.DEFAULT_PRICE_MIN)
                         .maxPrice(VenueSearchConstants.DEFAULT_PRICE_MAX)

@@ -1,30 +1,37 @@
 package com.unlimited.sports.globox.social.service;
 
-import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.unlimited.sports.globox.common.constants.SearchMQConstants;
+import com.unlimited.sports.globox.common.service.MQService;
 import com.unlimited.sports.globox.common.utils.JsonUtils;
-import com.unlimited.sports.globox.model.social.entity.SocialNote;
+import com.unlimited.sports.globox.model.search.dto.NoteEngagementSyncMessage;
+import com.unlimited.sports.globox.model.search.dto.NoteEngagementSyncMessage.NoteEngagementItem;
 import com.unlimited.sports.globox.model.social.entity.SocialNoteLike;
 import com.unlimited.sports.globox.model.social.event.NoteLikeEvent;
-import com.unlimited.sports.globox.social.mapper.SocialNoteMapper;
+import com.unlimited.sports.globox.social.mapper.SocialNoteLikeMapper;
 import com.unlimited.sports.globox.service.RedisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-
-import javax.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static com.unlimited.sports.globox.social.consts.SocialRedisKeyConstants.*;
 
 /**
  * 笔记点赞事件异步同步服务
- * 负责从 Redis Set 消费事件，批量同步到数据库
+ *
+ * Redis Hash 结构：
+ *   key:   note:like:pending
+ *   field: {userId}:{noteId}
+ *   value: NoteLikeEvent JSON（包含 userId, noteId, likeStatus, likeTime）
+ *
+ * 同步策略：RENAME 快照
+ *   1. RENAME pending → processing（原子操作，新写入自动创建新 pending）
+ *   2. 从 processing 读取并批量同步到 DB
+ *   3. 同步成功后 DEL processing
  */
 @Service
 @Slf4j
@@ -34,441 +41,279 @@ public class NoteLikeSyncService {
     private RedisService redisService;
 
     @Autowired
+    private JsonUtils jsonUtils;
+
+    @Autowired
     private SocialNoteLikeService socialNoteLikeService;
 
     @Autowired
-    private SocialNoteMapper socialNoteMapper;
-
+    private SocialNoteLikeMapper socialNoteLikeMapper;
 
     @Autowired
-    private JsonUtils jsonUtils;
+    private MQService mqService;
 
-
-
-    @PostConstruct
-    void init() {
-        log.info("删除旧数据");
-        redisService.deleteObject(LIKE_EVENTS_PENDING);
-        redisService.deleteObject(LIKE_EVENTS_PROCESSING);
-    }
     /**
-     * 添加点赞事件到 Redis Set
-     *
-     * @param userId 用户ID
-     * @param noteId 笔记ID
-     * @param existsInDb 记录在数据库中是否存在
-     * @param isDeletedInDb 记录在数据库中是否被软删除
+     * 添加点赞事件到 Redis Hash
      */
-    public void addLikeEvent(Long userId, Long noteId, Boolean existsInDb, Boolean isDeletedInDb) {
-        // 1. 创建点赞事件，记录当前数据库状态
+    public void addLikeEvent(Long userId, Long noteId) {
         NoteLikeEvent event = NoteLikeEvent.builder()
                 .userId(userId)
                 .noteId(noteId)
-                .action(NoteLikeEvent.LikeAction.LIKE)
-                .existsInDb(existsInDb)
-                .isDeletedInDb(isDeletedInDb)
+                .likeStatus(NoteLikeEvent.STATUS_LIKE)
+                .likeTime(LocalDateTime.now())
                 .build();
-
-        // 2. 生成所有可能的旧事件
-        List<String> possibleOldEvents = generatePossibleOldEvents(userId, noteId);
-
-        // 3. 写入 Redis Set（删除旧事件，添加新事件）
-        addEventToRedis(possibleOldEvents,jsonUtils.objectToJson(event));
+        String field = buildLikedMapField(userId, noteId);
+        redisService.setCacheMapValue(LIKE_EVENTS_PENDING, field, jsonUtils.objectToJson(event));
     }
 
     /**
-     * 添加取消点赞事件到 Redis Set
-     *
-     * @param userId 用户ID
-     * @param noteId 笔记ID
-     * @param existsInDb 记录在数据库中是否存在
-     * @param isDeletedInDb 记录在数据库中是否被软删除
+     * 添加取消点赞事件到 Redis Hash
      */
-    public void addUnlikeEvent(Long userId, Long noteId, Boolean existsInDb, Boolean isDeletedInDb) {
-        // 1. 创建取消点赞事件，记录当前数据库状态
+    public void addUnlikeEvent(Long userId, Long noteId) {
         NoteLikeEvent event = NoteLikeEvent.builder()
                 .userId(userId)
                 .noteId(noteId)
-                .action(NoteLikeEvent.LikeAction.UNLIKE)
-                .existsInDb(existsInDb)
-                .isDeletedInDb(isDeletedInDb)
+                .likeStatus(NoteLikeEvent.STATUS_UNLIKE)
+                .likeTime(LocalDateTime.now())
                 .build();
-
-        // 2. 生成所有可能的旧事件
-        List<String> possibleOldEvents = generatePossibleOldEvents(userId, noteId);
-
-        // 3. 写入 Redis Set（删除旧事件，添加新事件）
-        addEventToRedis(possibleOldEvents,jsonUtils.objectToJson(event));
+        String field = buildLikedMapField(userId, noteId);
+        redisService.setCacheMapValue(LIKE_EVENTS_PENDING, field, jsonUtils.objectToJson(event));
     }
 
     /**
-     * 生成所有可能的旧事件值（JSON格式）
-     * 覆盖所有 action × existsInDb × isDeletedInDb 的组合
+     * 获取单个用户对某笔记的 pending 点赞状态
      *
-     * @return 所有可能的旧事件字符串列表
+     * @return null=无 pending 事件, true=pending 点赞, false=pending 取消点赞
      */
-    private List<String> generatePossibleOldEvents(Long userId, Long noteId) {
-        return Arrays.asList(
-            jsonUtils.objectToJson(NoteLikeEvent.builder().userId(userId).noteId(noteId).action(NoteLikeEvent.LikeAction.LIKE).existsInDb(false).isDeletedInDb(false).build()),
-            jsonUtils.objectToJson(NoteLikeEvent.builder().userId(userId).noteId(noteId).action(NoteLikeEvent.LikeAction.LIKE).existsInDb(true).isDeletedInDb(true).build()),
-            jsonUtils.objectToJson(NoteLikeEvent.builder().userId(userId).noteId(noteId).action(NoteLikeEvent.LikeAction.UNLIKE).existsInDb(true).isDeletedInDb(false).build())
-        );
-    }
-
-    /**
-     * 从 Redis Set 获取指定用户的点赞事件（仅返回该用户-笔记的最新事件）
-     * 使用 Lua 脚本在 Redis 端检查所有可能的状态
-     */
-    public NoteLikeEvent getPendingLikeEventFromSet(Long userId, Long noteId) {
+    public Boolean getPendingLikeStatus(Long userId, Long noteId) {
         try {
-            String luaScript = """
-                    local key0 = ARGV[1]
-                    local key1 = ARGV[2]
-                    local key2 = ARGV[3]
-                    if redis.call('SISMEMBER', KEYS[1], key0) == 1 then
-                        return key0
-                    elseif redis.call('SISMEMBER', KEYS[1], key1) == 1 then
-                        return key1
-                    elseif redis.call('SISMEMBER', KEYS[1], key2) == 1 then
-                        return key2
-                    else
-                        return nil
-                    end
-                    """;
-
-            List<String> possibleKeys = generatePossibleOldEvents(userId, noteId);
-            String eventValue = redisService.executeLuaScript(luaScript, String.class,
-                    Collections.singletonList(LIKE_EVENTS_PENDING),
-                    possibleKeys.get(0), possibleKeys.get(1), possibleKeys.get(2));
-            if (eventValue == null || eventValue.isEmpty()) {
+            String field = buildLikedMapField(userId, noteId);
+            String json = redisService.getHashValue(LIKE_EVENTS_PENDING, field, String.class);
+            if (json == null) {
                 return null;
             }
-            return jsonUtils.jsonToPojo(eventValue, NoteLikeEvent.class);
+            NoteLikeEvent event = jsonUtils.jsonToPojo(json, NoteLikeEvent.class);
+            return event.isLike();
         } catch (Exception e) {
-            log.warn("Failed to read pending like events from set: userId={}, noteId={}", userId, noteId, e);
+            log.warn("获取pending点赞状态失败: userId={}, noteId={}", userId, noteId, e);
             return null;
         }
     }
 
     /**
-     * 批量获取用户在 Redis 中未同步的点赞笔记ID
-     * 只检查两种点赞状态：
-     * 1. LIKE + !existsInDb + !isDeletedInDb（新点赞）
-     * 2. LIKE + existsInDb + isDeletedInDb（恢复点赞）
+     * 批量获取用户在 Redis 中未同步的点赞/取消点赞状态
+     * 一次 HMGET 拿到所有结果，无需循环
      *
-     * @param userId 用户ID
+     * @param userId  用户ID
      * @param noteIds 笔记ID列表
-     * @return Redis中未同步的已点赞笔记ID集合
+     * @return key=noteId, value=true(点赞)/false(取消点赞)，不在 pending 中的 noteId 不包含在结果中
      */
-    public Set<Long> batchGetPendingLikedNoteIds(Long userId, List<Long> noteIds) {
+    public Map<Long, Boolean> batchGetPendingLikeStatus(Long userId, List<Long> noteIds) {
         if (userId == null || noteIds == null || noteIds.isEmpty()) {
-            return Collections.emptySet();
+            return Collections.emptyMap();
         }
 
         try {
-            // 构造所有可能的点赞事件 JSON 和对应的 noteId 映射
-            Map<String, Long> eventToNoteIdMap = new HashMap<>();
-            noteIds.forEach(noteId -> {
-                // 点赞状态1: LIKE + !existsInDb + !isDeletedInDb（新点赞）
-                String likeEvent1 = jsonUtils.objectToJson(NoteLikeEvent.builder()
-                        .userId(userId)
-                        .noteId(noteId)
-                        .action(NoteLikeEvent.LikeAction.LIKE)
-                        .existsInDb(false)
-                        .isDeletedInDb(false)
-                        .build());
-                eventToNoteIdMap.put(likeEvent1, noteId);
-                
-                // 点赞状态2: LIKE + existsInDb + isDeletedInDb（恢复点赞）
-                String likeEvent2 = jsonUtils.objectToJson(NoteLikeEvent.builder()
-                        .userId(userId)
-                        .noteId(noteId)
-                        .action(NoteLikeEvent.LikeAction.LIKE)
-                        .existsInDb(true)
-                        .isDeletedInDb(true)
-                        .build());
-                eventToNoteIdMap.put(likeEvent2, noteId);
-            });
-
-            // 批量检查是否存在
-            Map<Object, Boolean> memberResults = redisService.isMember(LIKE_EVENTS_PENDING, eventToNoteIdMap.keySet().toArray());
-            
-            // 过滤出存在的事件对应的 noteId
-            return memberResults.entrySet().stream()
-                    .filter(entry -> Boolean.TRUE.equals(entry.getValue()))
-                    .map(entry -> eventToNoteIdMap.get(entry.getKey().toString()))
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
-        } catch (Exception e) {
-            log.warn("批量获取pending点赞状态失败: userId={}, noteIds={}", userId, noteIds, e);
-            return Collections.emptySet();
-        }
-    }
-
-    /**
-     * 批量获取用户在 Redis 中未同步的取消点赞笔记ID
-     * 只检查一种取消点赞状态：
-     * UNLIKE + existsInDb + !isDeletedInDb（取消点赞）
-     *
-     * @param userId 用户ID
-     * @param noteIds 笔记ID列表
-     * @return Redis中未同步的已取消点赞笔记ID集合
-     */
-    public Set<Long> batchGetPendingUnlikedNoteIds(Long userId, List<Long> noteIds) {
-        if (userId == null || noteIds == null || noteIds.isEmpty()) {
-            return Collections.emptySet();
-        }
-
-        try {
-            // 构造取消点赞事件 JSON 和对应的 noteId 映射
-            Map<String, Long> eventToNoteIdMap = noteIds.stream()
-                    .collect(Collectors.toMap(
-                            noteId -> jsonUtils.objectToJson(NoteLikeEvent.builder()
-                                    .userId(userId)
-                                    .noteId(noteId)
-                                    .action(NoteLikeEvent.LikeAction.UNLIKE)
-                                    .existsInDb(true)
-                                    .isDeletedInDb(false)
-                                    .build()),
-                            noteId -> noteId
-                    ));
-
-            // 批量检查是否存在
-            Map<Object, Boolean> memberResults = redisService.isMember(LIKE_EVENTS_PENDING, eventToNoteIdMap.keySet().toArray());
-            
-            // 过滤出存在的事件对应的 noteId
-            return memberResults.entrySet().stream()
-                    .filter(entry -> Boolean.TRUE.equals(entry.getValue()))
-                    .map(entry -> eventToNoteIdMap.get(entry.getKey().toString()))
-                    .filter(Objects::nonNull)
-                    .collect(Collectors.toSet());
-        } catch (Exception e) {
-            log.warn("批量获取pending取消点赞状态失败: userId={}, noteIds={}", userId, noteIds, e);
-            return Collections.emptySet();
-        }
-    }
-
-    /**
-     * 将事件添加到 Redis Set
-     * 删除所有可能的旧事件，然后添加新事件
-     *
-     * @param possibleOldEvents 所有可能的旧事件列表（3种组合）
-     * @param newEvent 新事件字符串
-     */
-    private void addEventToRedis(List<String> possibleOldEvents, String newEvent) {
-        // 先删除所有可能的旧事件
-        redisService.deleteMember(LIKE_EVENTS_PENDING, possibleOldEvents.toArray());
-        // 再添加新事件
-        redisService.addMember(LIKE_EVENTS_PENDING, newEvent);
-    }
-
-    /**
-     * 定时任务：每分钟同步一次 Redis Set 事件到数据库
-     * 流程：
-     * 1. Lua 脚本从 pending 移动  到 processing
-     * 2. 解析事件，按 (userId:noteId) 去重，取最新事件
-     * 3. 根据事件中的状态字段判断是 insert/restore/delete
-     * 4. 批量执行数据库操作
-     * 5. 成功后从 processing 删除，失败则保留以供重试
-     */
-    @Scheduled(fixedRate = 60000)  // 每 60000ms（1分钟）执行一次
-    public void syncLikeEventsToDb() {
-        try {
-            log.info("开始同步点赞数据到数据库");
-
-            // 1. 从 pending 获取所有事件
-            Set<String> pendingMembers = redisService.getSetMembers(LIKE_EVENTS_PENDING);
-            
-            if (pendingMembers == null || pendingMembers.isEmpty()) {
-                log.info("没有需要同步的点赞事件");
-                return;
-            }
-            
-            // 2. 移动到 processing（先添加到 processing，再从 pending 删除）
-            List<String> events = new ArrayList<>(pendingMembers);
-            for (String event : events) {
-                redisService.addMember(LIKE_EVENTS_PROCESSING, event);
-                redisService.deleteMember(LIKE_EVENTS_PENDING, event);
-            }
-            
-            if (events.isEmpty()) {
-                log.info("没有需要同步的点赞事件");
-                return;
-            }
-
-            log.debug("取出 {} events 移动到 processing set", events.size());
-
-            // 2. 解析事件对象
-            List<NoteLikeEvent> likeEvents = events.stream()
-                    .<NoteLikeEvent>map(eventValue -> jsonUtils.jsonToPojo(eventValue, NoteLikeEvent.class))
-                    .filter(Objects::nonNull)
+            // 一次 HMGET
+            List<String> hKeys = noteIds.stream()
+                    .map(noteId -> buildLikedMapField(userId, noteId))
                     .toList();
+            List<String> values = redisService.getMultiCacheMapValue(LIKE_EVENTS_PENDING, hKeys, new TypeReference<>() {});
+            if (values == null) {
+                return Collections.emptyMap();
+            }
+            // 解析结果（单条解析异常不影响其他）
+            Map<Long, Boolean> result = new HashMap<>();
+            for (int i = 0; i < noteIds.size() && i < values.size(); i++) {
+                String json = values.get(i);
+                if (json == null) {
+                    continue;
+                }
+                try {
+                    NoteLikeEvent event = jsonUtils.jsonToPojo(json, NoteLikeEvent.class);
+                    result.put(noteIds.get(i), event.isLike());
+                } catch (Exception e) {
+                    log.warn("解析pending点赞事件失败: noteId={}, json={}", noteIds.get(i), json, e);
+                }
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("批量获取pending点赞状态失败: userId={}", userId, e);
+            return Collections.emptyMap();
+        }
+    }
 
-            if (likeEvents.isEmpty()) {
-                log.warn("获取到事件为空或无法解析");
-                // 删除无法解析的事件
-                redisService.deleteMember(LIKE_EVENTS_PROCESSING, events.toArray());
+    /**
+     * 执行同步任务（供定时任务调用）：
+     * 1. 将 Redis Hash 中的点赞事件刷到 DB
+     * 2. 将脏 noteId 的互动数据（likeCount、commentCount、collectCount）同步到搜索服务
+     */
+    public void executeSync() {
+        // 第一步：刷点赞事件到 DB
+        flushLikeEventsToDb();
+        // 第二步：同步互动数据到 ES
+        syncEngagementToEs();
+    }
+
+    /**
+     * 将 Redis Hash 中的点赞/取消点赞事件刷到数据库
+     */
+    private void flushLikeEventsToDb() {
+        try {
+            if (!Boolean.TRUE.equals(redisService.hasKey(LIKE_EVENTS_PENDING))) {
+                log.debug("[点赞刷DB] 无待同步事件，跳过");
                 return;
             }
-
-            // 3. 按 (userId:noteId) 去重，由于 Set 中同一 key 只有一个事件，直接取即可
-            Map<String, NoteLikeEvent> finalStates = likeEvents.stream()
-                    .collect(Collectors.toMap(
-                            NoteLikeEvent::toEventKey,
-                            event -> event,
-                            (existing, current) -> current
-                    ));
-
-            // 4. 批量同步到数据库
-            List<String> successfulEvents = batchSyncToDB(new ArrayList<>(finalStates.values()));
-
-            // 5. 从 processing 删除已同步成功的事件
-            if (!successfulEvents.isEmpty()) {
-                redisService.deleteMember(LIKE_EVENTS_PROCESSING, successfulEvents.toArray());
-                log.info("Like events sync completed: {} events processed successfully", successfulEvents.size());
-            }
-
-        } catch (Exception e) {
-            log.error("Error during like events sync", e);
-            // 不抛出异常，避免打断定时任务的后续执行
-        }
-    }
-
-    /**
-     * 批量同步到数据库
-     * 完全根据事件中的状态字段进行操作，无需查询数据库：
-     * - LIKE + !existsInDb → insert
-     * - LIKE + existsInDb + isDeletedInDb → update SET deleted=false
-     * - UNLIKE + existsInDb + !isDeletedInDb → update SET deleted=true
-     *
-     * @return 同步成功的事件列表（完整的 Set value）
-     */
-    private List<String> batchSyncToDB (List<NoteLikeEvent> events) {
-        if (events.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<String> successfulEvents = new ArrayList<>();
-        List<SocialNoteLike> toInsert = new ArrayList<>();
-        List<NoteLikeEvent> toRestore = new ArrayList<>();      // LIKE + 已软删除 → 恢复
-        List<NoteLikeEvent> toDelete = new ArrayList<>();       // UNLIKE + 存在未删 → 软删除
-        Map<Long, Integer> noteCountChanges = new HashMap<>();
-        // 1. 分类事件（只有 3 种业务上真正存在的状态）
-        for (NoteLikeEvent event : events) {
             try {
-                if (event.getAction() == NoteLikeEvent.LikeAction.LIKE) {
-                    if (!event.getExistsInDb()) {
-                        // LIKE:0:0 - 完全新增
-                        SocialNoteLike like = new SocialNoteLike();
-                        like.setUserId(event.getUserId());
-                        like.setNoteId(event.getNoteId());
-                        like.setCreatedAt(LocalDateTime.now());
-                        like.setDeleted(false);
-                        toInsert.add(like);
-                        noteCountChanges.put(event.getNoteId(),
-                                noteCountChanges.getOrDefault(event.getNoteId(), 0) + 1);
-                    } else {
-                        // LIKE:1:1 - 恢复已软删除的
-                        toRestore.add(event);
-                        noteCountChanges.put(event.getNoteId(),
-                                noteCountChanges.getOrDefault(event.getNoteId(), 0) + 1);
-                    }
-                    successfulEvents.add(jsonUtils.objectToJson(event));
-                } else {
-                    // UNLIKE:1:0 - 取消点赞（软删除）
-                    toDelete.add(event);
-                    noteCountChanges.put(event.getNoteId(),
-                            noteCountChanges.getOrDefault(event.getNoteId(), 0) - 1);
-                    successfulEvents.add(jsonUtils.objectToJson(event));
-                }
+                redisService.renameKey(LIKE_EVENTS_PENDING, LIKE_EVENTS_PROCESSING);
             } catch (Exception e) {
-                log.error("Failed to process like event: userId={}, noteId={}, action={}",
-                        event.getUserId(), event.getNoteId(), event.getAction(), e);
-                // 该事件处理失败，不加入 successfulEvents，会在 processing 中保留供下次重试
+                log.warn("[点赞刷DB] RENAME 失败（pending 可能为空）: {}", e.getMessage());
+                return;
             }
-        }
-
-        // 2. 批量执行数据库操作
-        try {
-            // 插入新的点赞记录
-            if (!toInsert.isEmpty()) {
-                socialNoteLikeService.saveBatch(toInsert);
+            Map<String, String> entries = redisService.getCacheMap(LIKE_EVENTS_PROCESSING, new TypeReference<>() {});
+            if (entries == null || entries.isEmpty()) {
+                redisService.deleteObject(LIKE_EVENTS_PROCESSING);
+                log.debug("[点赞刷DB] 无待同步事件，跳过");
+                return;
             }
-
-            // 恢复软删除的记录（按 (userId, noteId) 条件批量更新）
-            if (!toRestore.isEmpty()) {
-                LambdaUpdateWrapper<SocialNoteLike> restoreWrapper = new LambdaUpdateWrapper<>();
-                toRestore.forEach(event -> {
-                    restoreWrapper.or(w -> w.eq(SocialNoteLike::getUserId, event.getUserId())
-                            .eq(SocialNoteLike::getNoteId, event.getNoteId()));
-                });
-                restoreWrapper.set(SocialNoteLike::getDeleted, false);
-                socialNoteLikeService.update(null, restoreWrapper);
+            log.info("[点赞刷DB] 开始同步: count={}", entries.size());
+            List<NoteLikeEvent> likeEvents = new ArrayList<>();
+            List<NoteLikeEvent> unlikeEvents = new ArrayList<>();
+            for (Map.Entry<String, String> entry : entries.entrySet()) {
+                try {
+                    NoteLikeEvent event = jsonUtils.jsonToPojo(entry.getValue(), NoteLikeEvent.class);
+                    if (event.isLike()) {
+                        likeEvents.add(event);
+                    } else {
+                        unlikeEvents.add(event);
+                    }
+                } catch (Exception e) {
+                    log.warn("[点赞刷DB] 解析事件失败: field={}, value={}", entry.getKey(), entry.getValue(), e);
+                }
             }
-
-            // 软删除存在的记录（按 (userId, noteId) 条件批量更新）
-            if (!toDelete.isEmpty()) {
-                LambdaUpdateWrapper<SocialNoteLike> deleteWrapper = new LambdaUpdateWrapper<>();
-                toDelete.forEach(event -> {
-                    deleteWrapper.or(w -> w.eq(SocialNoteLike::getUserId, event.getUserId())
-                            .eq(SocialNoteLike::getNoteId, event.getNoteId()));
-                });
-                deleteWrapper.set(SocialNoteLike::getDeleted, true);
-                socialNoteLikeService.update(null, deleteWrapper);
-            }
-
-            // 一次性批量更新所有笔记的点赞计数
-            if (!noteCountChanges.isEmpty()) {
-                updateNoteLikeCounts(noteCountChanges);
-            }
-
-            log.debug("Synced {} like events to database", successfulEvents.size());
+            syncToDB(likeEvents, unlikeEvents);
+            redisService.deleteObject(LIKE_EVENTS_PROCESSING);
+            log.info("[点赞刷DB] 同步完成: like={}, unlike={}", likeEvents.size(), unlikeEvents.size());
 
         } catch (Exception e) {
-            log.error("Failed to batch sync like events to database", e);
-            // 数据库操作失败，不返回任何 successfulEvents，所有事件都会保留在 processing 中供重试
-            return Collections.emptyList();
+            log.error("[点赞刷DB] 同步失败（processing 保留以供重试）", e);
         }
-
-        return successfulEvents;
     }
 
     /**
-     * 一次性批量更新所有笔记的点赞计数
-     * 使用 CASE WHEN SQL 语句，避免多次数据库往返
+     * 将增量计数器同步到搜索服务（ES）
+     * RENAME 快照两个 delta Hash，合并后发送 MQ
      */
-    private void updateNoteLikeCounts(Map<Long, Integer> noteCountChanges) {
+    private void syncEngagementToEs() {
         try {
-            // 构造 CASE WHEN SQL 语句
-            StringBuilder caseSql = new StringBuilder("like_count = CASE ");
-            for (Map.Entry<Long, Integer> entry : noteCountChanges.entrySet()) {
-                Long noteId = entry.getKey();
-                Integer delta = entry.getValue();
-
-                if (delta > 0) {
-                    caseSql.append("WHEN note_id = ").append(noteId)
-                            .append(" THEN like_count + ").append(delta).append(" ");
-                } else if (delta < 0) {
-                    // 减少时确保不为负
-                    caseSql.append("WHEN note_id = ").append(noteId)
-                            .append(" THEN CASE WHEN like_count >= ").append(-delta)
-                            .append(" THEN like_count - ").append(-delta)
-                            .append(" ELSE 0 END ");
-                }
+            // 1. 快照点赞增量
+            Map<String, String> likeDeltaMap = snapshotHash(NOTE_LIKE_DELTA, NOTE_LIKE_DELTA_PROCESSING);
+            // 2. 快照评论增量
+            Map<String, String> commentDeltaMap = snapshotHash(NOTE_COMMENT_DELTA, NOTE_COMMENT_DELTA_PROCESSING);
+            if (likeDeltaMap.isEmpty() && commentDeltaMap.isEmpty()) {
+                log.debug("[互动同步] 无增量数据，跳过");
+                return;
             }
-            caseSql.append("ELSE like_count END");
+            // 3. 合并所有 noteId
+            Set<Long> allNoteIds = new HashSet<>();
+            likeDeltaMap.keySet().forEach(k -> allNoteIds.add(Long.parseLong(k)));
+            commentDeltaMap.keySet().forEach(k -> allNoteIds.add(Long.parseLong(k)));
+            // 4. 构建增量消息
+            List<NoteEngagementItem> items = new ArrayList<>(allNoteIds.size());
+            for (Long noteId : allNoteIds) {
+                int likeDelta = parseDelta(likeDeltaMap.get(noteId.toString()));
+                int commentDelta = parseDelta(commentDeltaMap.get(noteId.toString()));
+                if (likeDelta == 0 && commentDelta == 0) {
+                    continue;
+                }
+                items.add(NoteEngagementItem.builder()
+                        .noteId(noteId)
+                        .likeDelta(likeDelta)
+                        .commentDelta(commentDelta)
+                        .build());
+            }
+            if (items.isEmpty()) {
+                log.debug("[互动同步] 增量全为0，跳过");
+                cleanupProcessing();
+                return;
+            }
+            mqService.send(
+                    SearchMQConstants.EXCHANGE_TOPIC_SEARCH,
+                    SearchMQConstants.ROUTING_NOTE_ENGAGEMENT_SYNC,
+                    NoteEngagementSyncMessage.builder().items(items).build()
+            );
+            cleanupProcessing();
+            log.info("[互动同步] 同步完成: noteCount={}", items.size());
 
-            // 批量更新
-            List<Long> allNoteIds = new ArrayList<>(noteCountChanges.keySet());
-            LambdaUpdateWrapper<SocialNote> updateWrapper = new LambdaUpdateWrapper<>();
-            updateWrapper.in(SocialNote::getNoteId, allNoteIds)
-                    .setSql(caseSql.toString());
-            socialNoteMapper.update(null, updateWrapper);
-
-            log.debug("Updated like counts for {} notes", allNoteIds.size());
         } catch (Exception e) {
-            log.warn("Failed to update like counts for notes", e);
+            log.error("[互动同步] 同步失败（processing 保留以供重试）", e);
         }
     }
 
+    /**
+     * RENAME 快照一个 Hash，返回其所有 field-value；如果 key 不存在则返回空 Map
+     */
+    private Map<String, String> snapshotHash(String sourceKey, String processingKey) {
+        if (!Boolean.TRUE.equals(redisService.hasKey(sourceKey))) {
+            return Collections.emptyMap();
+        }
+        try {
+            redisService.renameKey(sourceKey, processingKey);
+        } catch (Exception e) {
+            log.warn("[互动同步] RENAME 失败 {}: {}", sourceKey, e.getMessage());
+            return Collections.emptyMap();
+        }
+        Map<String, String> entries = redisService.getCacheMap(processingKey, new TypeReference<>() {});
+        return entries != null ? entries : Collections.emptyMap();
+    }
 
+    private void cleanupProcessing() {
+        redisService.deleteObject(NOTE_LIKE_DELTA_PROCESSING);
+        redisService.deleteObject(NOTE_COMMENT_DELTA_PROCESSING);
+    }
+
+    private int parseDelta(String value) {
+        if (value == null) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * 批量同步到数据库（只处理点赞记录，不维护 social_note 的计数字段）
+     * - 点赞: INSERT ... ON DUPLICATE KEY UPDATE deleted=false
+     * - 取消点赞: UPDATE SET deleted=true WHERE (userId, noteId)
+     */
+    private void syncToDB(List<NoteLikeEvent> likeEvents, List<NoteLikeEvent> unlikeEvents) {
+        // 1. 处理点赞事件：upsert
+        if (!likeEvents.isEmpty()) {
+            for (NoteLikeEvent event : likeEvents) {
+                try {
+                    socialNoteLikeMapper.upsertLike(event.getUserId(), event.getNoteId());
+                } catch (Exception e) {
+                    log.error("点赞 upsert 失败: userId={}, noteId={}", event.getUserId(), event.getNoteId(), e);
+                }
+            }
+        }
+
+        // 2. 处理取消点赞事件：软删除
+        if (!unlikeEvents.isEmpty()) {
+            LambdaUpdateWrapper<SocialNoteLike> deleteWrapper = new LambdaUpdateWrapper<>();
+            unlikeEvents.forEach(event -> {
+                deleteWrapper.or(w -> w.eq(SocialNoteLike::getUserId, event.getUserId())
+                        .eq(SocialNoteLike::getNoteId, event.getNoteId())
+                        .eq(SocialNoteLike::getDeleted, false));
+            });
+            deleteWrapper.set(SocialNoteLike::getDeleted, true);
+            socialNoteLikeService.update(null, deleteWrapper);
+        }
+    }
+
+    private static String buildLikedMapField(Long userId, Long noteId) {
+        return userId + ":" + noteId;
+    }
 }

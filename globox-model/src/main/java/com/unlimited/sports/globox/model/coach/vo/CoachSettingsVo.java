@@ -1,7 +1,9 @@
 package com.unlimited.sports.globox.model.coach.vo;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 
@@ -57,6 +59,30 @@ public class CoachSettingsVo {
      * 场地偏好设置
      */
     private VenuePreferenceInfo venuePreferenceInfo;
+
+    /**
+     * 真名显示信息
+     */
+    private RealNameInfo realNameInfo;
+
+    /**
+     * 真名显示信息
+     */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RealNameInfo {
+        /**
+         * 真实姓名
+         */
+        private String coachRealName;
+
+        /**
+         * 是否显示真名
+         */
+        private Boolean displayRealName;
+    }
 
     /**
      * 位置信息

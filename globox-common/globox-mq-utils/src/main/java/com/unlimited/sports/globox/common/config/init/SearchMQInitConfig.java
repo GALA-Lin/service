@@ -39,4 +39,40 @@ public class SearchMQInitConfig {
                 .to(searchExchange)
                 .with(SearchMQConstants.ROUTING_NOTE_SYNC);
     }
+
+    /**
+     * 用户同步队列
+     */
+    @Bean
+    public Queue userSyncQueue() {
+        return QueueBuilder
+                .durable(SearchMQConstants.QUEUE_USER_SYNC)
+                .build();
+    }
+
+    @Bean
+    public Binding userSyncBinding(Queue userSyncQueue, TopicExchange searchExchange) {
+        return BindingBuilder
+                .bind(userSyncQueue)
+                .to(searchExchange)
+                .with(SearchMQConstants.ROUTING_USER_SYNC);
+    }
+
+    /**
+     * 笔记互动数据同步队列（点赞/评论/收藏）
+     */
+    @Bean
+    public Queue noteEngagementSyncQueue() {
+        return QueueBuilder
+                .durable(SearchMQConstants.QUEUE_NOTE_ENGAGEMENT_SYNC)
+                .build();
+    }
+
+    @Bean
+    public Binding noteEngagementSyncBinding(Queue noteEngagementSyncQueue, TopicExchange searchExchange) {
+        return BindingBuilder
+                .bind(noteEngagementSyncQueue)
+                .to(searchExchange)
+                .with(SearchMQConstants.ROUTING_NOTE_ENGAGEMENT_SYNC);
+    }
 }
